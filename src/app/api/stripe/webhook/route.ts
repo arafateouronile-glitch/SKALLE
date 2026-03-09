@@ -146,7 +146,4 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-// Stripe requiert le body brut — désactiver le body parsing de Next.js
-export const config = {
-  api: { bodyParser: false },
-};
+// App Router : le body brut est lu via req.text() ci-dessus (pas de config bodyParser).

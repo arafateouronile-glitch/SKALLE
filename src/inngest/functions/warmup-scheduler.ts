@@ -45,8 +45,9 @@ export const warmupDailyScheduler = inngest.createFunction(
     for (const config of configs) {
       await step.run(`process-warmup-${config.workspaceId}`, async () => {
         const now = new Date();
+        const lastReset = new Date(config.lastResetDate);
         const daysSinceStart = Math.floor(
-          (now.getTime() - config.lastResetDate.getTime()) / (1000 * 60 * 60 * 24)
+          (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60 * 24)
         );
 
         // Warm-up terminé après WARMUP_DURATION_DAYS jours
