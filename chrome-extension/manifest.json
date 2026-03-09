@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "SKALLE - Import Membres Groupes Facebook",
+  "version": "1.0.0",
+  "description": "Extrait les membres actifs des groupes Facebook et les envoie vers votre dashboard SKALLE pour DM froids",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "https://facebook.com/*",
+    "http://localhost:3000/*",
+    "https://*.vercel.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.facebook.com/groups/*/members*", "https://facebook.com/groups/*/members*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

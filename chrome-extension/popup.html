@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { width: 380px; padding: 16px; font-family: system-ui, -apple-system, sans-serif; margin: 0; }
+    h1 { font-size: 16px; margin: 0 0 12px; color: #1a1a1a; }
+    label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
+    input:focus { outline: none; border-color: #10b981; }
+    button { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+    .btn-primary:hover { opacity: 0.95; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .status { font-size: 12px; padding: 8px; border-radius: 6px; margin-top: 12px; display: none; }
+    .status.success { background: #d1fae5; color: #065f46; display: block; }
+    .status.error { background: #fee2e2; color: #991b1b; display: block; }
+    .status.info { background: #dbeafe; color: #1e40af; display: block; }
+    .link { color: #10b981; text-decoration: none; font-size: 12px; margin-top: 8px; display: inline-block; }
+    .link:hover { text-decoration: underline; }
+    .token-note { font-size: 11px; color: #888; margin-top: -8px; margin-bottom: 12px; }
+    .warning { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; }
+    .warning strong { color: #92400e; font-size: 12px; display: block; margin-bottom: 4px; }
+    .warning ul { margin: 0; padding-left: 16px; }
+    .warning li { font-size: 11px; color: #78350f; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>🔄 SKALLE - Import Membres Groupe</h1>
+
+  <div class="warning">
+    <strong>⚠️ Utilisation responsable — Conditions d'utilisation Facebook</strong>
+    <ul>
+      <li>L'extraction de membres sans consentement explicite peut violer les <strong>CGU de Facebook</strong> (Section 3.2).</li>
+      <li>Un usage intensif peut entraîner une <strong>restriction ou suspension de votre compte</strong>.</li>
+      <li>N'envoyez des DM qu'aux membres avec qui vous avez un lien légitime ou une raison professionnelle claire.</li>
+      <li>Respectez le <strong>RGPD</strong> : les données extraites ne doivent pas être partagées ou revendues.</li>
+    </ul>
+  </div>
+
+  <label>Token d'extension (copier depuis le dashboard)</label>
+  <input type="password" id="token" placeholder="skl_ext_xxxxx..." />
+  <p class="token-note">Générez un token dans Dashboard → Social Prospector → Groupes Facebook</p>
+  <button id="save" class="btn-primary">Enregistrer le token</button>
+  <div id="status" class="status"></div>
+  <hr style="margin: 16px 0; border: none; border-top: 1px solid #eee;" />
+  <p style="font-size: 12px; color: #666; margin: 0;">
+    Sur la page <strong>membres</strong> d'un groupe Facebook, cliquez sur le bouton SKALLE dans la barre d'outils du groupe pour extraire et importer les membres.
+  </p>
+  <a href="#" id="openDashboard" class="link">Ouvrir le dashboard SKALLE →</a>
+</body>
+<script src="popup.js"></script>
+</html>
