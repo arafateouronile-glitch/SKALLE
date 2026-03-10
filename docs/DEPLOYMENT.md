@@ -61,6 +61,25 @@ Créer `.env.local` (ou `.env` en prod) à la racine du projet.
 | `ENCRYPTION_KEY` | 64 caractères hex (32 bytes) pour chiffrement AES-256 des clés Outbound. Générer avec `openssl rand -hex 32` |
 | `DIRECT_URL` | Uniquement si vous utilisez un pool (ex. PgBouncer) : URL PostgreSQL directe (port 5432) pour les migrations. En local, `DATABASE_URL` suffit. |
 
+### Configurer les variables dans Vercel
+
+1. **Ouvre ton projet** sur [vercel.com](https://vercel.com) → ton projet SKALLE.
+2. **Settings** → **Environment Variables**.
+3. **Ajoute chaque variable** : Name = nom de la variable, Value = la valeur (copie depuis ton `.env.local`).
+4. Coche **Production** (et éventuellement Preview) pour chaque variable.
+5. **Important** : après avoir tout ajouté, **redéploie** (Deployments → ⋮ sur le dernier déploiement → Redeploy) pour que les nouvelles variables soient prises en compte.
+
+**Minimum pour que l’app tourne en prod :**
+
+- `AUTH_SECRET` — même valeur qu’en local (Auth.js), ex. `openssl rand -base64 32`
+- `AUTH_URL` ou `NEXTAUTH_URL` — **`https://skalle.vercel.app`** (ou ton domaine custom)
+- `DATABASE_URL` — URL PostgreSQL (Supabase poolée, port 6543 si PgBouncer)
+- `DIRECT_URL` — URL directe PostgreSQL (port 5432), requise si tu utilises le pool Supabase
+- `ENCRYPTION_KEY` — 64 caractères hex (déjà en local)
+- Au moins un provider d’auth : p.ex. `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`, ou credentials (voir `auth.config.ts`)
+
+**Recommandé en plus :** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `SERPER_API_KEY`. Stripe (voir section 2) si tu utilises les abonnements.
+
 ---
 
 ## 2. Stripe
