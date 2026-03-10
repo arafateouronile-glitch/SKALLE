@@ -27,12 +27,13 @@ export default async function AppLayout({
         select: {
           domainUrl: true,
           brandVoice: true,
+          onboardingStep: true,
           _count: { select: { posts: true } },
         },
       });
       if (workspace) {
         const step = await getEffectiveOnboardingStep({
-          onboardingStep: 1,
+          onboardingStep: workspace.onboardingStep ?? 1,
           domainUrl: workspace.domainUrl,
           brandVoice: workspace.brandVoice,
           _count: workspace._count,
