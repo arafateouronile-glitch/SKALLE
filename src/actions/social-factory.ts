@@ -260,6 +260,23 @@ export async function publishPost(
 
   const network = POSTTYPE_TO_AYRSHARE[post.type];
 
+  // Tentative 0 : LinkedIn API directe (gratuite, prioritaire pour posts LINKEDIN)
+  if (post.type === "LINKEDIN") {
+    const { publishLinkedInPost } = await import("@/lib/services/integrations/linkedin-api");
+    const liResult = await publishLinkedInPost(workspaceId, post.content, post.imageUrl);
+    if (liResult.success) {
+      await prisma.post.update({
+        where: { id: postId },
+        data: { status: "PUBLISHED", publishedAt: new Date() },
+      });
+      return { success: true, provider: "linkedin" };
+    }
+    // Si LinkedIn non connecté, continuer vers Buffer/Ayrshare
+    if (!liResult.error?.includes("non connecté")) {
+      return { success: false, error: liResult.error };
+    }
+  }
+
   // Tentative 1 : Buffer
   const { scheduleBufferPost } = await import("@/lib/services/integrations/buffer");
   const bufferResult = await scheduleBufferPost(workspaceId, {

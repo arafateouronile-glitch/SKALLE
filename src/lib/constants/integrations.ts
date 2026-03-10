@@ -10,7 +10,8 @@ export type ExternalIntegrationProvider =
   | "CUSTOM_CRM"
   | "BUFFER"
   | "AYRSHARE"
-  | "WEBHOOK";
+  | "WEBHOOK"
+  | "LINKEDIN_OAUTH";
 
 export const EXTERNAL_INTEGRATION_PROVIDERS: {
   value: ExternalIntegrationProvider;

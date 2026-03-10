@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,8 @@ import {
   AlertTriangle,
   Shield,
   ExternalLink,
+  CheckCircle2,
+  Linkedin,
 } from "lucide-react";
 import {
   createSkalleApiKeyAction,
@@ -50,6 +53,15 @@ interface IntegrationsClientProps {
 }
 
 export function IntegrationsClient({ workspaceId }: IntegrationsClientProps) {
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("linkedin") === "connected") {
+      toast.success("LinkedIn connecté avec succès !");
+    } else if (searchParams.get("linkedin") === "error") {
+      toast.error("Erreur lors de la connexion LinkedIn.");
+    }
+  }, [searchParams]);
   const [inboundKeys, setInboundKeys] = useState<
     Array<{ id: string; name: string; keyPrefix: string; lastUsedAt: Date | null; createdAt: Date }>
   >([]);
@@ -305,6 +317,35 @@ export function IntegrationsClient({ workspaceId }: IntegrationsClientProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* LinkedIn OAuth — connexion directe gratuite */}
+              {(() => {
+                const liConnected = outboundList.some((i) => i.provider === "LINKEDIN_OAUTH");
+                return (
+                  <div className="mb-4 flex items-center justify-between rounded-lg border p-4">
+                    <div className="flex items-center gap-3">
+                      <Linkedin className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <p className="text-sm font-medium">LinkedIn</p>
+                        <p className="text-xs text-muted-foreground">Publiez directement vos posts (gratuit, sans intermédiaire)</p>
+                      </div>
+                    </div>
+                    {liConnected ? (
+                      <span className="flex items-center gap-1 text-xs font-medium text-green-600">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Connecté
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.location.href = `/api/integrations/linkedin/connect?workspaceId=${workspaceId}`}
+                      >
+                        Connecter
+                      </Button>
+                    )}
+                  </div>
+                );
+              })()}
+
               {loading ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
