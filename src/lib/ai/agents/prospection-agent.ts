@@ -339,7 +339,7 @@ export const prospectionAgent = createAgent({
     updateProspectStatusTool,
   ],
   model: "claude-3-5-sonnet", // Claude est meilleur pour le copywriting
-  maxIterations: 8,
+  maxIterations: 6,
   temperature: 0.7,
 });
 

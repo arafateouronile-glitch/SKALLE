@@ -211,7 +211,7 @@ export const discoveryAgent = createAgent({
     generateCompetitorReportTool,
   ],
   model: "gpt-4o",
-  maxIterations: 12,
+  maxIterations: 7,
   temperature: 0.5,
 });
 

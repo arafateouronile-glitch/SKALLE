@@ -265,8 +265,8 @@ export const socialAgent = createAgent({
     saveRepurposedContentTool,
     webSearchTool, // Pour rechercher les tendances
   ],
-  model: "gpt-4o-mini",
-  maxIterations: 10,
+  model: "claude-haiku-4-5", // Haiku : meilleur que gpt-4o-mini pour l'écriture créative courte, moins cher
+  maxIterations: 6,
   temperature: 0.8, // Plus créatif pour le social
 });
 

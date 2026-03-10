@@ -169,7 +169,7 @@ export const seoAgent = createAgent({
     saveArticleTool,
   ],
   model: "gpt-4o",
-  maxIterations: 15,
+  maxIterations: 8,
   temperature: 0.7,
 });
 

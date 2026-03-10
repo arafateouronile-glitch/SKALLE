@@ -201,7 +201,7 @@ export const seoAnalyzerTool = new DynamicStructuredTool({
 
 export const keywordAnalyzerTool = new DynamicStructuredTool({
   name: "analyze_keyword",
-  description: "Analyse un mot-clé pour le SEO: volume estimé, difficulté, opportunités.",
+  description: "Analyse un mot-clé pour le SEO via Serper (Google). Retourne une estimation heuristique de la difficulté basée sur la présence de Wikipedia/grandes marques dans les résultats, des suggestions long-tail et les questions associées. Note: volume non disponible via cette méthode, difficulté = estimation.",
   schema: z.object({
     keyword: z.string().describe("Le mot-clé à analyser"),
   }),
@@ -354,28 +354,123 @@ function getContentGuidelines(type: string, length: string): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔗 LINKEDIN PROFILE TOOL - Extraction de profil LinkedIn (simulé)
+// 🔗 LINKEDIN PROFILE TOOL - Extraction de profil LinkedIn via web search
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const linkedinProfileTool = new DynamicStructuredTool({
   name: "get_linkedin_profile",
-  description: "Récupère les informations publiques d'un profil LinkedIn pour la prospection.",
+  description: "Récupère les informations publiques d'un profil LinkedIn (nom, poste, entreprise, activité récente) via Google. Stratégie 1: scraping direct du profil public. Stratégie 2: recherche Google pour extraire le snippet LinkedIn.",
   schema: z.object({
-    linkedinUrl: z.string().describe("L'URL du profil LinkedIn"),
+    linkedinUrl: z.string().describe("L'URL du profil LinkedIn (ex: https://linkedin.com/in/jean-dupont)"),
+    fullName: z.string().optional().describe("Nom complet de la personne (optionnel, améliore la recherche)"),
+    company: z.string().optional().describe("Entreprise actuelle (optionnel, améliore la recherche)"),
   }),
-  func: async ({ linkedinUrl }) => {
-    // Note: Le scraping LinkedIn réel nécessite une API officielle ou un proxy
-    // Ceci est une simulation pour le développement
-    
-    // Extraire le nom d'utilisateur de l'URL
-    const usernameMatch = linkedinUrl.match(/linkedin\.com\/in\/([^\/]+)/);
-    const username = usernameMatch ? usernameMatch[1] : "unknown";
+  func: async ({ linkedinUrl, fullName, company }) => {
+    const usernameMatch = linkedinUrl.match(/linkedin\.com\/in\/([^/]+)/);
+    const username = usernameMatch ? usernameMatch[1] : null;
+
+    // Stratégie 1 : scraping direct du profil public LinkedIn
+    try {
+      const response = await fetch(linkedinUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+
+      if (response.ok) {
+        const html = await response.text();
+        const $ = cheerio.load(html);
+
+        // LinkedIn public profile expose ces balises meta
+        const name = $('meta[property="og:title"]').attr("content")
+          ?? $("title").text().replace(" | LinkedIn", "").trim();
+        const description = $('meta[property="og:description"]').attr("content")
+          ?? $('meta[name="description"]').attr("content")
+          ?? "";
+        const image = $('meta[property="og:image"]').attr("content") ?? null;
+
+        if (name && name !== "LinkedIn") {
+          return JSON.stringify({
+            source: "direct_scrape",
+            url: linkedinUrl,
+            username,
+            name,
+            headline: description.split(" | ")[0] ?? description,
+            rawDescription: description.slice(0, 500),
+            hasPhoto: !!image,
+          });
+        }
+      }
+    } catch {
+      // LinkedIn peut bloquer — on passe à la stratégie 2
+    }
+
+    // Stratégie 2 : recherche Google via Serper pour extraire le snippet LinkedIn
+    if (!process.env.SERPER_API_KEY) {
+      return JSON.stringify({
+        source: "unavailable",
+        url: linkedinUrl,
+        username,
+        error: "SERPER_API_KEY non configurée — impossible d'enrichir le profil",
+      });
+    }
+
+    try {
+      const query = fullName && company
+        ? `"${fullName}" "${company}" site:linkedin.com/in`
+        : username
+        ? `site:linkedin.com/in/${username}`
+        : `${fullName ?? ""} ${company ?? ""} LinkedIn`;
+
+      const response = await fetch("https://google.serper.dev/search", {
+        method: "POST",
+        headers: {
+          "X-API-KEY": process.env.SERPER_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ q: query, num: 3 }),
+      });
+
+      const data = await response.json();
+      const topResult = data.organic?.[0];
+
+      if (topResult) {
+        // Google expose souvent : "Nom | Poste chez Entreprise | LinkedIn"
+        const titleParts = (topResult.title as string ?? "").replace(" | LinkedIn", "").split(" | ");
+        const extractedName = titleParts[0]?.trim() ?? "";
+        const headline = titleParts[1]?.trim() ?? topResult.snippet?.split(".")[0] ?? "";
+
+        // Chercher les posts récents dans les autres résultats
+        const recentActivity = data.organic
+          ?.slice(0, 3)
+          .filter((r: { link: string }) => r.link?.includes("linkedin.com"))
+          .map((r: { title: string; snippet: string }) => r.snippet?.slice(0, 150))
+          .filter(Boolean)
+          .join(" | ");
+
+        return JSON.stringify({
+          source: "google_search",
+          url: linkedinUrl,
+          username,
+          name: extractedName || fullName || username,
+          headline,
+          snippet: topResult.snippet?.slice(0, 300),
+          recentActivity: recentActivity || null,
+          searchQuery: query,
+        });
+      }
+    } catch (error) {
+      return JSON.stringify({ source: "error", url: linkedinUrl, username, error: String(error) });
+    }
 
     return JSON.stringify({
+      source: "not_found",
       url: linkedinUrl,
       username,
-      note: "Profil LinkedIn récupéré. Pour des données réelles, configurez l'API LinkedIn ou un service de scraping.",
-      suggestedApproach: "Personnalisez le message en mentionnant leur industrie et rôle.",
+      name: fullName ?? username,
+      note: "Profil non trouvé publiquement. Personnalise le message avec les infos disponibles (nom, entreprise, titre).",
     });
   },
 });

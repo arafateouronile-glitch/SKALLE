@@ -155,6 +155,12 @@ interface ObservationData {
   sectorNews: Array<{ title: string; snippet: string }>;
   competitorAlerts: Array<{ competitorDomain: string; contentTitle: string | null; matchedKeyword: string | null }>;
   performanceInsights: Record<string, unknown>; // Insights du weekly learning précédent
+  // Décisions récentes approuvées/rejetées par l'utilisateur (feedback immédiat)
+  recentDecisionFeedback: Array<{
+    actionType: string;
+    status: "APPROVED" | "REJECTED" | "EXECUTED";
+    performanceScore: number | null;
+  }>;
 }
 
 interface GuardrailCheck {
@@ -321,6 +327,21 @@ async function observe(workspaceId: string): Promise<ObservationData> {
   // Insights du weekly learning précédent (pour que l'agent apprenne)
   const performanceInsights = (brandVoice.performanceInsights as Record<string, unknown>) ?? {};
 
+  // Décisions des 14 derniers jours avec le feedback utilisateur (approuvé/rejeté)
+  // Permet au brain d'apprendre en temps réel sans attendre le cycle weekly
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  const recentDecisionFeedback = await prisma.agentDecision.findMany({
+    where: {
+      workspaceId,
+      status: { in: ["APPROVED", "REJECTED", "EXECUTED"] },
+      createdAt: { gte: fourteenDaysAgo },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    select: { actionType: true, status: true, performanceScore: true },
+  });
+
   return {
     recentPosts,
     postStats,
@@ -337,6 +358,11 @@ async function observe(workspaceId: string): Promise<ObservationData> {
     sectorNews,
     competitorAlerts: unreadAlerts,
     performanceInsights,
+    recentDecisionFeedback: recentDecisionFeedback as Array<{
+      actionType: string;
+      status: "APPROVED" | "REJECTED" | "EXECUTED";
+      performanceScore: number | null;
+    }>,
   };
 }
 
@@ -369,6 +395,8 @@ RÈGLES STRICTES :
 - Si des alertes concurrents existent, propose COMPETITOR_REACT en priority 1-2
 - Si les conversions récentes sont élevées, renforce PROSPECT_DM pour capitaliser sur la dynamique
 - Tiens compte des insights de performance passés pour éviter de répéter les actions peu efficaces
+- Si un type d'action a un taux d'approbation < 50% dans le feedback récent, évite de le proposer sauf si les données le justifient clairement
+- Si un type d'action a un score moyen < 40/100, déprioritise-le (priority 4-5 maximum)
 
 Types d'actions disponibles (SEULS ces 7 sont acceptés) :
 - SEO_ARTICLE : Rédiger un nouvel article SEO sur un sujet à fort potentiel
@@ -416,6 +444,9 @@ ${SCHEMA_DESCRIPTION}`,
 
 🔔 ALERTES CONCURRENTS (nouveaux contenus détectés) :
 {competitorAlertsSummary}
+
+📋 FEEDBACK UTILISATEUR RÉCENT (14j) — décisions approuvées ou rejetées :
+{recentDecisionFeedbackSummary}
 
 🧠 INSIGHTS DE PERFORMANCE PASSÉS (weekly learning) :
 {performanceInsightsSummary}
@@ -498,6 +529,31 @@ Analyse ces données et propose 3-5 actions prioritaires pour aujourd'hui. Tiens
       ? `Meilleur type d'action: ${(data.performanceInsights.bestPerformingType as string) ?? "N/A"} | Actions recommandées: ${((data.performanceInsights.nextCycleRecommendations as string[]) ?? []).join(", ")}`
       : "Pas encore d'insights (premier cycle)";
 
+  // Feedback immédiat : taux d'approbation par type d'action sur 14 jours
+  const feedbackByType: Record<string, { approved: number; rejected: number; avgScore: number; scoreCount: number }> = {};
+  for (const d of data.recentDecisionFeedback) {
+    if (!feedbackByType[d.actionType]) {
+      feedbackByType[d.actionType] = { approved: 0, rejected: 0, avgScore: 0, scoreCount: 0 };
+    }
+    if (d.status === "REJECTED") feedbackByType[d.actionType].rejected += 1;
+    else feedbackByType[d.actionType].approved += 1;
+    if (d.performanceScore != null) {
+      feedbackByType[d.actionType].avgScore += d.performanceScore;
+      feedbackByType[d.actionType].scoreCount += 1;
+    }
+  }
+  const recentDecisionFeedbackSummary =
+    Object.keys(feedbackByType).length > 0
+      ? Object.entries(feedbackByType)
+          .map(([type, stats]) => {
+            const total = stats.approved + stats.rejected;
+            const approvalRate = Math.round((stats.approved / total) * 100);
+            const avgScore = stats.scoreCount > 0 ? Math.round(stats.avgScore / stats.scoreCount) : null;
+            return `- ${type}: ${approvalRate}% approuvé (${total} décisions)${avgScore !== null ? `, score moyen: ${avgScore}/100` : ""}`;
+          })
+          .join("\n")
+      : "Aucune décision récente (premier cycle)";
+
   const claude = getClaude();
   const parser = getStringParser();
 
@@ -519,6 +575,7 @@ Analyse ces données et propose 3-5 actions prioritaires pour aujourd'hui. Tiens
     gscDecliningPagesSummary,
     conversionsSummary,
     competitorAlertsSummary,
+    recentDecisionFeedbackSummary,
     performanceInsightsSummary,
     objectives:
       data.workspaceObjectives.length > 0
@@ -569,14 +626,94 @@ async function planAndStore(
   decisions: AgentDecisionInput[]
 ): Promise<string[]> {
   const decisionIds: string[] = [];
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+  // Pré-charger les keywords déjà en cours pour la déduplication SEO
+  const existingDraftKeywords = await prisma.post.findMany({
+    where: {
+      workspaceId,
+      status: { in: ["DRAFT", "SCHEDULED"] },
+      type: "SEO_ARTICLE",
+      createdAt: { gte: thirtyDaysAgo },
+      deletedAt: null,
+    },
+    select: { keywords: true },
+  });
+  const draftKeywordSet = new Set(
+    existingDraftKeywords.flatMap((p) => p.keywords.map((k) => k.toLowerCase()))
+  );
+
+  // Pré-charger les décisions PENDING récentes pour déduplication multi-type
+  const recentPendingDecisions = await prisma.agentDecision.findMany({
+    where: {
+      workspaceId,
+      status: "PENDING",
+      createdAt: { gte: sevenDaysAgo },
+    },
+    select: { actionType: true, actionData: true },
+  });
 
   for (const decision of decisions) {
+    // ── Déduplication ──────────────────────────────────────────────────────
+    const keyword = ((decision.actionData.keyword as string) ?? "").toLowerCase();
+    const platform = (decision.actionData.platform as string) ?? "LINKEDIN";
+
+    if (decision.actionType === "SEO_ARTICLE" && keyword && draftKeywordSet.has(keyword)) {
+      console.log(`[Brain] Déduplication: SEO_ARTICLE "${keyword}" déjà en DRAFT/SCHEDULED — ignoré`);
+      continue;
+    }
+
+    if (decision.actionType === "SOCIAL_POST") {
+      const duplicate = recentPendingDecisions.some(
+        (d) =>
+          d.actionType === "SOCIAL_POST" &&
+          ((d.actionData as Record<string, unknown>)?.keyword as string)?.toLowerCase() === keyword &&
+          ((d.actionData as Record<string, unknown>)?.platform as string) === platform
+      );
+      if (duplicate) {
+        console.log(`[Brain] Déduplication: SOCIAL_POST "${keyword}" sur ${platform} déjà PENDING — ignoré`);
+        continue;
+      }
+    }
+
+    if (decision.actionType === "DISCOVERY_SCAN" || decision.actionType === "COMPETITOR_REACT") {
+      const competitorUrl = (decision.actionData.competitorUrl as string) ?? "";
+      const recentScan = await prisma.agentDecision.findFirst({
+        where: {
+          workspaceId,
+          actionType: decision.actionType,
+          createdAt: { gte: fourteenDaysAgo },
+        },
+      });
+      const sameCompetitor =
+        competitorUrl &&
+        recentScan &&
+        ((recentScan.actionData as Record<string, unknown>)?.competitorUrl as string) === competitorUrl;
+      if (sameCompetitor) {
+        console.log(`[Brain] Déduplication: ${decision.actionType} sur "${competitorUrl}" déjà fait il y a < 14j — ignoré`);
+        continue;
+      }
+    }
+
+    if (decision.actionType === "PROSPECT_DM") {
+      const recentDm = recentPendingDecisions.some((d) => d.actionType === "PROSPECT_DM");
+      if (recentDm) {
+        console.log(`[Brain] Déduplication: PROSPECT_DM déjà PENDING cette semaine — ignoré`);
+        continue;
+      }
+    }
+    // ── Fin déduplication ──────────────────────────────────────────────────
+
     let linkedPostId: string | null = null;
 
     // Pour les actions qui génèrent un post, créer un brouillon
     if (decision.actionType === "SEO_ARTICLE" || decision.actionType === "SOCIAL_POST") {
-      const keyword = (decision.actionData.keyword as string) ?? "";
-      const platform = (decision.actionData.platform as string) ?? "LINKEDIN";
+      // keyword et platform déjà extraits dans le bloc déduplication
       const openai = getOpenAI();
       const parser = getStringParser();
 
@@ -672,6 +809,9 @@ Réponds en JSON strict : { "A": "contenu variante AIDA", "B": "contenu variante
 
         linkedPostId = post.id;
       }
+
+      // Enregistrer le keyword dans le set pour dédupliquer dans le même cycle
+      if (keyword) draftKeywordSet.add(keyword.toLowerCase());
     }
 
     // Stocker la décision
@@ -720,7 +860,36 @@ export async function runDailyMarketingCycle(
     const decisionIds = await planAndStore(workspaceId, decisions);
     console.log(`[Brain] ${decisionIds.length} décisions stockées`);
 
-    // 4. Logger dans AutopilotLog
+    // 4. Learning adaptatif : déclenche learnFromPerformance si ≥5 décisions
+    //    exécutées depuis le dernier apprentissage (sans attendre le cycle weekly)
+    try {
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { brandVoice: true },
+      });
+      const brandVoice = (workspace?.brandVoice as Record<string, unknown>) ?? {};
+      const lastLearningAt = (brandVoice.performanceInsights as Record<string, unknown>)?.updatedAt as string | undefined;
+      const lastLearningDate = lastLearningAt ? new Date(lastLearningAt) : new Date(0);
+
+      const executedSinceLastLearning = await prisma.agentDecision.count({
+        where: {
+          workspaceId,
+          status: "EXECUTED",
+          executedAt: { gte: lastLearningDate },
+        },
+      });
+
+      if (executedSinceLastLearning >= 5) {
+        console.log(`[Brain] ${executedSinceLastLearning} décisions exécutées depuis le dernier learning → déclenchement anticipé`);
+        learnFromPerformance(workspaceId).catch((e) =>
+          console.warn("[Brain] Learning adaptatif échoué (non bloquant):", e)
+        );
+      }
+    } catch (e) {
+      console.warn("[Brain] Vérification learning adaptatif échouée (non bloquant):", e);
+    }
+
+    // 5. Logger dans AutopilotLog
     await prisma.autopilotLog.create({
       data: {
         workspaceId,

@@ -42,8 +42,12 @@ export default async function AppLayout({
           redirect("/onboarding");
         }
       }
-    } catch {
-      // Ne pas bloquer si la table n'a pas encore onboardingStep (migration en retard)
+    } catch (e) {
+      // Erreur Prisma/DB (ex. DATABASE_URL manquant en prod) → remonter pour afficher l'erreur
+      if (e instanceof Error && /prisma|database|connection|ECONNREFUSED/i.test(e.message)) {
+        throw e;
+      }
+      // Sinon ne pas bloquer (ex. colonne onboardingStep absente en migration)
     }
   }
 

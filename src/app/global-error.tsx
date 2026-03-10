@@ -24,6 +24,12 @@ export default function GlobalError({
           <p className="text-slate-400 text-sm">
             Skalle a rencontré un problème inattendu. Réessayez ou revenez plus tard.
           </p>
+          {typeof window !== "undefined" && !window.location.hostname.includes("localhost") && (
+            <p className="text-slate-500 text-xs text-left bg-slate-800/50 rounded-lg p-3">
+              En production, vérifiez les variables d&apos;environnement dans Vercel (DATABASE_URL,
+              AUTH_SECRET, NEXTAUTH_URL) et les logs du déploiement.
+            </p>
+          )}
           {process.env.NODE_ENV === "development" && (
             <pre className="text-left text-xs text-red-300 bg-slate-900 p-4 rounded-lg overflow-auto max-h-32">
               {error.message}

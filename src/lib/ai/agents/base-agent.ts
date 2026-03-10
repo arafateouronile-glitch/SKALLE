@@ -69,7 +69,7 @@ export interface AgentConfig {
   description: string;
   systemPrompt: string;
   tools: DynamicStructuredTool[];
-  model?: "gpt-4o" | "gpt-4o-mini" | "claude-3-5-sonnet";
+  model?: "gpt-4o" | "gpt-4o-mini" | "claude-3-5-sonnet" | "claude-haiku-4-5";
   maxIterations?: number;
   temperature?: number;
 }
@@ -77,6 +77,23 @@ export interface AgentConfig {
 // ═══════════════════════════════════════════════════════════════════════════
 // 🏗️ CREATE AGENT - Fabrique d'agents
 // ═══════════════════════════════════════════════════════════════════════════
+
+// Mapping des noms de modèles vers les IDs Anthropic réels
+function getAnthropicModelId(model: string): string {
+  const mapping: Record<string, string> = {
+    "claude-3-5-sonnet": "claude-sonnet-4-6",
+    "claude-haiku-4-5": "claude-haiku-4-5-20251001",
+  };
+  return mapping[model] ?? "claude-sonnet-4-6";
+}
+
+// Formatte le contexte workspace en langage naturel plutôt qu'en JSON brut
+function formatContext(context: Record<string, unknown>): string {
+  return Object.entries(context)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `- ${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+    .join("\n");
+}
 
 export function createAgent(config: AgentConfig) {
   const {
@@ -88,12 +105,18 @@ export function createAgent(config: AgentConfig) {
     temperature = 0.7,
   } = config;
 
+  const isClaudeModel = model.startsWith("claude");
+
   // Sélection du modèle
-  const llm = model.startsWith("claude")
+  const llm = isClaudeModel
     ? new ChatAnthropic({
-        model: "claude-sonnet-4-5-20250929",
+        model: getAnthropicModelId(model),
         temperature,
         apiKey: process.env.ANTHROPIC_API_KEY,
+        // Active le prompt caching pour économiser ~90% sur les tokens système répétés
+        clientOptions: {
+          defaultHeaders: { "anthropic-beta": "prompt-caching-2024-07-31" },
+        },
       })
     : new ChatOpenAI({
         model,
@@ -114,12 +137,18 @@ export function createAgent(config: AgentConfig) {
   // Node: Agent reasoning
   async function agentNode(state: AgentStateType) {
     const messages = state.messages;
-    
+
     // Add system message if not present
     const hasSystemMessage = messages.some(m => m instanceof SystemMessage);
-    const allMessages = hasSystemMessage 
-      ? messages 
-      : [new SystemMessage(systemPrompt), ...messages];
+    // Pour Claude : utilise cache_control sur le system prompt pour le prompt caching
+    const systemMsg = isClaudeModel
+      ? new SystemMessage({
+          content: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+        })
+      : new SystemMessage(systemPrompt);
+    const allMessages = hasSystemMessage
+      ? messages
+      : [systemMsg, ...messages];
 
     const response = await modelWithTools.invoke(allMessages);
 
@@ -181,8 +210,8 @@ export function createAgent(config: AgentConfig) {
     
     try {
       // Prepare initial state
-      const contextMessage = context 
-        ? `\n\nContexte: ${JSON.stringify(context)}`
+      const contextMessage = context && Object.keys(context).length > 0
+        ? `\n\n## Contexte workspace\n${formatContext(context)}`
         : "";
       
       const initialState = {
@@ -272,13 +301,14 @@ export async function chainAgents(
       break; // Stop chain on error
     }
 
-    // Pass result to next agent
+    // Passe les résultats structurés directement dans le contexte (pas de sérialisation en string)
     currentContext = {
       ...currentContext,
-      previousAgentResult: result.result,
-      previousAgent: agent.name,
+      ...(result.intermediateResults ?? {}),
+      previousAgentName: agent.name,
     };
-    currentInput = `Résultat de l'agent précédent (${agent.name}): ${result.result}\n\nContinue le travail.`;
+    // Input minimaliste : les données structurées sont dans currentContext
+    currentInput = `Continue le travail. Les résultats de l'agent "${agent.name}" sont disponibles dans le contexte workspace.`;
   }
 
   return results;
