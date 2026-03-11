@@ -17,6 +17,7 @@ import {
   Radio,
   MapPin,
   Building2,
+  Handshake,
 } from "lucide-react";
 
 const navigation = [
@@ -46,6 +47,7 @@ const navigation = [
     icon: Target,
     matchHref: "/sales-os/prospection",
   },
+  { name: "Partnership Hub", href: "/sales-os/partnerships", icon: Handshake },
   { name: "Paramètres", href: "/sales-os/settings", icon: Settings },
 ];
 

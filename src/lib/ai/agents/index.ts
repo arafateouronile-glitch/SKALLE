@@ -139,17 +139,75 @@ export function getAgent(agentId: AgentType) {
 }
 
 /**
- * Exécute un agent par son ID avec des paramètres génériques
+ * Exécute un agent par son ID avec des paramètres génériques.
+ * @param workspaceId - Si fourni, les anomalies (limitReached, toolErrors) sont persistées dans workspace.brandVoice.agentMetrics
  */
 export async function executeAgent(
   agentId: AgentType,
   input: string,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
+  workspaceId?: string
 ) {
   const agentInfo = agentRegistry[agentId];
   if (!agentInfo) {
     throw new Error(`Agent "${agentId}" not found`);
   }
-  
-  return await agentInfo.agent.run(input, context);
+
+  const result = await agentInfo.agent.run(input, context);
+
+  const hasAnomaly = result.limitReached || (result.toolErrors?.length ?? 0) > 0;
+
+  // Observabilité console
+  if (result.limitReached) {
+    console.warn(
+      `[Agent:${agentId}] ⚠️ maxIterations atteint (${result.iterations} steps, ${result.duration}ms) — l'agent n'a pas convergé.`
+    );
+  }
+  if (result.toolErrors?.length) {
+    console.error(
+      `[Agent:${agentId}] 🔴 Erreurs outils (${result.toolErrors.length}):`,
+      result.toolErrors
+    );
+  }
+
+  // Persistance des métriques si workspaceId fourni et anomalie détectée
+  if (workspaceId && hasAnomaly) {
+    try {
+      const { prisma } = await import("@/lib/prisma");
+      const ws = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { brandVoice: true },
+      });
+      const brandVoice = (ws?.brandVoice as Record<string, unknown>) ?? {};
+      const existing = (brandVoice.agentMetrics as Record<string, unknown>) ?? {};
+      const alerts = (existing.alerts as Array<Record<string, unknown>>) ?? [];
+
+      alerts.unshift({
+        agentId,
+        timestamp: new Date().toISOString(),
+        limitReached: result.limitReached ?? false,
+        toolErrors: result.toolErrors ?? [],
+        iterations: result.iterations,
+        duration: result.duration,
+      });
+
+      await prisma.workspace.update({
+        where: { id: workspaceId },
+        data: {
+          brandVoice: JSON.parse(JSON.stringify({
+            ...brandVoice,
+            agentMetrics: {
+              ...existing,
+              alerts: alerts.slice(0, 20), // conserve les 20 dernières alertes
+              lastUpdated: new Date().toISOString(),
+            },
+          })),
+        },
+      });
+    } catch (e) {
+      console.error(`[Agent:${agentId}] Impossible de persister les métriques:`, e);
+    }
+  }
+
+  return result;
 }

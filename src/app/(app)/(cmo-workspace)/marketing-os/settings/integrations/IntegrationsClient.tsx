@@ -105,9 +105,9 @@ export function IntegrationsClient({ workspaceId }: IntegrationsClientProps) {
       listSkalleApiKeysAction(workspaceId),
       listExternalIntegrationsAction(workspaceId),
     ]);
-    if (keysRes.success && keysRes.keys) setInboundKeys(keysRes.keys);
+    if (keysRes.success && Array.isArray(keysRes.keys)) setInboundKeys(keysRes.keys);
     else if (keysRes.error) setApiError(keysRes.error);
-    if (intRes.success && intRes.integrations) setOutboundList(intRes.integrations);
+    if (intRes.success && Array.isArray(intRes.integrations)) setOutboundList(intRes.integrations);
     else if (intRes.error && !keysRes.error) setApiError(intRes.error);
     setLoading(false);
   };

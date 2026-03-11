@@ -9,6 +9,7 @@
 import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
 import { useCredits } from "@/lib/credits";
+import { trackSpend } from "@/lib/ai/budget-guard";
 import {
   runDailyMarketingCycle,
   executeDecision,
@@ -63,7 +64,11 @@ export const agentBrainDaily = inngest.createFunction(
         // Exécuter le cycle
         await step.run(`cycle-${ws.workspaceId}`, async () => {
           await useCredits(ws.userId, "agent_brain_cycle");
-          return runDailyMarketingCycle(ws.workspaceId);
+          const result = await runDailyMarketingCycle(ws.workspaceId);
+          if (result.success) {
+            await trackSpend(ws.workspaceId, "agent_brain_cycle");
+          }
+          return result;
         });
 
         processed++;
@@ -107,7 +112,11 @@ export const agentBrainManualCycle = inngest.createFunction(
 
     // Exécuter le cycle
     const result = await step.run("run-cycle", async () => {
-      return runDailyMarketingCycle(workspaceId);
+      const r = await runDailyMarketingCycle(workspaceId);
+      if (r.success) {
+        await trackSpend(workspaceId, "agent_brain_cycle");
+      }
+      return r;
     });
 
     return result;
@@ -136,11 +145,17 @@ export const agentBrainExecuteDecisions = inngest.createFunction(
         await step.run(`execute-${decisionId}`, async () => {
           await useCredits(userId, "agent_brain_execute");
           const result = await executeDecision(decisionId);
+          if (!result.success) {
+            console.error(`[Brain] ❌ Décision ${decisionId} échouée: ${result.error}`);
+          }
           const decision = await prisma.agentDecision.findUnique({
             where: { id: decisionId },
             select: { actionType: true, reasoning: true, workspaceId: true, priority: true },
           });
           if (decision) {
+            if (result.success) {
+              await trackSpend(decision.workspaceId, "agent_brain_execute");
+            }
             try {
               const { notifyAgentBrainDecision } = await import("@/lib/services/notifications/admin");
               await notifyAgentBrainDecision({
@@ -191,7 +206,9 @@ export const agentBrainWeeklyLearn = inngest.createFunction(
     for (const workspaceId of activeWorkspaces) {
       try {
         await step.run(`learn-${workspaceId}`, async () => {
-          return learnFromPerformance(workspaceId);
+          const r = await learnFromPerformance(workspaceId);
+          await trackSpend(workspaceId, "learn_from_performance");
+          return r;
         });
         learned++;
       } catch (error) {

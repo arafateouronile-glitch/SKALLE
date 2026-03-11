@@ -53,7 +53,7 @@ export function MorningBrief({
   isAutopilotActive,
   hasAlerts,
 }: MorningBriefProps) {
-  const [localDecisions, setLocalDecisions] = useState<Decision[]>(decisions);
+  const [localDecisions, setLocalDecisions] = useState<Decision[]>(Array.isArray(decisions) ? decisions : []);
   const [isPending, startTransition] = useTransition();
   const [isExecuting, setIsExecuting] = useState(false);
   const [isTriggering, setIsTriggering] = useState(false);

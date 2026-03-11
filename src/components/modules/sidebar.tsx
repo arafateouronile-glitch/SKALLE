@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { PLAN_LIMITS, getCreditAlert } from "@/lib/credits";
 import {
@@ -20,6 +21,7 @@ import {
   AlertCircle,
   Plug,
   Webhook,
+  Cpu,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -80,6 +82,13 @@ const sections: NavSection[] = [
   },
 ];
 
+type BudgetStatus = {
+  spentUsd: string;
+  limitUsd: string;
+  remainingCents: number;
+  limitCents: number;
+};
+
 export function Sidebar({ credits, plan }: SidebarProps) {
   const pathname = usePathname();
   const planKey = plan in PLAN_LIMITS ? (plan as keyof typeof PLAN_LIMITS) : "FREE";
@@ -88,6 +97,14 @@ export function Sidebar({ credits, plan }: SidebarProps) {
   const planLabel = PLAN_LABELS[plan] ?? plan;
   const alert = getCreditAlert(credits, maxCredits);
   const showAlert = alert.level !== "none";
+
+  const [budget, setBudget] = useState<BudgetStatus | null>(null);
+  useEffect(() => {
+    fetch("/api/agents/budget")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => data && setBudget(data))
+      .catch(() => null);
+  }, []);
 
   const isActive = (href: string) =>
     pathname === href ||
@@ -154,8 +171,35 @@ export function Sidebar({ credits, plan }: SidebarProps) {
             </div>
           ))}
 
-          {/* Footer: Alerte crédits + Crédits + Switch to CSO */}
+          {/* Footer: Budget IA + Alerte crédits + Crédits + Switch to CSO */}
           <div className="mt-auto pt-4 space-y-3">
+            {budget && (
+              <div className="rounded-xl bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-200/40 p-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Cpu className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                  <span className="text-xs font-medium text-gray-500 flex-1">Budget IA du jour</span>
+                  <span className={cn(
+                    "text-xs font-bold",
+                    budget.remainingCents === 0 ? "text-red-600" :
+                    budget.remainingCents < budget.limitCents * 0.2 ? "text-amber-600" :
+                    "text-violet-600"
+                  )}>
+                    ${budget.spentUsd} / ${budget.limitUsd}
+                  </span>
+                </div>
+                <div className="w-full bg-violet-100 rounded-full h-1.5">
+                  <div
+                    className={cn(
+                      "h-1.5 rounded-full transition-all",
+                      budget.remainingCents === 0 ? "bg-red-500" :
+                      budget.remainingCents < budget.limitCents * 0.2 ? "bg-amber-500" :
+                      "bg-gradient-to-r from-violet-500 to-purple-500"
+                    )}
+                    style={{ width: `${Math.min(100, Math.round(((budget.limitCents - budget.remainingCents) / budget.limitCents) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
             {showAlert && (
               <Link
                 href="/marketing-os/settings"

@@ -877,11 +877,16 @@ enum PostType {
 
 enum ProspectStatus {
   NEW
-  CONTACTED
-  REPLIED
-  CONVERTED
-  REJECTED
-  UNSUBSCRIBED
+  RESEARCHED          // Profil analysé, pas encore contacté
+  MESSAGES_GENERATED  // Messages générés par l'agent, en attente d'envoi manuel
+  CONTACTED           // Message envoyé
+  RESPONDED           // A répondu (remplace REPLIED pour les nouveaux prospects)
+  REPLIED             // Alias legacy — garder pour les données existantes
+  MEETING_BOOKED      // Rendez-vous planifié
+  CONVERTED           // Deal closé
+  LOST                // Perdu / sans suite
+  REJECTED            // Refus explicite (legacy)
+  UNSUBSCRIBED        // Désabonné (legacy)
 }
 
 enum SourceType {
@@ -892,6 +897,8 @@ enum SourceType {
   JOB_BOARD_SIGNAL
   LOCAL_MAPS
   NEW_COMPANY_REGISTRY
+  PARTNER_SOCIAL   // Influenceur (Instagram, TikTok, YouTube)
+  PARTNER_SEO      // Affilié blog/média (via Google SERP)
 }
 
 enum CMSPlatform {

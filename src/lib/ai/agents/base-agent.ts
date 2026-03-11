@@ -60,6 +60,27 @@ export const AgentState = Annotation.Root({
 
 export type AgentStateType = typeof AgentState.State;
 
+export interface AgentResult {
+  success: boolean;
+  agentName: string;
+  result?: string | unknown;
+  error?: string;
+  steps: string[];
+  intermediateResults?: Record<string, unknown>;
+  duration: number;
+  iterations: number;
+  /** true si l'agent a atteint la limite maxIterations sans converger */
+  limitReached?: boolean;
+  /** Erreurs collectées pendant l'exécution (outils, parsing…) */
+  toolErrors?: string[];
+}
+
+export type AgentStreamEvent =
+  | { type: "step"; content: string }
+  | { type: "token"; content: string }
+  | { type: "done"; result: AgentResult }
+  | { type: "error"; error: string; result: AgentResult };
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🧠 AGENT CONFIG - Configuration d'un agent
 // ═══════════════════════════════════════════════════════════════════════════
@@ -127,8 +148,20 @@ export function createAgent(config: AgentConfig) {
   // Bind tools to the model
   const modelWithTools = llm.bindTools(tools);
 
-  // Create tool node
-  const toolNode = new ToolNode(tools);
+  // Create tool node with error capture
+  const baseToolNode = new ToolNode(tools);
+  async function toolNode(state: AgentStateType) {
+    const result = await baseToolNode.invoke(state);
+    // Detect tool errors (ToolMessage content starting with "Error")
+    const errors: string[] = [];
+    for (const msg of result.messages ?? []) {
+      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+      if (content.startsWith("Error") || content.startsWith("error")) {
+        errors.push(content.slice(0, 200));
+      }
+    }
+    return errors.length ? { ...result, errors } : result;
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 📍 NODES - Les nœuds du graphe d'agent
@@ -232,6 +265,11 @@ export function createAgent(config: AgentConfig) {
         ? lastMessage.content 
         : String(lastMessage.content);
 
+      const limitReached = result.actionHistory.length >= maxIterations;
+      if (limitReached) {
+        console.warn(`[Agent:${name}] maxIterations (${maxIterations}) atteint — l'agent n'a pas convergé.`);
+      }
+
       return {
         success: true,
         agentName: name,
@@ -240,6 +278,8 @@ export function createAgent(config: AgentConfig) {
         intermediateResults: result.intermediateResults,
         duration: Date.now() - startTime,
         iterations: result.actionHistory.length,
+        limitReached,
+        toolErrors: result.errors?.length ? result.errors : undefined,
       };
     } catch (error) {
       return {
@@ -254,6 +294,82 @@ export function createAgent(config: AgentConfig) {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // 📡 STREAM AGENT - Streaming token par token (pour l'UI temps réel)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Exécute l'agent en mode streaming et yield des événements SSE-ready.
+   * Usage: for await (const event of agent.stream(input)) { ... }
+   *
+   * Types d'événements:
+   * - { type: "step", content: string }  → action en cours (tool call ou réponse partielle)
+   * - { type: "token", content: string } → token de texte final
+   * - { type: "done", result: AgentResult } → résultat complet
+   * - { type: "error", error: string }   → erreur fatale
+   */
+  async function* stream(
+    input: string,
+    context?: Record<string, unknown>
+  ): AsyncGenerator<AgentStreamEvent> {
+    const startTime = Date.now();
+
+    try {
+      const contextMessage = context && Object.keys(context).length > 0
+        ? `\n\n## Contexte workspace\n${formatContext(context)}`
+        : "";
+
+      const initialState = {
+        messages: [new HumanMessage(input + contextMessage)],
+        currentStep: "start",
+        intermediateResults: context || {},
+        actionHistory: [`🚀 Agent "${name}" démarré`],
+        errors: [],
+        finalResult: null,
+      };
+
+      // Streaming via LangGraph streamEvents
+      const eventStream = graph.streamEvents(initialState, { version: "v2" });
+
+      for await (const event of eventStream) {
+        // Tool calls → step event
+        if (event.event === "on_tool_start") {
+          yield { type: "step", content: `🔧 Outil: ${event.name}` };
+        }
+        // Tokens LLM → token event
+        if (event.event === "on_chat_model_stream" && event.data?.chunk?.content) {
+          const chunk = event.data.chunk.content;
+          if (typeof chunk === "string" && chunk) {
+            yield { type: "token", content: chunk };
+          } else if (Array.isArray(chunk)) {
+            for (const block of chunk) {
+              if (block?.type === "text" && block.text) {
+                yield { type: "token", content: block.text };
+              }
+            }
+          }
+        }
+      }
+
+      // Récupérer le résultat final via run()
+      const result = await run(input, context);
+      yield { type: "done", result };
+    } catch (error) {
+      yield {
+        type: "error",
+        error: String(error),
+        result: {
+          success: false,
+          agentName: name,
+          error: String(error),
+          steps: [`❌ Erreur: ${error}`],
+          duration: Date.now() - startTime,
+          iterations: 0,
+        },
+      };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // 📤 RETURN AGENT INTERFACE
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -261,6 +377,7 @@ export function createAgent(config: AgentConfig) {
     name,
     description: config.description,
     run,
+    stream,
     graph,
   };
 }
@@ -269,16 +386,6 @@ export function createAgent(config: AgentConfig) {
 // 📊 TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface AgentResult {
-  success: boolean;
-  agentName: string;
-  result?: string | unknown;
-  error?: string;
-  steps: string[];
-  intermediateResults?: Record<string, unknown>;
-  duration: number;
-  iterations: number;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔗 AGENT CHAIN - Chaîner plusieurs agents

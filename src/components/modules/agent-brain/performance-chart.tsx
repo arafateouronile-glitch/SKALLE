@@ -37,13 +37,14 @@ interface PerformanceChartProps {
   rejectedDecisions: number;
 }
 
-function buildChartData(postsByDay: Record<string, DayData>) {
+function buildChartData(postsByDay: Record<string, DayData> | undefined) {
+  const byDay = postsByDay && typeof postsByDay === "object" && !Array.isArray(postsByDay) ? postsByDay : {};
   const today = new Date();
   const data = [];
   for (let i = 29; i >= 0; i--) {
     const date = subDays(today, i);
     const key = date.toISOString().split("T")[0];
-    const day = postsByDay[key] ?? { total: 0, published: 0 };
+    const day = byDay[key] ?? { total: 0, published: 0 };
     data.push({
       date: key,
       label: format(date, "d MMM", { locale: fr }),
@@ -71,7 +72,7 @@ const CustomTooltip = ({
   payload?: Array<{ name: string; value: number; color: string }>;
   label?: string;
 }) => {
-  if (active && payload && payload.length) {
+  if (active && Array.isArray(payload) && payload.length) {
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
         <p className="font-medium text-gray-700 mb-1">{label}</p>

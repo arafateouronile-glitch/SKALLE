@@ -100,6 +100,10 @@ export const CREDIT_COSTS = {
   api_lead: 1,
   // API publique Inbound — génération article SEO (async, headless)
   api_seo_generate: 20,
+
+  // Partnership Engine (Channel Sales)
+  partner_social_search: 8,   // Recherche influenceurs + génération DM IA par profil
+  partner_seo_search: 6,      // Recherche blogs affiliés via SERP + génération email IA
 } as const;
 
 export type OperationType = keyof typeof CREDIT_COSTS;

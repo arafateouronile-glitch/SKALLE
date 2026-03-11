@@ -59,11 +59,13 @@ export default function ContentFactoryPage() {
         completed: result.data.completed,
         failed: result.data.failed,
         conceptsData: result.data.conceptsData as ContentConcept[] | null,
-        posts: result.data.posts.map((p) => ({
-          ...p,
-          scheduledAt: p.scheduledAt?.toISOString() ?? null,
-          createdAt: p.createdAt.toISOString(),
-        })),
+        posts: Array.isArray(result.data.posts)
+          ? result.data.posts.map((p) => ({
+              ...p,
+              scheduledAt: p.scheduledAt?.toISOString() ?? null,
+              createdAt: p.createdAt.toISOString(),
+            }))
+          : [],
       });
     }
   }, []);

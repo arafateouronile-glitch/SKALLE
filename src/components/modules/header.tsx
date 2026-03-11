@@ -32,11 +32,11 @@ interface HeaderProps {
 
 export function Header({ user, workspace = "cmo", credits = 0, plan = "FREE" }: HeaderProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const initials = user.name
-    ?.split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase() || user.email?.[0]?.toUpperCase() || "U";
+  const nameParts = (user.name ?? "").split(" ").filter(Boolean);
+  const initials =
+    (nameParts.length > 0 ? nameParts.map((n) => n[0]).join("").toUpperCase() : "") ||
+    user.email?.[0]?.toUpperCase() ||
+    "U";
 
   const isCso = workspace === "cso";
 

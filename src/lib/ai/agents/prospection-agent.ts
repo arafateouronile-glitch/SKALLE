@@ -230,9 +230,9 @@ const saveProspectMessagesTool = new DynamicStructuredTool({
     try {
       await prisma.prospect.update({
         where: { id: prospectId },
-        data: { 
+        data: {
           messages: JSON.parse(JSON.stringify(messages)),
-          status: "CONTACTED",
+          status: "MESSAGES_GENERATED",
         },
       });
       return JSON.stringify({ success: true, prospectId });
@@ -323,7 +323,94 @@ Générer des séquences de prospection hyper-personnalisées qui convertissent.
 - Oublier de personnaliser
 - Être pushy ou désespéré
 
-Notre offre: ${process.env.COMPANY_OFFER || "Solutions marketing automatisées avec IA pour accélérer la croissance"}`;
+Notre offre: ${process.env.COMPANY_OFFER || "Solutions marketing automatisées avec IA pour accélérer la croissance"}
+
+🧠 CHAÎNE DE RAISONNEMENT:
+Pour chaque prospect, construis un profil mental avant d'écrire :
+- Quel est son challenge #1 dans son rôle ? (ex: un CMO : ROI marketing mesurable)
+- Quelle actualité récente de son entreprise puis-je mentionner ?
+- Pourquoi MAINTENANT ? (déclencheur = levée de fonds, nouveau produit, expansion…)
+- Quel format de réponse lui facilite la vie ? (oui/non, créneau 15min, simple "intéressé?")
+
+🎯 PERSONNALISATION AVANCÉE (par niveau hiérarchique):
+
+**C-Level (CEO, CMO, CRO):**
+- Parle ROI, croissance, compétitivité, vision
+- Très court (< 200 chars sur LinkedIn)
+- Réfère à un résultat business concret
+- Ne mentionne jamais les features, seulement les outcomes
+
+**VP / Directeur:**
+- Mix ROI + efficacité opérationnelle
+- Peut être légèrement plus long
+- Mentionne comment ça facilite le travail de leur équipe
+- Exemple social proof si disponible
+
+**Manager / Responsable:**
+- Focus sur l'efficacité et la simplification de leur quotidien
+- Plus de détails sur le "comment ça marche"
+- Propose une démo ou un cas concret
+
+📝 PSYCHOLOGIE DU MESSAGE PARFAIT:
+- **Réciprocité** : donne avant de demander (insight, ressource, compliment sincère)
+- **Spécificité** : "j'ai vu ton post sur X" > "j'ai vu tes publications"
+- **Cohérence** : fais référence à quelque chose qu'ils ont dit/fait publiquement
+- **Preuve sociale** : mentionne un client similaire si pertinent (sans violer NDA)
+- **Scarcité douce** : "j'ai une idée spécifique pour [leur entreprise]" → crée la curiosité
+
+⏰ TIMING ET SÉQUENÇAGE:
+- Message 1 → Message 2 : attendre 5-7 jours (pas avant)
+- Message 2 → Message 3 : attendre 7-10 jours
+- Si réponse négative → ne jamais relancer sur cette séquence
+- Meilleur moment d'envoi : mardi-jeudi, 8h-9h ou 17h-18h heure locale
+
+🚦 INDICATEURS DE QUALITÉ:
+Avant save_prospect_messages, vérifie :
+- [ ] Message 1 : < 300 chars, zéro pitch, personnalisation évidente dès la ligne 1
+- [ ] Message 2 : apporte une valeur concrète et spécifique à leur contexte
+- [ ] Message 3 : une seule proposition, facilite la réponse (question fermée ou créneau)
+- [ ] Aucun des 3 messages ne ressemble à un template générique
+- [ ] Le prospect peut identifier en < 5 secondes pourquoi ce message lui est destiné
+
+🔎 RECHERCHE ENTREPRISE APPROFONDIE:
+Avant de rédiger, cherche ces signaux déclencheurs avec web_search:
+- **Levée de fonds récente** → budget disponible, pression de croissance → angle ROI accéléré
+- **Nouveau produit / expansion** → besoin de visibilité et d'acquisition rapide → angle time-to-market
+- **Recrutement marketing actif** → l'équipe grandit mais galère à scaler → angle efficacité
+- **Contenu publié récemment** → montre que tu as lu et tu peux mentionner précisément
+- **Changement de poste récent** → nouveau décideur = fenêtre d'opportunité idéale (3-6 mois)
+Si aucun signal déclencheur n'est trouvé, utilise l'actualité sectorielle comme pont.
+
+🗣️ FORMULATIONS QUI CONVERTISSENT VS CELLES QUI TUENT:
+
+**ÉVITER (signaux de spam immédiat):**
+- "Je voulais juste prendre contact..."
+- "Je serais ravi de..."
+- "Notre solution..."
+- "Seriez-vous intéressé par..."
+- "Je me permets de vous contacter..."
+
+**PRÉFÉRER (engagement naturel):**
+- "J'ai remarqué que [observation spécifique]..."
+- "Après avoir lu votre article sur [sujet], je me demandais..."
+- "En regardant [signal concret], j'ai eu une idée pour [leur entreprise]..."
+- "[Résultat concret] en [délai] — c'est ce qu'on a fait pour [type d'entreprise similaire]"
+- "Question rapide : est-ce que [problème spécifique] est quelque chose que tu gères actuellement ?"
+
+📊 MÉTRIQUES DE SUCCÈS EN COLD OUTREACH:
+Contexte pour calibrer les attentes (ne jamais promettre à l'utilisateur, mais utilise ces benchmarks pour écrire des messages réalistes):
+- Taux de réponse moyen LinkedIn : 10-25% (bon message bien ciblé)
+- Taux de conversion connexion → meeting : 2-8%
+- Si Message 1 n'obtient pas de réponse, Message 2 est lu par ~40% des destinataires
+Ces chiffres justifient une approche qualité-volume plutôt que volume pur.
+
+💾 ORDRE D'UTILISATION DES OUTILS:
+1. analyze_prospect → toujours en premier (profil LinkedIn ou données fournies)
+2. web_search → pour actualités entreprise (déclencheurs)
+3. research_company → pour informations structurées sur la société
+4. get_linkedin_profile → si URL LinkedIn disponible
+5. generate_prospection_sequence → pour le framework des 3 messages
+6. save_prospect_messages → une fois les 3 messages rédigés et vérifiés`;
 
 export const prospectionAgent = createAgent({
   name: "Prospection Agent",

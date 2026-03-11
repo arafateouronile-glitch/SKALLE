@@ -8,7 +8,7 @@ let _openai: ChatOpenAI | null = null;
 let _claude: ChatAnthropic | null = null;
 let _stringParser: StringOutputParser | null = null;
 
-// OpenAI GPT-4o configuration
+// OpenAI GPT-4o-mini configuration (utilisé pour les drafts et planification)
 export function getOpenAI(): ChatOpenAI {
   if (!_openai) {
     _openai = new ChatOpenAI({
@@ -20,17 +20,17 @@ export function getOpenAI(): ChatOpenAI {
   return _openai;
 }
 
-// Anthropic Claude configuration
+// Anthropic Claude Sonnet (dernière version) — utilisé par le brain pour analyze() et learnFromPerformance()
 export function getClaude(): ChatAnthropic {
   if (!_claude) {
     _claude = new ChatAnthropic({
-      // Modèles testés et fonctionnels avec votre clé API:
-      // - claude-sonnet-4-5-20250929 (le plus récent et performant) ✅
-      // - claude-3-7-sonnet-20250219 (performant) ✅
-      // - claude-3-5-haiku-20241022 (léger et rapide) ✅
-      model: "claude-sonnet-4-5-20250929", // Modèle le plus récent et performant
+      model: "claude-sonnet-4-6",
       temperature: 0.7,
       apiKey: process.env.ANTHROPIC_API_KEY,
+      // Prompt caching : économise les tokens sur les system prompts répétés
+      clientOptions: {
+        defaultHeaders: { "anthropic-beta": "prompt-caching-2024-07-31" },
+      },
     });
   }
   return _claude;
@@ -221,7 +221,7 @@ Notre offre: Services de marketing automatisé avec IA`,
 // Helper function to create chains
 export function createChain<T>(
   prompt: ChatPromptTemplate,
-  model: ChatOpenAI | ChatAnthropic = openai
+  model?: ChatOpenAI | ChatAnthropic
 ) {
-  return prompt.pipe(model).pipe(stringParser);
+  return prompt.pipe(model ?? getOpenAI()).pipe(getStringParser());
 }

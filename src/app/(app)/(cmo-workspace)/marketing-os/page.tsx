@@ -259,7 +259,7 @@ export default async function DashboardPage() {
         <div className="xl:col-span-3" id="brief">
           <MorningBrief
             workspaceId={workspace.id}
-            decisions={todayDecisions.map((d) => ({
+            decisions={(Array.isArray(todayDecisions) ? todayDecisions : []).map((d) => ({
               id: d.id,
               reasoning: d.reasoning,
               actionType: d.actionType,
