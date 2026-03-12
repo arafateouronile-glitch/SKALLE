@@ -16,12 +16,14 @@ import {
   Sparkles,
   Target,
   Factory,
+  CalendarDays,
   ArrowRight,
   AlertTriangle,
   AlertCircle,
   Plug,
   Webhook,
   Cpu,
+  Code2,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -68,6 +70,7 @@ const sections: NavSection[] = [
     items: [
       { name: "SEO Factory", href: "/marketing-os/seo-factory", icon: FileText },
       { name: "Content Factory", href: "/marketing-os/social/factory", icon: Factory },
+      { name: "Calendrier", href: "/marketing-os/content", icon: CalendarDays },
       { name: "Images IA", href: "/marketing-os/images", icon: Image },
     ],
   },
@@ -78,6 +81,7 @@ const sections: NavSection[] = [
       { name: "Paramètres", href: "/marketing-os/settings", icon: Settings },
       { name: "Intégrations API", href: "/marketing-os/settings/integrations", icon: Plug },
       { name: "Webhooks", href: "/marketing-os/settings/webhooks", icon: Webhook },
+      { name: "API Docs", href: "/marketing-os/developer", icon: Code2 },
     ],
   },
 ];

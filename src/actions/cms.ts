@@ -3,6 +3,17 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { WordPressClient, publishToWordPress } from "@/lib/cms/wordpress";
+import { getWordPressConfig, getExternalIntegrationKey } from "@/lib/services/integrations/external";
+import {
+  publishToRestApi,
+  publishToStrapi,
+  publishToSanity,
+  publishToContentful,
+  type StrapiConfig,
+  type SanityConfig,
+  type ContentfulConfig,
+  type RestApiConfig,
+} from "@/lib/services/integrations/headless-cms";
 import { z } from "zod";
 
 const cmsConfigSchema = z.object({
@@ -137,46 +148,79 @@ export async function publishPostToCMS(postId: string) {
       return { success: false, error: "Article non trouvé" };
     }
 
-    if (!post.workspace.cmsConfig) {
-      return { success: false, error: "CMS non configuré" };
+    // Résoudre la config WordPress : ExternalIntegration (nouveau) en priorité, CMSConfig (ancien) en fallback
+    let wpConfig: { apiUrl: string; username: string; apiKey: string } | null = null;
+
+    const extWp = await getWordPressConfig(post.workspaceId);
+    if (extWp) {
+      wpConfig = {
+        apiUrl: extWp.siteUrl,
+        username: extWp.username,
+        apiKey: extWp.applicationPassword,
+      };
+    } else if (post.workspace.cmsConfig?.platform === "WORDPRESS") {
+      const cms = post.workspace.cmsConfig;
+      wpConfig = { apiUrl: cms.apiUrl, username: cms.username || "admin", apiKey: cms.apiKey };
     }
 
-    const cmsConfig = post.workspace.cmsConfig;
+    if (!wpConfig) {
+      return {
+        success: false,
+        error: "WordPress non configuré. Connectez votre site dans Paramètres → Intégrations.",
+      };
+    }
 
-    if (cmsConfig.platform === "WORDPRESS") {
-      const result = await publishToWordPress(
-        {
-          apiUrl: cmsConfig.apiUrl,
-          username: cmsConfig.username || "admin",
-          apiKey: cmsConfig.apiKey,
-        },
-        {
-          title: post.title || "Sans titre",
-          content: post.content,
-          excerpt: post.excerpt || undefined,
-          imageUrl: post.imageUrl || undefined,
-          status: "draft",
-        }
-      );
+    const articlePayload = {
+      title: post.title || "Sans titre",
+      content: post.content,
+      excerpt: post.excerpt ?? undefined,
+      imageUrl: post.imageUrl ?? undefined,
+      metaTitle: post.metaTitle ?? undefined,
+      metaDescription: post.metaDescription ?? undefined,
+      keywords: post.keywords.length ? post.keywords : undefined,
+    };
 
-      if (result.success) {
-        // Update post with CMS post ID
-        await prisma.post.update({
-          where: { id: postId },
-          data: {
-            cmsPostId: result.postId?.toString(),
-            publishedAt: new Date(),
-            status: "PUBLISHED",
-          },
-        });
+    // WordPress
+    if (wpConfig) {
+      const result = await publishToWordPress(wpConfig, { ...articlePayload, status: "draft" });
+      if (!result.success) return { success: false, error: result.error };
+      await prisma.post.update({
+        where: { id: postId },
+        data: { cmsPostId: result.postId?.toString(), publishedAt: new Date(), status: "PUBLISHED" },
+      });
+      return { success: true, link: result.link };
+    }
 
-        return { success: true, link: result.link };
+    // Headless CMS : Strapi / Sanity / Contentful / REST_API
+    const headlessProviders = ["STRAPI", "SANITY", "CONTENTFUL", "REST_API"] as const;
+    for (const provider of headlessProviders) {
+      const raw = await getExternalIntegrationKey(post.workspaceId, provider);
+      if (!raw) continue;
+
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw); } catch { continue; }
+
+      let result: { success: boolean; postId?: string; url?: string; error?: string };
+
+      if (provider === "STRAPI") {
+        result = await publishToStrapi(parsed as StrapiConfig, articlePayload);
+      } else if (provider === "SANITY") {
+        result = await publishToSanity(parsed as SanityConfig, articlePayload);
+      } else if (provider === "CONTENTFUL") {
+        result = await publishToContentful(parsed as ContentfulConfig, articlePayload);
       } else {
-        return { success: false, error: result.error };
+        result = await publishToRestApi(parsed as RestApiConfig, articlePayload);
       }
+
+      if (!result.success) return { success: false, error: result.error };
+      await prisma.post.update({
+        where: { id: postId },
+        data: { cmsPostId: result.url ?? result.postId, publishedAt: new Date(), status: "PUBLISHED" },
+      });
+      return { success: true, link: result.url };
     }
 
-    return { success: false, error: "Plateforme non supportée" };
+    return { success: false, error: "Aucun CMS configuré. Connectez WordPress, Strapi, Sanity, Contentful ou une API REST dans les intégrations." };
   } catch (error) {
     console.error("Publish to CMS error:", error);
     return { success: false, error: "Une erreur est survenue" };

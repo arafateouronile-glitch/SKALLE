@@ -35,6 +35,7 @@ import {
 import { scanCompetitorAlerts } from "./functions/competitor-alerts";
 import { syncGscDataDaily } from "./functions/gsc-sync";
 import { warmupDailyScheduler } from "./functions/warmup-scheduler";
+import { scheduledPostPublisher } from "./functions/scheduled-publisher";
 
 // Export all Inngest functions
 export const functions = [
@@ -72,4 +73,6 @@ export const functions = [
   syncGscDataDaily,
   // Email Deliverability — Warm-up quotidien
   warmupDailyScheduler,
+  // Social Calendar — Publication automatique des posts planifiés
+  scheduledPostPublisher,
 ];

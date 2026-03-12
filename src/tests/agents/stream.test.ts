@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,18 @@ function parseSSEEvents(raw: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line.replace(/^data: /, "")));
 }
 
+/** Crée un AgentResult minimal valide. */
+function makeAgentResult(output = "ok"): import("@/lib/ai/agents/base-agent").AgentResult {
+  return {
+    success: true,
+    agentName: "seo",
+    result: output,
+    steps: [],
+    duration: 0,
+    iterations: 1,
+  };
+}
+
 /** Crée un Request POST avec le body fourni. */
 function makeRequest(body: Record<string, unknown> = { input: "test input" }): Request {
   return new Request("http://localhost/api/agents/seo/stream", {
@@ -74,7 +86,7 @@ describe("POST /api/agents/[agentId]/stream", () => {
   // ── Auth ────────────────────────────────────────────────────────────────────
 
   it("retourne 401 si non authentifié", async () => {
-    vi.mocked(auth).mockResolvedValue(null);
+    vi.mocked(auth).mockResolvedValue(null as never);
 
     const res = await POST(makeRequest(), { params: Promise.resolve({ agentId: "seo" }) });
     expect(res.status).toBe(401);
@@ -131,9 +143,9 @@ describe("POST /api/agents/[agentId]/stream", () => {
 
   it("retourne les headers SSE corrects", async () => {
     vi.mocked(auth).mockResolvedValue({ user: { id: "user-1" } } as never);
-    vi.mocked(useCredits).mockResolvedValue(undefined);
+    vi.mocked(useCredits).mockResolvedValue({ success: true, remainingCredits: 99 });
     vi.mocked(agentRegistry.seo.agent.stream).mockImplementation(async function* () {
-      yield { type: "done", result: { output: "ok" } };
+      yield { type: "done" as const, result: makeAgentResult("ok") };
     });
 
     const res = await POST(makeRequest(), { params: Promise.resolve({ agentId: "seo" }) });
@@ -145,11 +157,11 @@ describe("POST /api/agents/[agentId]/stream", () => {
 
   it("stream un événement 'done' quand l'agent termine normalement", async () => {
     vi.mocked(auth).mockResolvedValue({ user: { id: "user-1" } } as never);
-    vi.mocked(useCredits).mockResolvedValue(undefined);
+    vi.mocked(useCredits).mockResolvedValue({ success: true, remainingCredits: 99 });
     vi.mocked(agentRegistry.seo.agent.stream).mockImplementation(async function* () {
-      yield { type: "step", content: "Recherche en cours..." };
-      yield { type: "token", content: "Voici" };
-      yield { type: "done", result: { output: "Article généré" } };
+      yield { type: "step" as const, content: "Recherche en cours..." };
+      yield { type: "token" as const, content: "Voici" };
+      yield { type: "done" as const, result: makeAgentResult("Article généré") };
     });
 
     const res = await POST(makeRequest(), { params: Promise.resolve({ agentId: "seo" }) });
@@ -164,11 +176,11 @@ describe("POST /api/agents/[agentId]/stream", () => {
 
   it("stream un événement 'error' si l'agent lève une exception", async () => {
     vi.mocked(auth).mockResolvedValue({ user: { id: "user-1" } } as never);
-    vi.mocked(useCredits).mockResolvedValue(undefined);
+    vi.mocked(useCredits).mockResolvedValue({ success: true, remainingCredits: 99 });
     vi.mocked(agentRegistry.seo.agent.stream).mockImplementation(async function* () {
       throw new Error("LLM unavailable");
       // eslint-disable-next-line no-unreachable
-      yield { type: "done", result: {} };
+      yield { type: "done" as const, result: makeAgentResult() };
     });
 
     const res = await POST(makeRequest(), { params: Promise.resolve({ agentId: "seo" }) });
@@ -182,10 +194,10 @@ describe("POST /api/agents/[agentId]/stream", () => {
 
   it("s'arrête après l'événement 'done' même si le générateur continue", async () => {
     vi.mocked(auth).mockResolvedValue({ user: { id: "user-1" } } as never);
-    vi.mocked(useCredits).mockResolvedValue(undefined);
+    vi.mocked(useCredits).mockResolvedValue({ success: true, remainingCredits: 99 });
     vi.mocked(agentRegistry.seo.agent.stream).mockImplementation(async function* () {
-      yield { type: "done", result: { output: "fini" } };
-      yield { type: "token", content: "ne doit pas apparaître" }; // jamais envoyé
+      yield { type: "done" as const, result: makeAgentResult("fini") };
+      yield { type: "token" as const, content: "ne doit pas apparaître" }; // jamais envoyé
     });
 
     const res = await POST(makeRequest(), { params: Promise.resolve({ agentId: "seo" }) });
@@ -198,9 +210,9 @@ describe("POST /api/agents/[agentId]/stream", () => {
 
   it("appelle useCredits avec l'opération correcte pour chaque agent", async () => {
     vi.mocked(auth).mockResolvedValue({ user: { id: "user-1" } } as never);
-    vi.mocked(useCredits).mockResolvedValue(undefined);
+    vi.mocked(useCredits).mockResolvedValue({ success: true, remainingCredits: 99 });
     vi.mocked(agentRegistry.seo.agent.stream).mockImplementation(async function* () {
-      yield { type: "done", result: {} };
+      yield { type: "done" as const, result: makeAgentResult() };
     });
 
     await POST(makeRequest(), { params: Promise.resolve({ agentId: "seo" }) });

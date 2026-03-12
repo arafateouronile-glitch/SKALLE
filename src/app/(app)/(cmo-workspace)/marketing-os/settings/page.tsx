@@ -48,10 +48,16 @@ import {
   Globe,
   ShoppingBag,
   BarChart3,
+  Key,
+  Copy,
+  Eye,
+  EyeOff,
+  AlertTriangle,
 } from "lucide-react";
 import { saveCMSConfig, deleteCMSConfig } from "@/actions/cms";
 import { getCurrentUserSettings } from "@/actions/credits";
 import { getGSCAuthUrlAction, getGSCStatusAction, disconnectGSCAction } from "@/actions/integrations";
+import { listApiKeysAction, createApiKeyAction, revokeApiKeyAction } from "@/actions/api-keys";
 import { PricingTable, PLANS } from "@/components/pricing/pricing-table";
 import { toast } from "sonner";
 
@@ -69,6 +75,14 @@ interface CMSConfig {
   apiUrl: string;
   username?: string;
   connected: boolean;
+}
+
+interface ApiKeyItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt: Date | null;
+  createdAt: Date;
 }
 
 const integrationsList = [
@@ -197,6 +211,57 @@ export default function SettingsPage() {
   }>({ isConnected: false });
   const [gscLoading, setGscLoading] = useState(false);
 
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+  const [apiKeysPlan, setApiKeysPlan] = useState<string>("FREE");
+  const [apiKeysLoaded, setApiKeysLoaded] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [isCreatingKey, setIsCreatingKey] = useState(false);
+  const [isCreateKeyOpen, setIsCreateKeyOpen] = useState(false);
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [showCreatedKey, setShowCreatedKey] = useState(false);
+  const [revokingKeyId, setRevokingKeyId] = useState<string | null>(null);
+
+  const loadApiKeys = async () => {
+    const res = await listApiKeysAction();
+    if (res.success && res.keys) {
+      setApiKeys(res.keys);
+      setApiKeysPlan(res.plan ?? "FREE");
+    }
+    setApiKeysLoaded(true);
+  };
+
+  const handleCreateKey = async () => {
+    if (!newKeyName.trim()) {
+      toast.error("Nom requis");
+      return;
+    }
+    setIsCreatingKey(true);
+    const res = await createApiKeyAction(newKeyName);
+    setIsCreatingKey(false);
+    if (res.success && res.key) {
+      setCreatedKey(res.key);
+      setShowCreatedKey(false);
+      setNewKeyName("");
+      setIsCreateKeyOpen(false);
+      await loadApiKeys();
+    } else {
+      toast.error(res.error ?? "Erreur lors de la création");
+    }
+  };
+
+  const handleRevokeKey = async (keyId: string) => {
+    setRevokingKeyId(keyId);
+    const res = await revokeApiKeyAction(keyId);
+    setRevokingKeyId(null);
+    if (res.success) {
+      setApiKeys((prev) => prev.filter((k) => k.id !== keyId));
+      toast.success("Clé révoquée");
+    } else {
+      toast.error(res.error ?? "Erreur");
+    }
+  };
+
   // Integrations state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCmsLoading, setIsCmsLoading] = useState(false);
@@ -289,6 +354,9 @@ export default function SettingsPage() {
         <TabsList className="bg-white/60 backdrop-blur-sm border border-gray-200/60">
           <TabsTrigger value="compte">Compte</TabsTrigger>
           <TabsTrigger value="integrations">Intégrations</TabsTrigger>
+          <TabsTrigger value="api" onClick={() => { if (!apiKeysLoaded) loadApiKeys(); }}>
+            Clés API
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Compte ── */}
@@ -883,6 +951,252 @@ export default function SettingsPage() {
                       <span className="text-gray-900">{api.name}</span>
                     </div>
                     <code className="text-xs text-gray-400">{api.envVar}</code>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        {/* ── Clés API ── */}
+        <TabsContent value="api" className="mt-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Key className="h-6 w-6 text-emerald-600" />
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Clés API</h2>
+                <p className="text-sm text-gray-500">
+                  Intégrez Skalle dans vos outils (Zapier, Make, Airtable…)
+                </p>
+              </div>
+            </div>
+
+            {["AGENCY", "SCALE"].includes(apiKeysPlan) && (
+              <Dialog open={isCreateKeyOpen} onOpenChange={setIsCreateKeyOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-emerald-600 hover:bg-emerald-700">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nouvelle clé
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-white border-gray-200">
+                  <DialogHeader>
+                    <DialogTitle className="text-gray-900">Créer une clé API</DialogTitle>
+                    <DialogDescription className="text-gray-500">
+                      Donnez un nom à cette clé pour vous en souvenir (ex&nbsp;: &quot;Zapier CRM&quot;).
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div className="space-y-2">
+                      <Label className="text-gray-700">Nom de la clé</Label>
+                      <Input
+                        placeholder="Zapier, Make, Airtable…"
+                        value={newKeyName}
+                        onChange={(e) => setNewKeyName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleCreateKey()}
+                        className="border-gray-200 text-gray-900"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCreateKeyOpen(false)}
+                      className="border-gray-200 text-gray-700"
+                    >
+                      Annuler
+                    </Button>
+                    <Button
+                      onClick={handleCreateKey}
+                      disabled={isCreatingKey}
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      {isCreatingKey ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Key className="h-4 w-4 mr-2" />
+                      )}
+                      Créer
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+
+          {/* Plan restriction banner */}
+          {!["AGENCY", "SCALE"].includes(apiKeysPlan) && apiKeysLoaded && (
+            <Card className="bg-amber-50 border-amber-200">
+              <CardContent className="p-4 flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">
+                    Accès API réservé aux plans AGENCY et SCALE
+                  </p>
+                  <p className="text-xs text-amber-600 mt-1">
+                    Passez à un plan supérieur pour créer des clés API et connecter vos outils externes.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Clé affichée après création */}
+          {createdKey && (
+            <Card className="bg-emerald-50 border-emerald-300">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-emerald-800 text-sm flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Clé créée — copiez-la maintenant
+                </CardTitle>
+                <CardDescription className="text-emerald-700 text-xs">
+                  Cette clé ne sera plus affichée. Stockez-la dans un endroit sûr.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs bg-white/80 border border-emerald-200 rounded px-3 py-2 font-mono text-emerald-900 overflow-auto">
+                    {showCreatedKey ? createdKey : "sk_live_" + "•".repeat(48)}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowCreatedKey((v) => !v)}
+                    className="text-emerald-700 hover:bg-emerald-100"
+                  >
+                    {showCreatedKey ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdKey);
+                      toast.success("Clé copiée !");
+                    }}
+                    className="text-emerald-700 hover:bg-emerald-100"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCreatedKey(null)}
+                  className="text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                >
+                  J&apos;ai copié ma clé
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Liste des clés */}
+          <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
+            <CardHeader>
+              <CardTitle className="text-gray-900 text-base">
+                Clés actives ({apiKeys.length}/10)
+              </CardTitle>
+              <CardDescription className="text-gray-500 text-xs">
+                Auth : <code className="bg-gray-100 px-1 rounded">Authorization: Bearer sk_live_…</code>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!apiKeysLoaded ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                </div>
+              ) : apiKeys.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">
+                  Aucune clé API créée
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {apiKeys.map((key) => (
+                    <div
+                      key={key.id}
+                      className="flex items-center justify-between p-3 rounded-lg bg-white/70 border border-gray-200"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Key className="h-4 w-4 text-emerald-600 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {key.name}
+                          </p>
+                          <p className="text-xs text-gray-400 font-mono">
+                            {key.keyPrefix}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0 ml-4">
+                        <div className="text-right hidden sm:block">
+                          <p className="text-xs text-gray-400">
+                            {key.lastUsedAt
+                              ? `Utilisée ${new Date(key.lastUsedAt).toLocaleDateString("fr-FR")}`
+                              : "Jamais utilisée"}
+                          </p>
+                          <p className="text-xs text-gray-300">
+                            Créée {new Date(key.createdAt).toLocaleDateString("fr-FR")}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRevokeKey(key.id)}
+                          disabled={revokingKeyId === key.id}
+                          className="border-red-200 text-red-500 hover:bg-red-50"
+                        >
+                          {revokingKeyId === key.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Endpoints disponibles */}
+          <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
+            <CardHeader>
+              <CardTitle className="text-gray-900 text-base">Endpoints disponibles</CardTitle>
+              <CardDescription className="text-gray-500 text-xs">
+                Base URL : <code className="bg-gray-100 px-1 rounded">https://votredomaine.com/api/v1</code>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[
+                  {
+                    method: "POST",
+                    path: "/api/v1/leads",
+                    description: "Injecter un prospect dans le CRM",
+                    color: "bg-blue-100 text-blue-700",
+                  },
+                  {
+                    method: "POST",
+                    path: "/api/v1/seo/generate",
+                    description: "Déclencher la génération d'un article SEO",
+                    color: "bg-emerald-100 text-emerald-700",
+                  },
+                ].map((ep) => (
+                  <div
+                    key={ep.path}
+                    className="flex items-center gap-3 p-3 rounded-lg bg-white/70 border border-gray-200"
+                  >
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${ep.color}`}>
+                      {ep.method}
+                    </span>
+                    <code className="text-xs text-gray-700 font-mono">{ep.path}</code>
+                    <span className="text-xs text-gray-400 hidden sm:inline">
+                      — {ep.description}
+                    </span>
                   </div>
                 ))}
               </div>

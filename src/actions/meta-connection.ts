@@ -123,7 +123,7 @@ export async function connectPageAction(
         instagramUsername: igAccount?.username,
         userAccessToken: userToken,
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // ~60 jours
-        scopes: "pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_messaging",
+        scopes: "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_manage_messages,instagram_manage_comments,instagram_content_publishing,pages_messaging",
       },
     });
 
