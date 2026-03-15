@@ -198,8 +198,8 @@ export default function CsoLandingPage() {
               <span className="font-bold text-white">Skalle CSO</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-slate-400">
-              <a href="#" className="hover:text-white">Confidentialité</a>
-              <a href="#" className="hover:text-white">CGU</a>
+              <Link href="/privacy" className="hover:text-white">Confidentialité</Link>
+              <Link href="/cgu" className="hover:text-white">CGU</Link>
               <a href="#" className="hover:text-white">Contact</a>
               <Link href="/cmo" className="hover:text-emerald-400">Skalle CMO</Link>
             </div>

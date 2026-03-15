@@ -271,8 +271,8 @@ export default async function SkalleEliteLandingPage() {
           <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-400">
             <Link href="/cmo" className="hover:text-emerald-400 transition-colors">CMO</Link>
             <Link href="/cso" className="hover:text-indigo-400 transition-colors">CSO</Link>
-            <a href="#" className="hover:text-white transition-colors">Confidentialité</a>
-            <a href="#" className="hover:text-white transition-colors">CGU</a>
+            <Link href="/privacy" className="hover:text-white transition-colors">Confidentialité</Link>
+            <Link href="/cgu" className="hover:text-white transition-colors">CGU</Link>
           </div>
           <p className="text-sm text-slate-500">© 2026 Skalle. Tous droits réservés.</p>
         </div>
