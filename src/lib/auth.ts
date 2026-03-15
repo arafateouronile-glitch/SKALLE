@@ -36,7 +36,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
       authorization: {
         params: {
-          scope: "public_profile,email,pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_manage_messages,instagram_manage_comments,instagram_content_publishing,pages_messaging",
+          scope: "public_profile,email",
         },
       },
     }),
