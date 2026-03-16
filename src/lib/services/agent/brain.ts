@@ -10,7 +10,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getClaude, getOpenAI, getStringParser } from "@/lib/ai/langchain";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { checkBudget, trackSpend } from "@/lib/ai/budget-guard";
 import { searchGoogle } from "@/lib/ai/serper";
@@ -674,28 +673,15 @@ Analyse ces données et propose 3-5 actions prioritaires pour aujourd'hui. Tiens
   // Self-correction : si Zod échoue, on renvoie les erreurs à Claude
   const selfCorrect = async (errorDescription: string): Promise<string> => {
     console.log("[Brain] Self-correction — renvoi des erreurs au LLM...");
-    const correctionPrompt = ChatPromptTemplate.fromMessages([
-      [
-        "system",
-        `Tu es un expert JSON. Tu dois corriger un JSON invalide pour qu'il respecte strictement le schéma suivant :
-
-${SCHEMA_DESCRIPTION}
-
-Réponds UNIQUEMENT avec le JSON corrigé, sans texte avant ni après, sans markdown.`,
-      ],
-      [
-        "human",
-        `Le JSON que tu as fourni contient des erreurs de validation Zod :
-
-${errorDescription}
-
-JSON original à corriger :
-${rawResponse}
-
-Renvoie le JSON corrigé.`,
-      ],
-    ]);
-    return correctionPrompt.pipe(claude).pipe(parser).invoke({});
+    const correctionMessages = [
+      new SystemMessage(
+        `Tu es un expert JSON. Tu dois corriger un JSON invalide pour qu'il respecte strictement le schéma suivant :\n\n${SCHEMA_DESCRIPTION}\n\nRéponds UNIQUEMENT avec le JSON corrigé, sans texte avant ni après, sans markdown.`
+      ),
+      new HumanMessage(
+        `Le JSON que tu as fourni contient des erreurs de validation Zod :\n\n${errorDescription}\n\nJSON original à corriger :\n${rawResponse}\n\nRenvoie le JSON corrigé.`
+      ),
+    ];
+    return parser.invoke(await claude.invoke(correctionMessages));
   };
 
   const decisions = await safeParseAgentResponse(rawResponse, selfCorrect);
@@ -805,23 +791,16 @@ async function planAndStore(
 
       if (decision.actionType === "SOCIAL_POST") {
         // A/B Testing : générer 2 variantes (AIDA vs PAS) pour les posts sociaux
-        const abPrompt = ChatPromptTemplate.fromMessages([
-          [
-            "system",
-            `Tu es un expert en copywriting et marketing de contenu ${platform}.
-Génère 2 variantes de post pour ${platform} sur le même sujet, avec des angles différents.
-Variante A : Framework AIDA (Attention → Intérêt → Désir → Action)
-Variante B : Framework PAS (Problème → Agitation → Solution)
-Adapte la longueur et le style au réseau. Chaque variante doit être complète et prête à publier.
-Réponds en JSON strict : { "A": "contenu variante AIDA", "B": "contenu variante PAS" }`,
-          ],
-          [
-            "human",
-            `Sujet/Keyword: ${keyword}\nRaisonnement stratégique: ${decision.reasoning}\n\nGénère les 2 variantes.`,
-          ],
-        ]);
+        const abMessages = [
+          new SystemMessage(
+            `Tu es un expert en copywriting et marketing de contenu ${platform}.\nGénère 2 variantes de post pour ${platform} sur le même sujet, avec des angles différents.\nVariante A : Framework AIDA (Attention → Intérêt → Désir → Action)\nVariante B : Framework PAS (Problème → Agitation → Solution)\nAdapte la longueur et le style au réseau. Chaque variante doit être complète et prête à publier.\nRéponds en JSON strict : {"A": "contenu variante AIDA", "B": "contenu variante PAS"}`
+          ),
+          new HumanMessage(
+            `Sujet/Keyword: ${keyword}\nRaisonnement stratégique: ${decision.reasoning}\n\nGénère les 2 variantes.`
+          ),
+        ];
 
-        const abRaw = await abPrompt.pipe(openai).pipe(parser).invoke({});
+        const abRaw = await parser.invoke(await openai.invoke(abMessages));
         let contentA = "";
         let contentB = "";
         try {
@@ -869,18 +848,16 @@ Réponds en JSON strict : { "A": "contenu variante AIDA", "B": "contenu variante
         }
       } else {
         // SEO_ARTICLE : brouillon simple (pas de A/B test)
-        const draftPrompt = ChatPromptTemplate.fromMessages([
-          [
-            "system",
-            "Tu es un rédacteur SEO expert. Génère un brouillon d'article de 500 mots sur le sujet donné. Format Markdown.",
-          ],
-          [
-            "human",
-            `Sujet/Keyword: ${originalKeyword}\nRaisonnement stratégique: ${decision.reasoning}\n\nGénère le brouillon.`,
-          ],
-        ]);
+        const draftMessages = [
+          new SystemMessage(
+            "Tu es un rédacteur SEO expert. Génère un brouillon d'article de 500 mots sur le sujet donné. Format Markdown."
+          ),
+          new HumanMessage(
+            `Sujet/Keyword: ${originalKeyword}\nRaisonnement stratégique: ${decision.reasoning}\n\nGénère le brouillon.`
+          ),
+        ];
 
-        const content = await draftPrompt.pipe(openai).pipe(parser).invoke({});
+        const content = await parser.invoke(await openai.invoke(draftMessages));
 
         const post = await prisma.post.create({
           data: {
@@ -1335,7 +1312,7 @@ export async function learnFromPerformance(
       abGroups[baseTitle].push(post);
     }
 
-    let abWinnerCount = { A: 0, B: 0 };
+    const abWinnerCount = { A: 0, B: 0 };
     for (const [, posts] of Object.entries(abGroups)) {
       const postA = posts.find((p) => p.abTestVariant === "A");
       const postB = posts.find((p) => p.abTestVariant === "B");

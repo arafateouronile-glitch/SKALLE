@@ -54,7 +54,7 @@ export const launchCampaignFn = inngest.createFunction(
     id: "campaign-launch",
     name: "Launch Email Campaign",
     retries: 2,
-    concurrency: { limit: 1, scope: "account" },
+    concurrency: { limit: 1, scope: "account", key: "event.data.workspaceId" },
   },
   { event: "campaign/launch" },
   async ({ event, step }) => {
@@ -245,7 +245,7 @@ export const scheduleNextCampaignSteps = inngest.createFunction(
   {
     id: "campaign-schedule-next-steps",
     name: "Schedule Campaign Follow-up Steps",
-    concurrency: { limit: 1, scope: "account" },
+    concurrency: { limit: 1, scope: "account", key: "\"campaign-schedule-next-steps\"" },
   },
   { cron: "*/30 * * * *" }, // Toutes les 30 minutes
   async ({ step }) => {

@@ -92,33 +92,48 @@ export async function startContentFactory(
   }
 
   // Créer le ContentPlan
-  const contentPlan = await prisma.contentPlan.create({
-    data: {
-      name: `Plan ${input.month}/${input.year}`,
-      month: input.month,
-      year: input.year,
-      status: "PENDING",
-      vision: input.vision,
-      niche: input.niche,
-      objectives: input.objectives,
-      workspaceId,
-    },
-  });
+  let contentPlan;
+  try {
+    contentPlan = await prisma.contentPlan.create({
+      data: {
+        name: `Plan ${input.month}/${input.year}`,
+        month: input.month,
+        year: input.year,
+        status: "PENDING",
+        vision: input.vision,
+        niche: input.niche,
+        objectives: input.objectives,
+        workspaceId,
+      },
+    });
+  } catch (e) {
+    console.error("[startContentFactory] Prisma error:", e);
+    return {
+      success: false as const,
+      error: `DB error: ${e instanceof Error ? e.message : String(e)}`,
+      contentPlanId: null,
+    };
+  }
 
   // Déclencher le job Inngest
-  await inngest.send({
-    name: "social-factory/generate",
-    data: {
-      contentPlanId: contentPlan.id,
-      workspaceId,
-      userId: userId!,
-      vision: input.vision,
-      niche: input.niche,
-      objectives: input.objectives,
-      month: input.month,
-      year: input.year,
-    },
-  });
+  try {
+    await inngest.send({
+      name: "social-factory/generate",
+      data: {
+        contentPlanId: contentPlan.id,
+        workspaceId,
+        userId: userId!,
+        vision: input.vision,
+        niche: input.niche,
+        objectives: input.objectives,
+        month: input.month,
+        year: input.year,
+      },
+    });
+  } catch (e) {
+    console.error("[startContentFactory] Inngest error:", e);
+    // Plan is created — return success so polling can start; Inngest will retry
+  }
 
   return { success: true as const, contentPlanId: contentPlan.id, error: null };
 }

@@ -70,6 +70,22 @@ export default function ContentFactoryPage() {
     }
   }, []);
 
+  // On mount: restore the most recent plan from DB
+  useEffect(() => {
+    if (!workspaceId) return;
+    listContentPlans(workspaceId).then((result) => {
+      if (!result.success || !result.data?.length) return;
+      const latest = result.data[0]; // ordered by createdAt desc
+      setContentPlanId(latest.id);
+      if (latest.status === "GENERATING" || latest.status === "PENDING") {
+        setIsGenerating(true);
+      } else {
+        loadPlanData(latest.id);
+        if (latest.status === "COMPLETED") setActiveTab("proposals");
+      }
+    });
+  }, [workspaceId, loadPlanData]);
+
   const handlePlanCreated = useCallback(
     (planId: string) => {
       setContentPlanId(planId);
@@ -87,7 +103,7 @@ export default function ContentFactoryPage() {
     }
   }, [contentPlanId, loadPlanData]);
 
-  // Load plan data when planId changes
+  // Load plan data when planId changes (after generation)
   useEffect(() => {
     if (contentPlanId && !isGenerating) {
       loadPlanData(contentPlanId);

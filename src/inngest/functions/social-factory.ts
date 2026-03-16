@@ -77,6 +77,7 @@ export const generateSocialFactory = inngest.createFunction(
       await prisma.contentPlan.update({
         where: { id: contentPlanId },
         data: {
+          totalConcepts: result.concepts.length,
           conceptsData: JSON.parse(JSON.stringify(result.concepts)),
           keywordsUsed: JSON.parse(
             JSON.stringify(
@@ -194,6 +195,22 @@ export const generateSocialFactory = inngest.createFunction(
               },
             });
             ids.push({ id: post.id, type: "TIKTOK", category: concept.category });
+          }
+
+          // Facebook
+          if (postSet.facebookPost) {
+            const post = await prisma.post.create({
+              data: {
+                type: "FACEBOOK",
+                title: concept.title,
+                content: postSet.facebookPost,
+                keywords: concept.sourceKeyword ? [concept.sourceKeyword] : [],
+                status: "DRAFT",
+                workspaceId,
+                contentPlanId,
+              },
+            });
+            ids.push({ id: post.id, type: "FACEBOOK", category: concept.category });
           }
 
           await useCredits(userId, "social_factory_post");

@@ -11,7 +11,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getClaude, getOpenAI, getStringParser } from "@/lib/ai/langchain";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { analyzeUserSite, type UserSiteAnalysis } from "@/lib/seo/discovery";
 import type { PostType } from "@prisma/client";
 
@@ -56,6 +56,7 @@ export interface GeneratedPostSet {
   instagramCaption?: string;
   instagramImagePrompt?: string;
   tiktokScript?: string;
+  facebookPost?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -79,51 +80,31 @@ export async function initializeBrandStrategy(
       return { success: false, error: "Workspace non trouvé" };
     }
 
-    // Scraper le site utilisateur
+    // Scraper le site utilisateur (optionnel — on continue même sans domainUrl)
     let siteAnalysis: UserSiteAnalysis | null = null;
-    try {
-      siteAnalysis = await analyzeUserSite(workspace.domainUrl);
-    } catch (e) {
-      console.warn("[Content Factory] Échec du scraping du site:", e);
+    if (workspace.domainUrl) {
+      try {
+        siteAnalysis = await analyzeUserSite(workspace.domainUrl);
+      } catch (e) {
+        console.warn("[Content Factory] Échec du scraping du site:", e);
+      }
     }
 
     const existingBrandVoice = (workspace.brandVoice as Record<string, unknown>) ?? {};
 
-    // Construire le prompt pour générer la persona
-    const prompt = ChatPromptTemplate.fromMessages([
-      [
-        "system",
-        `Tu es un expert en stratégie marketing et branding. À partir des données fournies sur un site web et sa marque, génère une "Marketing Persona" complète au format JSON.
-
-Le JSON doit contenir exactement ces champs:
-- brandColors: array de 3-5 couleurs hex identifiées ou suggérées
-- services: array des services/produits clés identifiés
-- tone: le ton de communication (ex: "professionnel et inspirant", "technique et expert")
-- targetAudience: description de l'audience cible en 1-2 phrases
-- uniqueValueProp: proposition de valeur unique en 1 phrase
-- contentPillars: array de 3-5 piliers de contenu récurrents
-- competitiveAdvantages: array de 3-5 avantages concurrentiels
-
-Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`,
-      ],
-      [
-        "human",
-        `Données du site web:
-URL: ${workspace.domainUrl}
-Titre: ${siteAnalysis?.title ?? "Non disponible"}
-Description: ${siteAnalysis?.metaDescription ?? "Non disponible"}
-Thème principal: ${siteAnalysis?.theme ?? "Non disponible"}
-Mots-clés d'intention: ${siteAnalysis?.intentKeywords?.join(", ") ?? "Non disponible"}
-Contenu principal (extrait): ${siteAnalysis?.mainContent?.slice(0, 2000) ?? "Non disponible"}
-
-Brand Voice existant:
-${JSON.stringify(existingBrandVoice, null, 2)}`,
-      ],
-    ]);
+    // Construire les messages pour générer la persona
+    const personaMessages = [
+      new SystemMessage(
+        `Tu es un expert en stratégie marketing et branding. À partir des données fournies sur un site web et sa marque, génère une "Marketing Persona" complète au format JSON.\n\nLe JSON doit contenir exactement ces champs:\n- brandColors: array de 3-5 couleurs hex identifiées ou suggérées\n- services: array des services/produits clés identifiés\n- tone: le ton de communication (ex: "professionnel et inspirant", "technique et expert")\n- targetAudience: description de l'audience cible en 1-2 phrases\n- uniqueValueProp: proposition de valeur unique en 1 phrase\n- contentPillars: array de 3-5 piliers de contenu récurrents\n- competitiveAdvantages: array de 3-5 avantages concurrentiels\n\nRéponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`
+      ),
+      new HumanMessage(
+        `Données du site web:\nURL: ${workspace.domainUrl}\nTitre: ${siteAnalysis?.title ?? "Non disponible"}\nDescription: ${siteAnalysis?.metaDescription ?? "Non disponible"}\nThème principal: ${siteAnalysis?.theme ?? "Non disponible"}\nMots-clés d'intention: ${siteAnalysis?.intentKeywords?.join(", ") ?? "Non disponible"}\nContenu principal (extrait): ${siteAnalysis?.mainContent?.slice(0, 2000) ?? "Non disponible"}\n\nBrand Voice existant:\n${JSON.stringify(existingBrandVoice, null, 2)}`
+      ),
+    ];
 
     const claude = getClaude();
     const parser = getStringParser();
-    const result = await prompt.pipe(claude).pipe(parser).invoke({});
+    const result = await parser.invoke(await claude.invoke(personaMessages));
 
     // Parser le JSON
     const cleanJson = result.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
@@ -212,7 +193,7 @@ export async function generateContentConcepts(
     const brandVoice = (workspace?.brandVoice as Record<string, unknown>) ?? {};
     const persona = brandVoice.marketingPersona as MarketingPersona | undefined;
 
-    // 5. Construire le prompt de génération de concepts
+    // 5. Construire les messages de génération de concepts
     const keywordsContext = keywords.length > 0
       ? keywords.map((k) => `- "${k.keyword}" (volume: ${k.volume ?? "N/A"}, difficulté: ${k.difficulty}, intent: ${k.searchIntent ?? "N/A"})`).join("\n")
       : "Aucun mot-clé SEO disponible";
@@ -230,72 +211,18 @@ export async function generateContentConcepts(
       .filter(Boolean)
       .slice(0, 15);
 
-    const prompt = ChatPromptTemplate.fromMessages([
-      [
-        "system",
-        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.
-
-RÉPARTITION OBLIGATOIRE :
-- 12 concepts "education" (40%) : basés sur les mots-clés SEO et questions PAA
-- 9 concepts "conversion" (30%) : basés sur les structures/hooks des publicités performantes
-- 9 concepts "awareness" (30%) : basés sur la vision et la niche de l'utilisateur
-
-RÈGLES :
-- Chaque concept doit avoir un angle unique et un titre accrocheur
-- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)
-- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible
-- Les concepts "awareness" sont basés sur le storytelling et la vision
-- Varier les réseaux cibles (LINKEDIN, X, INSTAGRAM, TIKTOK)
-- Le "rationale" explique POURQUOI ce post est stratégique
-
-Réponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:
-{
-  "index": number (0-29),
-  "category": "education" | "conversion" | "awareness",
-  "title": string,
-  "angle": string (l'approche unique du post),
-  "sourceKeyword": string | null,
-  "sourceAdId": string | null,
-  "rationale": string,
-  "targetNetworks": ["LINKEDIN", "X", "INSTAGRAM", "TIKTOK"] (1-4 réseaux)
-}`,
-      ],
-      [
-        "human",
-        `CONTEXTE DE LA MARQUE :
-Vision: {vision}
-Niche: {niche}
-Objectifs: {objectives}
-Persona: ${persona ? JSON.stringify(persona, null, 2) : "Non défini"}
-
-DONNÉES SEO (pour concepts "education"):
-Mots-clés top:
-{keywordsContext}
-
-Quick Wins SEO:
-{quickWinsContext}
-
-Questions PAA du public:
-${paaQuestions.length > 0 ? paaQuestions.map((q) => `- ${q}`).join("\n") : "Aucune question PAA"}
-
-DONNÉES PUBLICITAIRES (pour concepts "conversion"):
-Ads performantes:
-{adsContext}
-
-Génère les 30 concepts maintenant.`,
-      ],
-    ]);
+    const conceptMessages = [
+      new SystemMessage(
+        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.\n\nRÉPARTITION OBLIGATOIRE :\n- 12 concepts "education" (40%) : basés sur les mots-clés SEO et questions PAA\n- 9 concepts "conversion" (30%) : basés sur les structures/hooks des publicités performantes\n- 9 concepts "awareness" (30%) : basés sur la vision et la niche de l'utilisateur\n\nRÈGLES :\n- Chaque concept doit avoir un angle unique et un titre accrocheur\n- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)\n- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible\n- Les concepts "awareness" sont basés sur le storytelling et la vision\n- Varier les réseaux cibles (LINKEDIN, X, INSTAGRAM, TIKTOK, FACEBOOK)\n- Le "rationale" explique POURQUOI ce post est stratégique\n\nRéponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:\n[\n  {\n    "index": number (0-29),\n    "category": "education" | "conversion" | "awareness",\n    "title": string,\n    "angle": string,\n    "sourceKeyword": string | null,\n    "sourceAdId": string | null,\n    "rationale": string,\n    "targetNetworks": array of "LINKEDIN"|"X"|"INSTAGRAM"|"TIKTOK"|"FACEBOOK"\n  }\n]`
+      ),
+      new HumanMessage(
+        `CONTEXTE DE LA MARQUE :\nVision: ${input.vision}\nNiche: ${input.niche}\nObjectifs: ${input.objectives.join(", ")}\nPersona: ${persona ? JSON.stringify(persona) : "Non défini"}\n\nDONNÉES SEO (pour concepts "education"):\nMots-clés top:\n${keywordsContext}\n\nQuick Wins SEO:\n${quickWinsContext}\n\nQuestions PAA du public:\n${paaQuestions.length > 0 ? paaQuestions.map((q) => `- ${q}`).join("\n") : "Aucune question PAA"}\n\nDONNÉES PUBLICITAIRES (pour concepts "conversion"):\nAds performantes:\n${adsContext}\n\nGénère les 30 concepts maintenant.`
+      ),
+    ];
 
     const claude = getClaude();
     const parser = getStringParser();
-    const result = await prompt.pipe(claude).pipe(parser).invoke({
-      vision: input.vision,
-      niche: input.niche,
-      objectives: input.objectives.join(", "),
-      keywordsContext,
-      quickWinsContext,
-      adsContext,
-    });
+    const result = await parser.invoke(await claude.invoke(conceptMessages));
 
     // Parser le JSON
     const cleanJson = result.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
@@ -345,32 +272,15 @@ Proposition de valeur: ${persona.uniqueValueProp}`;
   if (concept.targetNetworks.includes("LINKEDIN")) {
     promises.push(
       (async () => {
-        const prompt = ChatPromptTemplate.fromMessages([
-          [
-            "system",
-            `Tu es un expert en personal branding LinkedIn. Crée un post LinkedIn percutant.
-
-Règles:
-- Hook: première ligne accrocheuse (question ou stat choc)
-- Corps: insights avec espaces entre paragraphes courts
-- Conclusion: leçon ou call-to-action
-- 3-5 hashtags pertinents
-- Longueur: 1200-1500 caractères
-- Adapte au ton de la marque
-
-${brandContext}`,
-          ],
-          [
-            "human",
-            `Sujet: ${concept.title}
-Angle: ${concept.angle}
-Catégorie: ${concept.category}
-${concept.sourceKeyword ? `Mot-clé SEO à intégrer: ${concept.sourceKeyword}` : ""}
-
-Génère le post LinkedIn complet.`,
-          ],
-        ]);
-        result.linkedin = await prompt.pipe(openai).pipe(parser).invoke({});
+        const msgs = [
+          new SystemMessage(
+            `Tu es un expert en personal branding LinkedIn. Crée un post LinkedIn percutant.\n\nRègles:\n- Hook: première ligne accrocheuse (question ou stat choc)\n- Corps: insights avec espaces entre paragraphes courts\n- Conclusion: leçon ou call-to-action\n- 3-5 hashtags pertinents\n- Longueur: 1200-1500 caractères\n- Adapte au ton de la marque\n\n${brandContext}`
+          ),
+          new HumanMessage(
+            `Sujet: ${concept.title}\nAngle: ${concept.angle}\nCatégorie: ${concept.category}${concept.sourceKeyword ? `\nMot-clé SEO à intégrer: ${concept.sourceKeyword}` : ""}\n\nGénère le post LinkedIn complet.`
+          ),
+        ];
+        result.linkedin = await parser.invoke(await openai.invoke(msgs));
       })()
     );
   }
@@ -378,31 +288,15 @@ Génère le post LinkedIn complet.`,
   if (concept.targetNetworks.includes("X")) {
     promises.push(
       (async () => {
-        const prompt = ChatPromptTemplate.fromMessages([
-          [
-            "system",
-            `Tu es un expert en contenu viral X (Twitter). Crée un thread de 5-7 tweets.
-
-Règles:
-- Tweet 1: hook accrocheur
-- Tweets suivants: points clés avec valeur
-- Dernier tweet: call-to-action
-- Chaque tweet: max 280 caractères
-- Numérote les tweets (1/, 2/, etc.)
-
-${brandContext}`,
-          ],
-          [
-            "human",
-            `Sujet: ${concept.title}
-Angle: ${concept.angle}
-Catégorie: ${concept.category}
-${concept.sourceKeyword ? `Mot-clé à intégrer: ${concept.sourceKeyword}` : ""}
-
-Génère le thread complet.`,
-          ],
-        ]);
-        result.xThread = await prompt.pipe(openai).pipe(parser).invoke({});
+        const msgs = [
+          new SystemMessage(
+            `Tu es un expert en contenu viral X (Twitter). Crée un thread de 5-7 tweets.\n\nRègles:\n- Tweet 1: hook accrocheur\n- Tweets suivants: points clés avec valeur\n- Dernier tweet: call-to-action\n- Chaque tweet: max 280 caractères\n- Numérote les tweets (1/, 2/, etc.)\n\n${brandContext}`
+          ),
+          new HumanMessage(
+            `Sujet: ${concept.title}\nAngle: ${concept.angle}\nCatégorie: ${concept.category}${concept.sourceKeyword ? `\nMot-clé à intégrer: ${concept.sourceKeyword}` : ""}\n\nGénère le thread complet.`
+          ),
+        ];
+        result.xThread = await parser.invoke(await openai.invoke(msgs));
       })()
     );
   }
@@ -410,29 +304,15 @@ Génère le thread complet.`,
   if (concept.targetNetworks.includes("INSTAGRAM")) {
     promises.push(
       (async () => {
-        const prompt = ChatPromptTemplate.fromMessages([
-          [
-            "system",
-            `Tu es un expert Instagram. Génère une légende Instagram ET un prompt de génération d'image.
-
-Réponds au format JSON avec exactement 2 champs:
-- "caption": légende Instagram (max 2200 chars, avec emojis, hashtags, call-to-action)
-- "imagePrompt": prompt détaillé pour générer l'image (en anglais, style professionnel, couleurs de la marque: ${persona.brandColors.join(", ")})
-
-Réponds UNIQUEMENT avec le JSON valide.
-
-${brandContext}`,
-          ],
-          [
-            "human",
-            `Sujet: ${concept.title}
-Angle: ${concept.angle}
-Catégorie: ${concept.category}
-
-Génère la légende et le prompt image.`,
-          ],
-        ]);
-        const raw = await prompt.pipe(openai).pipe(parser).invoke({});
+        const msgs = [
+          new SystemMessage(
+            `Tu es un expert Instagram. Génère une légende Instagram ET un prompt de génération d'image.\n\nRéponds au format JSON avec exactement 2 champs:\n- "caption": légende Instagram (max 2200 chars, avec emojis, hashtags, call-to-action)\n- "imagePrompt": prompt détaillé pour générer l'image (en anglais, style professionnel, couleurs de la marque: ${persona.brandColors.join(", ")})\n\nRéponds UNIQUEMENT avec le JSON valide.\n\n${brandContext}`
+          ),
+          new HumanMessage(
+            `Sujet: ${concept.title}\nAngle: ${concept.angle}\nCatégorie: ${concept.category}\n\nGénère la légende et le prompt image.`
+          ),
+        ];
+        const raw = await parser.invoke(await openai.invoke(msgs));
         try {
           const cleanJson = raw.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
           const parsed = JSON.parse(cleanJson);
@@ -449,33 +329,31 @@ Génère la légende et le prompt image.`,
   if (concept.targetNetworks.includes("TIKTOK")) {
     promises.push(
       (async () => {
-        const prompt = ChatPromptTemplate.fromMessages([
-          [
-            "system",
-            `Tu es un expert en contenu TikTok viral. Crée un script structuré de 30-60 secondes.
+        const msgs = [
+          new SystemMessage(
+            `Tu es un expert en contenu TikTok viral. Crée un script structuré de 30-60 secondes.\n\nFormat obligatoire:\n[HOOK - 3 premières secondes]\n(texte parlé + indication visuelle)\n\n[BODY - 20-40 secondes]\n(points clés avec [VISUEL] indications)\n\n[CTA - 5-10 secondes]\n(call-to-action + indication visuelle)\n\n${brandContext}`
+          ),
+          new HumanMessage(
+            `Sujet: ${concept.title}\nAngle: ${concept.angle}\nCatégorie: ${concept.category}\n\nGénère le script TikTok complet.`
+          ),
+        ];
+        result.tiktokScript = await parser.invoke(await openai.invoke(msgs));
+      })()
+    );
+  }
 
-Format obligatoire:
-[HOOK - 3 premières secondes]
-(texte parlé + indication visuelle)
-
-[BODY - 20-40 secondes]
-(points clés avec [VISUEL] indications)
-
-[CTA - 5-10 secondes]
-(call-to-action + indication visuelle)
-
-${brandContext}`,
-          ],
-          [
-            "human",
-            `Sujet: ${concept.title}
-Angle: ${concept.angle}
-Catégorie: ${concept.category}
-
-Génère le script TikTok complet.`,
-          ],
-        ]);
-        result.tiktokScript = await prompt.pipe(openai).pipe(parser).invoke({});
+  if (concept.targetNetworks.includes("FACEBOOK")) {
+    promises.push(
+      (async () => {
+        const msgs = [
+          new SystemMessage(
+            `Tu es un expert en marketing Facebook. Crée un post Facebook engageant adapté à l'algorithme de la plateforme.\n\nRègles:\n- Accroche dès la première ligne (avant le "Voir plus")\n- Structure narrative : problème → solution → résultat\n- Longueur : 300-600 caractères (lisible sans cliquer "Voir plus")\n- 2-3 emojis max placés stratégiquement\n- 1 question ouverte pour favoriser les commentaires\n- 1 call-to-action clair en fin de post\n- 3-5 hashtags en fin de post\n- Pas de lien dans le corps (favorise la portée organique)\n\n${brandContext}`
+          ),
+          new HumanMessage(
+            `Sujet: ${concept.title}\nAngle: ${concept.angle}\nCatégorie: ${concept.category}${concept.sourceKeyword ? `\nMot-clé à intégrer: ${concept.sourceKeyword}` : ""}\n\nGénère le post Facebook complet.`
+          ),
+        ];
+        result.facebookPost = await parser.invoke(await openai.invoke(msgs));
       })()
     );
   }
@@ -505,6 +383,7 @@ const OPTIMAL_TIMES: Record<string, { days: number[]; hours: number[][] }> = {
   X: { days: [1, 2, 3, 4, 5], hours: [[9, 0], [17, 0]] },         // Lun-Ven
   INSTAGRAM: { days: [2, 4, 6], hours: [[12, 0], [18, 0]] },       // Mar, Jeu, Sam
   TIKTOK: { days: [1, 3, 5, 0], hours: [[19, 0], [20, 0]] },      // Lun, Mer, Ven, Dim
+  FACEBOOK: { days: [3, 5, 6], hours: [[13, 0], [15, 0]] },       // Mer, Ven, Sam
 };
 
 /**

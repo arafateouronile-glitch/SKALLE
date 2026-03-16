@@ -13,6 +13,7 @@ import {
   Twitter,
   Instagram,
   Video,
+  Facebook,
   Check,
   X,
   ChevronDown,
@@ -33,6 +34,7 @@ const NETWORK_ICONS: Record<string, React.ComponentType<{ className?: string }>>
   X: Twitter,
   INSTAGRAM: Instagram,
   TIKTOK: Video,
+  FACEBOOK: Facebook,
 };
 
 const NETWORK_COLORS: Record<string, string> = {
@@ -40,6 +42,7 @@ const NETWORK_COLORS: Record<string, string> = {
   X: "text-gray-800",
   INSTAGRAM: "text-pink-500",
   TIKTOK: "text-cyan-500",
+  FACEBOOK: "text-blue-500",
 };
 
 interface ConceptCardProps {
@@ -117,12 +120,13 @@ export function ConceptCard({
               return (
                 <div
                   key={post.id}
-                  className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900 cursor-pointer group"
+                  className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900 cursor-pointer group rounded px-1 py-0.5 hover:bg-gray-50"
                   onClick={() => onPreview(post.id)}
+                  title="Cliquer pour voir le contenu complet"
                 >
-                  {Icon && <Icon className={`h-3 w-3 ${NETWORK_COLORS[post.type]}`} />}
-                  <span className="truncate flex-1">{post.content.slice(0, 80)}...</span>
-                  <Eye className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  {Icon && <Icon className={`h-3 w-3 shrink-0 ${NETWORK_COLORS[post.type]}`} />}
+                  <span className="truncate flex-1">{post.content.slice(0, 80)}…</span>
+                  <Eye className="h-3 w-3 shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
                 </div>
               );
             })}

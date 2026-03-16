@@ -309,13 +309,18 @@ export async function startBulkGeneration(
     });
 
     // Trigger Inngest function
+    const bv = workspace.brandVoice as Record<string, unknown> | undefined;
+    const contentMode =
+      (bv?.seoPublicationStrategy as Record<string, unknown> | undefined)
+        ?.contentMode as string | undefined;
     await inngest.send({
       name: "articles/bulk.generate",
       data: {
         batchJobId: batchJob.id,
         workspaceId,
         keywords,
-        brandVoice: workspace.brandVoice as Record<string, unknown> | undefined,
+        brandVoice: bv,
+        contentMode: contentMode ?? "article",
       },
     });
 
@@ -778,15 +783,21 @@ export async function generateSingleArticle(
         .map((p) => p.title)
         .filter((t): t is string => !!t);
 
+      const wsBrandVoice = workspace.brandVoice as Record<string, unknown> | undefined;
+      const wsContentMode =
+        (wsBrandVoice?.seoPublicationStrategy as Record<string, unknown> | undefined)
+          ?.contentMode as string | undefined;
+
       const article = await generateEliteArticle({
         keyword,
         outline,
-        brandVoice: workspace.brandVoice as Record<string, unknown> | undefined,
+        brandVoice: wsBrandVoice,
         existingArticleTitles: existingTitles,
         generateImages: options?.generateImages ?? false,
         targetPersona: options?.targetPersona,
         userId: session.user!.id!,
         workspaceId,
+        contentMode: wsContentMode ?? "article",
       });
 
       // Sauvegarder — champs élite inclus (imageUrl, sources)
@@ -1379,6 +1390,84 @@ export async function getLatestAudit(
   } catch (error) {
     console.error("Get latest audit error:", error);
     return { success: false, error: error instanceof Error ? error.message : "Une erreur est survenue" };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 📋 SEO AUDIT HISTORY & CORRECTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface SeoAuditListItem {
+  id: string;
+  url: string;
+  globalScore: number;
+  quickWinsCount: number;
+  createdAt: Date;
+}
+
+export async function listSeoAudits(
+  workspaceId: string,
+  limit = 20
+): Promise<{ success: boolean; data?: SeoAuditListItem[]; error?: string }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const audits = await prisma.sEOAudit.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: { id: true, url: true, globalScore: true, actionPlan: true, report: true, createdAt: true },
+    });
+
+    return {
+      success: true,
+      data: audits.map((a) => {
+        const report = a.report as Record<string, unknown> | null;
+        const plan = (a.actionPlan ?? report?.["strategy"]) as Record<string, unknown> | null;
+        const quickWins = plan?.["quickWins"] ?? [];
+        return {
+          id: a.id,
+          url: a.url,
+          globalScore: a.globalScore ?? 0,
+          quickWinsCount: Array.isArray(quickWins) ? quickWins.length : 0,
+          createdAt: a.createdAt,
+        };
+      }),
+    };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Erreur" };
+  }
+}
+
+export async function updateSeoAudit(
+  workspaceId: string,
+  auditId: string,
+  patch: {
+    quickWins?: Array<{ keyword: string; difficulty: string; opportunity: string; estimatedImpact: number }>;
+    technicalActions?: Array<{ priority: string; action: string; description: string; estimatedImpact: number }>;
+    semanticGap?: Array<{ topic: string; competitors: string[]; recommendation: string }>;
+    swot?: { strengths: string[]; weaknesses: string[]; opportunities: string[]; threats: string[] };
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const audit = await prisma.sEOAudit.findFirst({ where: { id: auditId, workspaceId } });
+    if (!audit) return { success: false, error: "Audit non trouvé" };
+
+    const existingPlan = (audit.actionPlan ?? {}) as Record<string, unknown>;
+    const updatedPlan = { ...existingPlan, ...patch };
+
+    await prisma.sEOAudit.update({
+      where: { id: auditId },
+      data: { actionPlan: JSON.parse(JSON.stringify(updatedPlan)) },
+    });
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Erreur" };
   }
 }
 

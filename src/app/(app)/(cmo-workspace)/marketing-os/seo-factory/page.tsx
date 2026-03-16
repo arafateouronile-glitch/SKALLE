@@ -76,6 +76,11 @@ import {
   Gauge,
   Network,
   Link2,
+  Settings,
+  Globe,
+  Users,
+  Flag,
+  Columns3,
 } from "lucide-react";
 import {
   runSEOAudit,
@@ -90,7 +95,11 @@ import {
   getWorkspacePosts,
   runSEOIntelligence,
   getSEOIntelligenceReport,
+  listSeoAudits,
+  updateSeoAudit,
+  type SeoAuditListItem,
 } from "@/actions/seo";
+import { getSeoSetup, saveSeoSetup, type SeoPublicationStrategy, type SeoContentMode, type SeoSiteType } from "@/actions/seo-setup";
 import { publishPostToCMS } from "@/actions/cms";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -169,6 +178,14 @@ export default function SEOFactoryPage() {
   const [intelligenceUrl, setIntelligenceUrl] = useState("");
   const [isRunningIntelligence, setIsRunningIntelligence] = useState(false);
   const [intelligenceReport, setIntelligenceReport] = useState<any | null>(null);
+  const [auditHistory, setAuditHistory] = useState<SeoAuditListItem[]>([]);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
+  const [isEditingAudit, setIsEditingAudit] = useState(false);
+  const [editedQuickWins, setEditedQuickWins] = useState<string>("");
+  const [editedTechnicalActions, setEditedTechnicalActions] = useState<string>("");
+  const [editedSemanticGaps, setEditedSemanticGaps] = useState<string>("");
+  const [editedSwot, setEditedSwot] = useState<string>("");
+  const [isSavingAudit, setIsSavingAudit] = useState(false);
 
   // SEO Technical Score
   const [technicalUrl, setTechnicalUrl] = useState("");
@@ -181,6 +198,19 @@ export default function SEOFactoryPage() {
   const [isGeneratingCluster, setIsGeneratingCluster] = useState(false);
   const [cluster, setCluster] = useState<ContentCluster | null>(null);
   const [clusterBatchId, setClusterBatchId] = useState<string | null>(null);
+
+  // SEO Setup (prérequis)
+  const [seoSetupDone, setSeoSetupDone] = useState<boolean | null>(null); // null = loading
+  const [setupDomainUrl, setSetupDomainUrl] = useState("");
+  const [setupFrequency, setSetupFrequency] = useState<SeoPublicationStrategy["frequency"]>("2/week");
+  const [setupLanguage, setSetupLanguage] = useState<SeoPublicationStrategy["language"]>("fr");
+  const [setupTargetAudience, setSetupTargetAudience] = useState("");
+  const [setupGoals, setSetupGoals] = useState<string[]>([]);
+  const [setupPillars, setSetupPillars] = useState<string[]>(["", "", ""]);
+  const [setupContentMode, setSetupContentMode] = useState<SeoContentMode>("article");
+  const [setupSiteType, setSetupSiteType] = useState<SeoSiteType>("saas");
+  const [setupBusinessActivity, setSetupBusinessActivity] = useState("");
+  const [isSavingSetup, setIsSavingSetup] = useState(false);
 
   // Charger le workspace au montage
   useEffect(() => {
@@ -221,6 +251,33 @@ export default function SEOFactoryPage() {
     }
   }, []);
 
+  // Charger la config SEO quand workspaceId est dispo
+  useEffect(() => {
+    if (!workspaceId) return;
+    getSeoSetup(workspaceId).then((result) => {
+      if (result.success && result.data) {
+        setSeoSetupDone(result.data.isComplete);
+        setSetupDomainUrl(result.data.domainUrl);
+        if (result.data.strategy) {
+          setSetupFrequency(result.data.strategy.frequency);
+          setSetupLanguage(result.data.strategy.language);
+          setSetupTargetAudience(result.data.strategy.targetAudience);
+          setSetupGoals(result.data.strategy.goals);
+          setSetupContentMode(result.data.strategy.contentMode ?? "article");
+          setSetupSiteType(result.data.strategy.siteType ?? "saas");
+          setSetupBusinessActivity(result.data.strategy.businessActivity ?? "");
+          setSetupPillars(
+            result.data.strategy.contentPillars.length >= 3
+              ? result.data.strategy.contentPillars
+              : [...result.data.strategy.contentPillars, "", "", ""].slice(0, 3)
+          );
+        }
+      } else {
+        setSeoSetupDone(false);
+      }
+    });
+  }, [workspaceId]);
+
   // Charger les articles quand workspaceId change
   useEffect(() => {
     if (workspaceId) {
@@ -254,6 +311,194 @@ export default function SEOFactoryPage() {
       setIsLoadingArticles(false);
     }
   };
+
+  const loadAuditHistory = async () => {
+    if (!workspaceId) return;
+    const result = await listSeoAudits(workspaceId, 20);
+    if (result.success && result.data) {
+      setAuditHistory(result.data);
+    }
+  };
+
+  // Charger l'historique des audits quand workspaceId change
+  useEffect(() => {
+    if (workspaceId) loadAuditHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  const handleLoadAudit = async (auditId: string) => {
+    if (!workspaceId) return;
+    const result = await getSEOIntelligenceReport(workspaceId, auditId);
+    if (result.success && result.data) {
+      const audit = result.data;
+      // Reconstitue le rapport en fusionnant les champs structurés avec le rapport complet
+      const report = audit.report ?? {};
+      const merged = {
+        ...report,
+        userSite: report.userSite ?? audit.metadata,
+        marketInsights: report.marketInsights ?? audit.targetKeywords,
+        competitorAnalysis: report.competitorAnalysis ?? audit.competitors,
+        strategy: report.strategy ?? audit.actionPlan,
+        recommendations: report.recommendations ?? {
+          technical: audit.actionPlan?.technicalActions,
+          semantic: audit.actionPlan?.semanticGap,
+        },
+      };
+      setIntelligenceReport(merged);
+      setSelectedAuditId(auditId);
+      setIsEditingAudit(false);
+    }
+  };
+
+  const handleStartEditAudit = () => {
+    if (!intelligenceReport) return;
+    const qw = intelligenceReport.strategy?.quickWins ?? [];
+    const ta = intelligenceReport.recommendations?.technical ?? [];
+    const sg = intelligenceReport.recommendations?.semantic ?? [];
+    const sw = intelligenceReport.strategy?.swot ?? { strengths: [], weaknesses: [], opportunities: [], threats: [] };
+    setEditedQuickWins(qw.map((w: { keyword?: string }) => w.keyword ?? "").join("\n"));
+    setEditedTechnicalActions(ta.map((a: { priority?: string; action?: string }) => `[${a.priority ?? "medium"}] ${a.action ?? ""}`).join("\n"));
+    setEditedSemanticGaps(sg.map((g: { topic?: string }) => g.topic ?? "").join("\n"));
+    setEditedSwot(JSON.stringify(sw, null, 2));
+    setIsEditingAudit(true);
+  };
+
+  const handleSaveAuditCorrections = async () => {
+    if (!workspaceId || !selectedAuditId) return;
+    setIsSavingAudit(true);
+    try {
+      const quickWins = editedQuickWins.split("\n").filter(Boolean).map((kw) => ({
+        keyword: kw.trim(),
+        difficulty: "medium" as const,
+        opportunity: kw.trim(),
+        estimatedImpact: 3,
+      }));
+      const technicalActions = editedTechnicalActions.split("\n").filter(Boolean).map((line) => {
+        const match = line.match(/^\[(high|medium|low)\]\s*(.+)/i);
+        return {
+          priority: (match?.[1] ?? "medium") as "high" | "medium" | "low",
+          action: match?.[2]?.trim() ?? line.trim(),
+          description: match?.[2]?.trim() ?? line.trim(),
+          estimatedImpact: 3,
+        };
+      });
+      const semanticGap = editedSemanticGaps.split("\n").filter(Boolean).map((topic) => ({
+        topic: topic.trim(),
+        competitors: [],
+        recommendation: topic.trim(),
+      }));
+      let swot = { strengths: [], weaknesses: [], opportunities: [], threats: [] };
+      try { swot = JSON.parse(editedSwot); } catch {}
+
+      const result = await updateSeoAudit(workspaceId, selectedAuditId, { quickWins, technicalActions, semanticGap, swot });
+      if (result.success) {
+        // Mettre à jour le rapport en mémoire
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setIntelligenceReport((prev: any) => ({
+          ...prev,
+          strategy: { ...prev?.strategy, quickWins, swot },
+          recommendations: { technical: technicalActions, semantic: semanticGap },
+        }));
+        setIsEditingAudit(false);
+        toast.success("Corrections sauvegardées !");
+        loadAuditHistory();
+      } else {
+        toast.error(result.error ?? "Erreur lors de la sauvegarde");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsSavingAudit(false);
+    }
+  };
+
+  const handleGenerateFromAudit = async () => {
+    if (!workspaceId || !intelligenceReport) return;
+    const quickWins = (intelligenceReport.strategy?.quickWins ?? []) as Array<{ keyword?: string }>;
+    const marketInsights = (intelligenceReport.marketInsights ?? []) as Array<{ keyword?: string }>;
+    const keywordList: string[] = [
+      ...quickWins.map((w) => w.keyword ?? "").filter(Boolean),
+      ...marketInsights.slice(0, 5).map((k) => k.keyword ?? "").filter(Boolean),
+    ].filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 30);
+
+    if (keywordList.length === 0) {
+      toast.error("Aucun mot-clé trouvé dans l'analyse");
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const result = await startBulkGeneration(workspaceId, keywordList);
+      if (result.success && result.batchJobId) {
+        setBatchJobId(result.batchJobId);
+        setKeywords(keywordList.join("\n"));
+        toast.success(`${keywordList.length} articles en cours de génération !`);
+        // Polling
+        const interval = setInterval(async () => {
+          if (result.batchJobId) {
+            const progress = await getBatchJobProgress(result.batchJobId);
+            if (progress.success && progress.data) {
+              const pct = Math.round((progress.data.completed / progress.data.totalItems) * 100);
+              setGenerationProgress(pct);
+              if (progress.data.status === "COMPLETED" || progress.data.status === "FAILED") {
+                clearInterval(interval);
+                setIsGenerating(false);
+                loadArticles();
+              }
+            }
+          }
+        }, 2000);
+      } else {
+        toast.error(result.error ?? "Erreur lors du lancement");
+        setIsGenerating(false);
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSaveSetup = async () => {
+    if (!workspaceId) return;
+    const pillars = setupPillars.map((p) => p.trim()).filter(Boolean);
+    if (!setupBusinessActivity.trim()) return toast.error("Décrivez votre activité / produit");
+    if (!setupDomainUrl.trim()) return toast.error("Ajoutez l'URL de votre site");
+    if (!setupTargetAudience.trim()) return toast.error("Décrivez votre audience cible");
+    if (setupGoals.length === 0) return toast.error("Choisissez au moins un objectif");
+    if (pillars.length === 0) return toast.error("Ajoutez au moins un pilier de contenu");
+
+    setIsSavingSetup(true);
+    try {
+      const result = await saveSeoSetup(workspaceId, {
+        domainUrl: setupDomainUrl.trim(),
+        strategy: {
+          frequency: setupFrequency,
+          language: setupLanguage,
+          targetAudience: setupTargetAudience.trim(),
+          goals: setupGoals,
+          contentPillars: pillars,
+          contentMode: setupContentMode,
+          siteType: setupSiteType,
+          businessActivity: setupBusinessActivity.trim(),
+        },
+      });
+      if (result.success) {
+        setSeoSetupDone(true);
+        toast.success("Configuration SEO sauvegardée !");
+      } else {
+        toast.error(result.error ?? "Erreur lors de la sauvegarde");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsSavingSetup(false);
+    }
+  };
+
+  const toggleGoal = (goal: string) =>
+    setSetupGoals((prev) =>
+      prev.includes(goal) ? prev.filter((g) => g !== goal) : [...prev, goal]
+    );
 
   const handleGenerateCluster = async () => {
     if (!clusterKeyword.trim()) {
@@ -602,8 +847,22 @@ export default function SEOFactoryPage() {
       </div>
 
       {/* ─── Tabs ─── */}
-      <Tabs defaultValue="articles" className="space-y-6">
+      <Tabs defaultValue={seoSetupDone === false ? "setup" : "articles"} className="space-y-6">
         <TabsList className="inline-flex h-12 items-center gap-1 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/60 shadow-sm p-1.5">
+          {/* Configuration tab — always first */}
+          <TabsTrigger
+            value="setup"
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Configuration
+            {seoSetupDone === false && (
+              <span className="ml-2 inline-flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+            )}
+            {seoSetupDone === true && (
+              <CheckCircle className="ml-2 h-3.5 w-3.5 text-emerald-400" />
+            )}
+          </TabsTrigger>
           <TabsTrigger
             value="articles"
             className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
@@ -618,14 +877,16 @@ export default function SEOFactoryPage() {
           </TabsTrigger>
           <TabsTrigger
             value="generate-single"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+            disabled={!seoSetupDone}
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus className="h-4 w-4 mr-2" />
             Generer un Article
           </TabsTrigger>
           <TabsTrigger
             value="generate-bulk"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+            disabled={!seoSetupDone}
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Sparkles className="h-4 w-4 mr-2" />
             Generation Bulk
@@ -653,7 +914,8 @@ export default function SEOFactoryPage() {
           </TabsTrigger>
           <TabsTrigger
             value="cluster"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+            disabled={!seoSetupDone}
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Network className="h-4 w-4 mr-2" />
             Topic Cluster
@@ -666,6 +928,346 @@ export default function SEOFactoryPage() {
             Stratégie
           </TabsTrigger>
         </TabsList>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            SETUP TAB — Prérequis avant rédaction
+        ═══════════════════════════════════════════════════════════════ */}
+        <TabsContent value="setup" className="space-y-6">
+          <div className="max-w-2xl space-y-6">
+            {/* Header */}
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Settings className="h-5 w-5 text-emerald-600" />
+                Configuration SEO
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Renseignez votre site et établissez votre stratégie de publication avant de commencer la rédaction d&apos;articles.
+              </p>
+            </div>
+
+            {/* Step 0 — Content Mode */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-emerald-600" />
+                  Étape 1 — Type de contenu à générer
+                </CardTitle>
+                <CardDescription>
+                  Choisissez le mode qui correspond à votre stratégie. Il détermine la structure, le ton et les règles SEO appliqués à chaque article.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {([
+                    {
+                      mode: "article" as SeoContentMode,
+                      icon: "📝",
+                      label: "Mode Article",
+                      badge: "Standard",
+                      badgeColor: "bg-emerald-100 text-emerald-700",
+                      description: "Articles SEO complets, structurés et optimisés Google. Maillage interne, sources externes, FAQ et CTA naturels.",
+                    },
+                    {
+                      mode: "affiliation" as SeoContentMode,
+                      icon: "🔗",
+                      label: "Mode Affiliation",
+                      badge: "Conversion",
+                      badgeColor: "bg-orange-100 text-orange-700",
+                      description: "Comparatifs, guides d'achat et avis produits qui convertissent. Tableaux pros/cons, liens d'affiliation optimisés, trust signals.",
+                    },
+                    {
+                      mode: "ecommerce" as SeoContentMode,
+                      icon: "🛒",
+                      label: "Mode E-commerce",
+                      badge: "Ventes",
+                      badgeColor: "bg-blue-100 text-blue-700",
+                      description: "Fiches produits uniques et optimisées. Schema Product, liens vers page produit/panier, descriptions conversion-focused.",
+                    },
+                    {
+                      mode: "discovery" as SeoContentMode,
+                      icon: "🔥",
+                      label: "Mode Discovery",
+                      badge: "Viral",
+                      badgeColor: "bg-pink-100 text-pink-700",
+                      description: "Sujets émergents et tendances pour Google Discover. Angles inédits, titres accrocheurs, contenu visuel et partage social.",
+                    },
+                    {
+                      mode: "local" as SeoContentMode,
+                      icon: "📍",
+                      label: "Mode Local",
+                      badge: "SEO Local",
+                      badgeColor: "bg-violet-100 text-violet-700",
+                      description: "Articles optimisés par ville, département ou région. Schema LocalBusiness, requêtes «près de chez moi», citations locales.",
+                    },
+                  ] as const).map(({ mode, icon, label, badge, badgeColor, description }) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSetupContentMode(mode)}
+                      className={`relative text-left rounded-xl border-2 p-4 transition-all hover:shadow-md ${
+                        setupContentMode === mode
+                          ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      {setupContentMode === mode && (
+                        <CheckCircle className="absolute top-3 right-3 h-4 w-4 text-emerald-500" />
+                      )}
+                      <div className="text-2xl mb-2">{icon}</div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-sm text-gray-900">{label}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeColor}`}>{badge}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed">{description}</p>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Step 1b — Business context */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Target className="h-4 w-4 text-emerald-600" />
+                  Étape 2 — Votre activité et type de site
+                </CardTitle>
+                <CardDescription>
+                  Ces informations calibrent le contenu généré : un SaaS B2B ne parle pas comme un blog d&apos;affiliation.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Business activity */}
+                <div className="space-y-2">
+                  <Label htmlFor="setup-activity">
+                    Décrivez votre activité / offre principale
+                  </Label>
+                  <Input
+                    id="setup-activity"
+                    placeholder="Ex : Logiciel CRM pour PME, Boutique de vêtements bio, Agence SEO freelance…"
+                    value={setupBusinessActivity}
+                    onChange={(e) => setSetupBusinessActivity(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-400">
+                    Soyez précis : vos produits, prestations, ou le type de contenu que vous relayez.
+                  </p>
+                </div>
+
+                {/* Site type selector */}
+                <div className="space-y-3">
+                  <Label>Type de site</Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {([
+                      { value: "saas", icon: "💻", label: "SaaS / App", desc: "Logiciel, outil, plateforme" },
+                      { value: "ecommerce", icon: "🛍️", label: "E-commerce", desc: "Boutique en ligne, produits physiques ou digitaux" },
+                      { value: "services", icon: "🤝", label: "Services / Agence", desc: "Prestation, consulting, freelance" },
+                      { value: "blog_affiliation", icon: "✍️", label: "Blog / Affiliation", desc: "Contenu éditorial, liens affilés, pas de produits propres" },
+                      { value: "media", icon: "📰", label: "Média / Presse", desc: "Actualités, magazine en ligne, news" },
+                      { value: "local_business", icon: "📍", label: "Commerce local", desc: "Restaurant, artisan, cabinet, magasin physique" },
+                      { value: "marketplace", icon: "🏪", label: "Marketplace", desc: "Plateforme multi-vendeurs, annonces" },
+                      { value: "portfolio", icon: "🎨", label: "Portfolio / Vitrine", desc: "CV en ligne, site vitrine sans vente" },
+                    ] as const).map(({ value, icon, label, desc }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setSetupSiteType(value as SeoSiteType)}
+                        className={`text-left rounded-lg border-2 p-3 transition-all hover:shadow-sm ${
+                          setupSiteType === value
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
+                        }`}
+                      >
+                        {setupSiteType === value && (
+                          <CheckCircle className="float-right h-3.5 w-3.5 text-emerald-500 mt-0.5" />
+                        )}
+                        <div className="text-lg mb-1">{icon}</div>
+                        <div className="font-semibold text-xs text-gray-900 leading-tight">{label}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Step 2 — Site URL */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-emerald-600" />
+                  Étape 3 — URL de votre site
+                </CardTitle>
+                <CardDescription>
+                  Skalle analysera votre site pour calibrer le contenu généré.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="setup-domain">URL du site (ex&nbsp;: https://monsite.com)</Label>
+                  <Input
+                    id="setup-domain"
+                    type="url"
+                    placeholder="https://monsite.com"
+                    value={setupDomainUrl}
+                    onChange={(e) => setSetupDomainUrl(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Step 2 — Publication strategy */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Flag className="h-4 w-4 text-emerald-600" />
+                  Étape 4 — Stratégie de publication
+                </CardTitle>
+                <CardDescription>
+                  Définissez la fréquence, la langue et les objectifs de votre stratégie SEO.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Frequency + Language row */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Fréquence de publication</Label>
+                    <Select
+                      value={setupFrequency}
+                      onValueChange={(v) => setSetupFrequency(v as SeoPublicationStrategy["frequency"])}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1/week">1 article / semaine</SelectItem>
+                        <SelectItem value="2/week">2 articles / semaine</SelectItem>
+                        <SelectItem value="3/week">3 articles / semaine</SelectItem>
+                        <SelectItem value="daily">1 article / jour</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Langue des articles</Label>
+                    <Select
+                      value={setupLanguage}
+                      onValueChange={(v) => setSetupLanguage(v as SeoPublicationStrategy["language"])}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fr">Français</SelectItem>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="es">Español</SelectItem>
+                        <SelectItem value="de">Deutsch</SelectItem>
+                        <SelectItem value="pt">Português</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Target audience */}
+                <div className="space-y-2">
+                  <Label htmlFor="setup-audience" className="flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5 text-gray-400" />
+                    Audience cible
+                  </Label>
+                  <Textarea
+                    id="setup-audience"
+                    placeholder="Ex : PME françaises cherchant à automatiser leur prospection commerciale"
+                    value={setupTargetAudience}
+                    onChange={(e) => setSetupTargetAudience(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+
+                {/* Goals */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Target className="h-3.5 w-3.5 text-gray-400" />
+                    Objectifs SEO
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: "organic_traffic", label: "Trafic organique" },
+                      { value: "lead_gen", label: "Génération de leads" },
+                      { value: "brand_awareness", label: "Notoriété" },
+                      { value: "conversion", label: "Conversion" },
+                      { value: "thought_leadership", label: "Expertise métier" },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => toggleGoal(value)}
+                        className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                          setupGoals.includes(value)
+                            ? "bg-emerald-600 text-white border-emerald-600"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-emerald-400"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Content pillars */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Columns3 className="h-3.5 w-3.5 text-gray-400" />
+                    Piliers de contenu (thèmes principaux)
+                  </Label>
+                  <div className="space-y-2">
+                    {setupPillars.map((pillar, i) => (
+                      <Input
+                        key={i}
+                        placeholder={`Pilier ${i + 1} (ex : Automatisation marketing)`}
+                        value={pillar}
+                        onChange={(e) => {
+                          const next = [...setupPillars];
+                          next[i] = e.target.value;
+                          setSetupPillars(next);
+                        }}
+                      />
+                    ))}
+                    {setupPillars.length < 6 && (
+                      <button
+                        type="button"
+                        className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                        onClick={() => setSetupPillars([...setupPillars, ""])}
+                      >
+                        <Plus className="h-3 w-3" />
+                        Ajouter un pilier
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Save button */}
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleSaveSetup}
+                disabled={isSavingSetup}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {isSavingSetup ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sauvegarde…</>
+                ) : (
+                  <><CheckCircle className="h-4 w-4 mr-2" />Valider la configuration</>
+                )}
+              </Button>
+              {seoSetupDone && (
+                <span className="text-sm text-emerald-600 flex items-center gap-1.5">
+                  <CheckCircle className="h-4 w-4" />
+                  Configuration active — la rédaction est débloquée
+                </span>
+              )}
+            </div>
+          </div>
+        </TabsContent>
 
         {/* ═══════════════════════════════════════════════════════════════
             ARTICLES TAB
@@ -1408,7 +2010,14 @@ export default function SEOFactoryPage() {
                         const result = await runSEOIntelligence(workspaceId, intelligenceUrl);
                         if (result.success && result.data) {
                           setIntelligenceReport(result.data);
-                          toast.success("Analyse SEO Intelligence terminee !");
+                          setIsEditingAudit(false);
+                          toast.success("Analyse SEO Intelligence terminée !");
+                          // Refresh history and select the new audit
+                          const history = await listSeoAudits(workspaceId, 20);
+                          if (history.success && history.data) {
+                            setAuditHistory(history.data);
+                            setSelectedAuditId(history.data[0]?.id ?? null);
+                          }
                         } else {
                           toast.error(result.error || "Erreur lors de l'analyse");
                         }
@@ -1441,9 +2050,155 @@ export default function SEOFactoryPage() {
             </CardContent>
           </Card>
 
+          {/* Historique des analyses */}
+          {auditHistory.length > 0 && (
+            <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-emerald-600" />
+                  Analyses précédentes ({auditHistory.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2 flex-wrap">
+                  {auditHistory.map((audit) => (
+                    <button
+                      key={audit.id}
+                      onClick={() => handleLoadAudit(audit.id)}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all hover:shadow-sm ${
+                        selectedAuditId === audit.id
+                          ? "border-emerald-400 bg-emerald-50 text-emerald-700 font-medium"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-emerald-200 hover:bg-emerald-50/40"
+                      }`}
+                    >
+                      <Globe className="h-3 w-3 shrink-0" />
+                      <span className="max-w-[120px] truncate">{audit.url.replace(/^https?:\/\//, "")}</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 py-0 ${
+                          audit.globalScore >= 70 ? "bg-emerald-50 text-emerald-600 border-emerald-200" :
+                          audit.globalScore >= 50 ? "bg-amber-50 text-amber-600 border-amber-200" :
+                          "bg-red-50 text-red-600 border-red-200"
+                        }`}
+                      >
+                        {audit.globalScore}
+                      </Badge>
+                      <span className="text-gray-400">{new Date(audit.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</span>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Intelligence Results */}
           {intelligenceReport && (
             <div className="space-y-6">
+              {/* Barre d'actions : valider / corriger / générer */}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-3">
+                <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                  <span>Analyse chargée — validez, corrigez, puis générez vos articles.</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!isEditingAudit ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                      onClick={handleStartEditAudit}
+                      disabled={!selectedAuditId}
+                    >
+                      <Edit className="h-3.5 w-3.5 mr-1.5" />
+                      Corriger l&apos;analyse
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        onClick={() => setIsEditingAudit(false)}
+                      >
+                        Annuler
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
+                        onClick={handleSaveAuditCorrections}
+                        disabled={isSavingAudit}
+                      >
+                        {isSavingAudit ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5 mr-1.5" />}
+                        Sauvegarder
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-8 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+                    onClick={handleGenerateFromAudit}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+                    Générer des articles
+                  </Button>
+                </div>
+              </div>
+
+              {/* Mode édition — correction de l'analyse */}
+              {isEditingAudit && (
+                <Card className="border-amber-200 bg-amber-50/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+                      <Edit className="h-4 w-4" />
+                      Corriger l&apos;analyse — chaque ligne = un élément
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-600">Quick Wins (un mot-clé par ligne)</Label>
+                      <Textarea
+                        value={editedQuickWins}
+                        onChange={(e) => setEditedQuickWins(e.target.value)}
+                        rows={6}
+                        className="text-xs font-mono resize-none"
+                        placeholder="mot-clé 1&#10;mot-clé 2"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-600">Actions techniques ([high/medium/low] Description)</Label>
+                      <Textarea
+                        value={editedTechnicalActions}
+                        onChange={(e) => setEditedTechnicalActions(e.target.value)}
+                        rows={6}
+                        className="text-xs font-mono resize-none"
+                        placeholder="[high] Optimiser les balises title&#10;[medium] Ajouter des méta descriptions"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-600">Gaps sémantiques (un sujet par ligne)</Label>
+                      <Textarea
+                        value={editedSemanticGaps}
+                        onChange={(e) => setEditedSemanticGaps(e.target.value)}
+                        rows={6}
+                        className="text-xs font-mono resize-none"
+                        placeholder="Sujet 1&#10;Sujet 2"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-600">SWOT (JSON)</Label>
+                      <Textarea
+                        value={editedSwot}
+                        onChange={(e) => setEditedSwot(e.target.value)}
+                        rows={6}
+                        className="text-xs font-mono resize-none"
+                        placeholder='{"strengths":[],"weaknesses":[],"opportunities":[],"threats":[]}'
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Overview cards */}
               <div className="grid gap-4 md:grid-cols-3">
                 <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
@@ -1844,6 +2599,30 @@ export default function SEOFactoryPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Bottom CTA — Générer des articles depuis ce diagnostic */}
+              <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-emerald-600" />
+                    Générer des articles depuis ce diagnostic
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {((intelligenceReport.strategy?.quickWins?.length ?? 0) + Math.min((intelligenceReport.marketInsights?.length ?? 0), 5))} mots-clés identifiés — lancez la rédaction en un clic.
+                  </p>
+                </div>
+                <Button
+                  className="shrink-0 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-sm px-6"
+                  onClick={handleGenerateFromAudit}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Génération en cours...</>
+                  ) : (
+                    <><Sparkles className="h-4 w-4 mr-2" />Rédiger les articles</>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
         </TabsContent>

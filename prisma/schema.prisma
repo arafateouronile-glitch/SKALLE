@@ -81,6 +81,7 @@ model Workspace {
   creativeBriefs            CreativeBrief[]
   emailDeliverabilityConfig EmailDeliverabilityConfig?
   extensionTokens           ExtensionToken[]
+  externalIntegrations      ExternalIntegration[]
   facebookGroups            FacebookGroup[]
   googleSearchConsoleConfig GoogleSearchConsoleConfig?
   keywordResearches         KeywordResearch[]
@@ -93,12 +94,11 @@ model Workspace {
   quickPaymentLinks         QuickPaymentLink[]
   audits                    SEOAudit[]
   scrapedAds                ScrapedAd[]
+  skalleApiKeys             SkalleApiKey[]
   smtpConfigs               SmtpConfig[]
   socialInteractions        SocialInteraction[]
-  user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  skalleApiKeys             SkalleApiKey[]
   webhookEndpoints          WebhookEndpoint[]
-  externalIntegrations      ExternalIntegration[]
+  user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -270,7 +270,6 @@ model Prospect {
   companySize         String?
   emailMessages       Json?
   emailVerified       Boolean               @default(false)
-  emailStatus         String?
   enrichmentData      Json?
   industry            String?
   linkedInConnections Int?
@@ -291,6 +290,7 @@ model Prospect {
   attributedPostId    String?
   intentScore         Int?
   lastScoredAt        DateTime?
+  emailStatus         String?
   enrichments         LeadEnrichment[]
   sequences           OutreachSequence[]
   workspace           Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -852,6 +852,47 @@ model MetaSocialAccount {
   @@index([instagramAccountId])
 }
 
+model SkalleApiKey {
+  id          String    @id @default(cuid())
+  name        String
+  hashedKey   String    @unique
+  keyPrefix   String
+  workspaceId String
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([hashedKey])
+}
+
+model WebhookEndpoint {
+  id          String    @id @default(cuid())
+  url         String
+  secret      String
+  events      String[]
+  isActive    Boolean   @default(true)
+  workspaceId String
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model ExternalIntegration {
+  id              String    @id @default(cuid())
+  provider        String
+  encryptedApiKey String
+  iv              String
+  workspaceId     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider])
+  @@index([workspaceId])
+}
+
 enum Plan {
   FREE
   BUSINESS
@@ -877,16 +918,16 @@ enum PostType {
 
 enum ProspectStatus {
   NEW
-  RESEARCHED          // Profil analysé, pas encore contacté
-  MESSAGES_GENERATED  // Messages générés par l'agent, en attente d'envoi manuel
-  CONTACTED           // Message envoyé
-  RESPONDED           // A répondu (remplace REPLIED pour les nouveaux prospects)
-  REPLIED             // Alias legacy — garder pour les données existantes
-  MEETING_BOOKED      // Rendez-vous planifié
-  CONVERTED           // Deal closé
-  LOST                // Perdu / sans suite
-  REJECTED            // Refus explicite (legacy)
-  UNSUBSCRIBED        // Désabonné (legacy)
+  CONTACTED
+  REPLIED
+  CONVERTED
+  REJECTED
+  RESEARCHED
+  MESSAGES_GENERATED
+  RESPONDED
+  MEETING_BOOKED
+  LOST
+  UNSUBSCRIBED
 }
 
 enum SourceType {
@@ -897,8 +938,8 @@ enum SourceType {
   JOB_BOARD_SIGNAL
   LOCAL_MAPS
   NEW_COMPANY_REGISTRY
-  PARTNER_SOCIAL   // Influenceur (Instagram, TikTok, YouTube)
-  PARTNER_SEO      // Affilié blog/média (via Google SERP)
+  PARTNER_SOCIAL
+  PARTNER_SEO
 }
 
 enum CMSPlatform {
@@ -947,48 +988,4 @@ enum CampaignStatus {
   PAUSED
   COMPLETED
   FAILED
-}
-
-// ── API Keys (accès API externe Skalle) ───────────────────────────────────
-model SkalleApiKey {
-  id          String    @id @default(cuid())
-  name        String
-  hashedKey   String    @unique
-  keyPrefix   String
-  workspaceId String
-  lastUsedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-
-  @@index([workspaceId])
-  @@index([hashedKey])
-}
-
-// ── Webhook Endpoints (outbound webhooks) ─────────────────────────────────
-model WebhookEndpoint {
-  id          String   @id @default(cuid())
-  url         String
-  secret      String
-  events      String[]
-  isActive    Boolean  @default(true)
-  workspaceId String
-  createdAt   DateTime @default(now())
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-
-  @@index([workspaceId])
-}
-
-// ── External Integrations (connecteurs tiers) ─────────────────────────────
-model ExternalIntegration {
-  id              String   @id @default(cuid())
-  provider        String
-  encryptedApiKey String
-  iv              String
-  workspaceId     String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-
-  @@unique([workspaceId, provider])
-  @@index([workspaceId])
 }

@@ -15,13 +15,14 @@ import { updateConceptStatus } from "@/actions/social-factory";
 import { toast } from "sonner";
 import type { PostType } from "@prisma/client";
 import type { ConceptCategory, ContentConcept } from "@/lib/services/social/content-factory";
-import { Linkedin, Twitter, Instagram, Video } from "lucide-react";
+import { Linkedin, Twitter, Instagram, Video, Facebook } from "lucide-react";
 
 const NETWORK_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   LINKEDIN: Linkedin,
   X: Twitter,
   INSTAGRAM: Instagram,
   TIKTOK: Video,
+  FACEBOOK: Facebook,
 };
 
 interface Post {
@@ -57,8 +58,11 @@ export function ProposalWall({ contentPlanId, concepts, posts }: ProposalWallPro
   };
 
   const getPostsForConcept = (concept: ContentConcept) => {
+    const normalizedTitle = concept.title.trim().toLowerCase();
     return posts.filter(
-      (p) => p.title === concept.title && concept.targetNetworks.includes(p.type)
+      (p) =>
+        (p.title?.trim().toLowerCase() === normalizedTitle) &&
+        concept.targetNetworks.includes(p.type)
     );
   };
 
@@ -154,8 +158,8 @@ export function ProposalWall({ contentPlanId, concepts, posts }: ProposalWallPro
                 <Textarea
                   value={previewPost.content}
                   readOnly
-                  rows={15}
-                  className="font-mono text-sm"
+                  rows={20}
+                  className="font-mono text-sm resize-none"
                 />
                 {previewPost.excerpt && (
                   <div>

@@ -57,6 +57,8 @@ export interface ArticleInput {
   userId?: string;
   /** ID du workspace (pour audit trail des crédits image) */
   workspaceId?: string;
+  /** Mode de contenu SEO : article | affiliation | ecommerce | discovery | local */
+  contentMode?: string;
 }
 
 export interface EliteArticle extends GeneratedArticle {
@@ -318,13 +320,57 @@ export async function generateEliteArticle(
     ? `\nTON DE VOIX DE LA MARQUE (respecter impérativement) :\n${JSON.stringify(brandVoice, null, 2)}\n`
     : "\nTON PAR DÉFAUT : Expert, direct, sans jargon inutile. Phrases courtes. Exemples concrets.\n";
 
+  // Résoudre le mode + contexte métier depuis brandVoice.seoPublicationStrategy
+  const seoStrategy =
+    (brandVoice?.seoPublicationStrategy as Record<string, unknown> | undefined) ?? {};
+  const contentMode: string =
+    data.contentMode ?? (seoStrategy.contentMode as string | undefined) ?? "article";
+  const businessActivity = (seoStrategy.businessActivity as string | undefined) ?? "";
+  const siteType = (seoStrategy.siteType as string | undefined) ?? "";
+
+  // Business context addendum injected into every prompt
+  const businessContextAddendum = businessActivity || siteType
+    ? `\nCONTEXTE DU SITE :\n${businessActivity ? `- Activité / offre : ${businessActivity}\n` : ""}${siteType ? `- Type de site : ${siteType}\n` : ""}`
+    : "";
+
+  const modeInstructions: Record<string, string> = {
+    affiliation: `\nMODE AFFILIATION ACTIVÉ — RÈGLES SUPPLÉMENTAIRES :
+- Structure : tableau comparatif produits (| Produit | Note | Prix | Lien |), section "Notre recommandation n°1", pros/cons par produit
+- Liens d'affiliation : intègre des CTA [Voir le prix →](URL) et [Commander](URL) pour chaque produit analysé
+- Trust signals : badge "⭐ Meilleur rapport qualité-prix", "🏆 Notre choix n°1", date de mise à jour
+- Lien interne obligatoire vers la page d'accueil ou la catégorie principale du site (ancre contenant le mot-clé)\n`,
+    ecommerce: `\nMODE E-COMMERCE ACTIVÉ — RÈGLES SUPPLÉMENTAIRES :
+- Structure : bénéfices clés (pas de features), caractéristiques techniques tabulées, "Pour qui ?" section, CTA [🛒 Voir la fiche produit](URL)
+- Schema Product en commentaire : <!--SCHEMA_PRODUCT: {name, description, price, availability}-->
+- Liens : lien vers la fiche produit (ancre mot-clé produit), lien vers la catégorie parent, lien vers la page d'accueil avec ancre marque
+- Mots de conversion : "livraison rapide", "garantie", "retour gratuit"\n`,
+    discovery: `\nMODE DISCOVERY ACTIVÉ — RÈGLES SUPPLÉMENTAIRES :
+- H1 émotionnel avec chiffre ou tension (ex : "7 signes que…", "Pourquoi tout le monde parle de…")
+- H2 avec curiosity gap, chiffres, émotions — optimisés pour le partage social
+- Schema Article en commentaire : <!--SCHEMA_ARTICLE: {datePublished, author}-->
+- Liens externes vers les sources de tendances (études, données officielles)
+- Conclusion : question ouverte invitant au débat, CTA de partage\n`,
+    local: `\nMODE LOCAL SEO ACTIVÉ — RÈGLES SUPPLÉMENTAIRES :
+- Mention de la ville/région dès la 1ère phrase du corps, dans au moins 3 H2, et dans la conclusion
+- Schema LocalBusiness en commentaire : <!--SCHEMA_LOCAL: {name, address, city, zip}-->
+- Lien vers Google Maps (placeholder [Voir sur Google Maps](URL_MAPS))
+- Liens internes vers les pages des villes/communes voisines si disponibles
+- Lien externe vers la mairie ou organisme officiel local (crédibilité locale)\n`,
+    article: `\nMODE ARTICLE STANDARD — RÈGLES LIENS :
+- 2-4 liens internes vers les articles existants listés (ancres descriptives et contextuelles)
+- 2-3 liens externes vers sources autoritaires (Wikipedia, études, médias reconnus)
+- 1 lien vers la page d'accueil ou section principale du site (ancre contenant le mot-clé ou la marque)\n`,
+  };
+
+  const modeAddendum = modeInstructions[contentMode] ?? modeInstructions.article;
+
   const internalLinksSection =
-    existingArticleTitles.length > 0
+    (existingArticleTitles.length > 0
       ? `\nARTICLES EXISTANTS (intégrer des liens internes pertinents si opportun) :\n${existingArticleTitles
           .slice(0, 10)
           .map((t) => `- ${t}`)
           .join("\n")}\n`
-      : "";
+      : "") + modeAddendum + businessContextAddendum;
 
   // ── Étape D : Génération de l'article avec Claude ─────────────────────
   const chain = eliteWriterPrompt.pipe(getClaude()).pipe(getStringParser());

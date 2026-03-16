@@ -6,6 +6,8 @@ import { generateImage } from "@/lib/ai/banana";
 import { generateEnhancedArticle } from "@/lib/seo/article-generator";
 import { dispatchWebhook } from "@/lib/services/webhooks/dispatcher";
 
+import type { SeoContentMode } from "@/actions/seo-setup";
+
 interface BulkArticleEvent {
   data: {
     batchJobId: string;
@@ -13,6 +15,7 @@ interface BulkArticleEvent {
     keywords: string[];
     brandVoice?: Record<string, unknown>;
     useEnhancedPipeline?: boolean;
+    contentMode?: SeoContentMode;
   };
 }
 
@@ -24,7 +27,7 @@ export const generateBulkArticles = inngest.createFunction(
   },
   { event: "articles/bulk.generate" },
   async ({ event, step }) => {
-    const { batchJobId, workspaceId, keywords, brandVoice, useEnhancedPipeline = true } = event.data;
+    const { batchJobId, workspaceId, keywords, brandVoice, useEnhancedPipeline = true, contentMode } = event.data;
 
     // Initialiser les statuts par mot-clé
     const itemStatuses: Record<string, string> = {};
@@ -96,6 +99,7 @@ export const generateBulkArticles = inngest.createFunction(
               brandVoice,
               workspaceId,
               existingArticleTitles: existingTitles,
+              contentMode,
             });
 
             // Générer image
@@ -253,13 +257,14 @@ export const generateSingleArticle = inngest.createFunction(
   },
   { event: "articles/single.generate" },
   async ({ event, step }) => {
-    const { workspaceId, keyword, brandVoice } = event.data;
+    const { workspaceId, keyword, brandVoice, contentMode } = event.data;
 
     const article = await step.run("generate-article", async () => {
       return generateEnhancedArticle({
         keyword,
         brandVoice,
         workspaceId,
+        contentMode,
       });
     });
 
