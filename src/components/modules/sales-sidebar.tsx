@@ -51,11 +51,11 @@ const navigation = [
   { name: "Paramètres", href: "/sales-os/settings", icon: Settings },
 ];
 
-export function SalesSidebar() {
+export function SalesSidebar({ className }: { className?: string }) {
   const pathname = usePathname();
 
   return (
-    <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:w-72 lg:flex-col lg:pt-4 lg:pb-4 lg:pl-4">
+    <div className={cn("hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:w-72 lg:flex-col lg:pt-4 lg:pb-4 lg:pl-4", className)}>
       <div className="flex w-full grow flex-col gap-y-5 overflow-y-auto rounded-2xl border border-white/20 bg-white/60 shadow-2xl shadow-black/5 backdrop-blur-xl px-6 pb-4">
         {/* Logo */}
         <div className="flex h-16 shrink-0 items-center gap-3">

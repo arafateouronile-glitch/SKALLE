@@ -51,7 +51,11 @@ export function Header({ user, workspace = "cmo", credits = 0, plan = "FREE" }: 
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-72 p-0 bg-white/90 backdrop-blur-xl border-gray-200/60">
-            {isCso ? <SalesSidebar /> : <Sidebar credits={credits} plan={plan} />}
+            {isCso ? (
+              <SalesSidebar className="flex w-full h-full flex-col pt-4 pb-4 pl-4" />
+            ) : (
+              <Sidebar credits={credits} plan={plan} className="flex w-full h-full flex-col pt-4 pb-4 pl-4" />
+            )}
           </SheetContent>
         </Sheet>
 

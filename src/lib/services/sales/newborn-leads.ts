@@ -434,9 +434,18 @@ export async function scanNewbornLeads(
 // 4. ENRICHISSEMENT ET INJECTION CRM
 // ═══════════════════════════════════════════════════════════════════════════
 
+export interface ProspectBasic {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string;
+  jobTitle: string | null;
+}
+
 export interface BulkNewbornResult {
   success: boolean;
   imported: number;
+  prospects: ProspectBasic[];
   error?: string;
 }
 
@@ -450,6 +459,7 @@ export async function bulkSaveNewbornLeads(
   leads: NewbornLeadEnriched[]
 ): Promise<BulkNewbornResult> {
   let imported = 0;
+  const prospects: ProspectBasic[] = [];
 
   for (const lead of leads) {
     try {
@@ -471,7 +481,7 @@ export async function bulkSaveNewbornLeads(
         .filter(Boolean)
         .join(" | ");
 
-      await prisma.prospect.upsert({
+      const prospect = await prisma.prospect.upsert({
         where: { email_workspaceId: { email, workspaceId } },
         update: {
           suggestedHook: lead.suggestedHook,
@@ -503,12 +513,14 @@ export async function bulkSaveNewbornLeads(
             enrichedViaDropcontact: lead.enriched,
           },
         },
+        select: { id: true, name: true, email: true, company: true, jobTitle: true },
       });
+      prospects.push(prospect);
       imported++;
     } catch (err) {
       console.error(`[NewbornLeads] Failed to save ${lead.companyName}:`, err);
     }
   }
 
-  return { success: true, imported };
+  return { success: true, imported, prospects };
 }

@@ -186,9 +186,18 @@ async function generateHookForTag(tag: LocalPainTag, business: LocalBusinessRaw)
 // 3. INJECTION MASSIVE CRM
 // ═══════════════════════════════════════════════════════════════════════════
 
+export interface ProspectBasic {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string;
+  jobTitle: string | null;
+}
+
 export interface BulkLocalResult {
   success: boolean;
   imported: number;
+  prospects: ProspectBasic[];
   error?: string;
 }
 
@@ -201,10 +210,11 @@ export async function bulkProcessLocalLeads(
   leads: LocalLeadEvaluated[]
 ): Promise<BulkLocalResult> {
   let imported = 0;
+  const prospects: ProspectBasic[] = [];
   for (const lead of leads) {
     try {
       const uniqueEmail = `local+${randomBytes(8).toString("hex")}@maps.skalle`;
-      await prisma.prospect.create({
+      const prospect = await prisma.prospect.create({
         data: {
           name: lead.name,
           company: lead.name,
@@ -220,13 +230,15 @@ export async function bulkProcessLocalLeads(
           platform: "LOCAL",
           workspaceId,
         },
+        select: { id: true, name: true, email: true, company: true, jobTitle: true },
       });
+      prospects.push(prospect);
       imported++;
     } catch (err) {
       console.error(`[LocalScraper] Failed to create ${lead.name}:`, err);
     }
   }
-  return { success: true, imported };
+  return { success: true, imported, prospects };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

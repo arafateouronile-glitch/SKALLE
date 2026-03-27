@@ -93,7 +93,7 @@ type BudgetStatus = {
   limitCents: number;
 };
 
-export function Sidebar({ credits, plan }: SidebarProps) {
+export function Sidebar({ credits, plan, className }: SidebarProps & { className?: string }) {
   const pathname = usePathname();
   const planKey = plan in PLAN_LIMITS ? (plan as keyof typeof PLAN_LIMITS) : "FREE";
   const maxCredits = PLAN_LIMITS[planKey].monthlyCredits;
@@ -115,7 +115,7 @@ export function Sidebar({ credits, plan }: SidebarProps) {
     (href !== "/marketing-os" && pathname.startsWith(href));
 
   return (
-    <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:w-72 lg:flex-col lg:pt-4 lg:pb-4 lg:pl-4">
+    <div className={cn("hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:w-72 lg:flex-col lg:pt-4 lg:pb-4 lg:pl-4", className)}>
       <div className="flex w-full grow flex-col overflow-y-auto rounded-2xl border border-white/20 bg-white/60 shadow-2xl shadow-black/5 backdrop-blur-xl px-4 pb-4">
         {/* Logo */}
         <div className="flex h-16 shrink-0 items-center gap-3 px-2">

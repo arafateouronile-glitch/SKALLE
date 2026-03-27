@@ -22,13 +22,14 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@/components/ui/tooltip";
-import { MapPin, Loader2, Ship, Download, ExternalLink, Sparkles, Zap } from "lucide-react";
+import { MapPin, Loader2, Ship, Download, ExternalLink, Sparkles, Zap, Rocket } from "lucide-react";
 import { getUserWorkspace } from "@/actions/leads";
 import { scanLocalRadarAction, bulkImportLocalLeadsAction } from "@/actions/cso-sales";
 import type { LocalLeadEvaluated, LocalPainTag } from "@/lib/services/sales/local-scraper";
 import { toast } from "sonner";
 import { CREDIT_COSTS } from "@/lib/credits";
 import { cn } from "@/lib/utils";
+import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
 
 const MIN_LEADS = 10;
 const MAX_LEADS = 100;
@@ -66,6 +67,8 @@ export default function LocalRadarPage() {
   const [leads, setLeads] = useState<LocalLeadEvaluated[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
+  const [campaignProspects, setCampaignProspects] = useState<{ id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]>([]);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   useEffect(() => {
     getUserWorkspace().then((r) => {
@@ -137,6 +140,31 @@ export default function LocalRadarPage() {
         setLeads((prev) => prev.filter((l) => !selectedIds.has(leadId(l))));
         setSelectedIds(new Set());
         toast.success(`${res.imported} prospect(s) importé(s) dans le CRM.`);
+      } else {
+        toast.error(res.error ?? "Erreur lors de l'import.");
+      }
+    } catch {
+      toast.error("Erreur lors de l'import.");
+    } finally {
+      setImporting(false);
+    }
+  }, [workspaceId, leads, selectedIds]);
+
+  const handleLaunchCampaign = useCallback(async () => {
+    if (!workspaceId || selectedIds.size === 0) {
+      toast.error("Sélectionnez au moins un prospect.");
+      return;
+    }
+    const toImport = leads.filter((l) => selectedIds.has(leadId(l)));
+    setImporting(true);
+    try {
+      const res = await bulkImportLocalLeadsAction(workspaceId, toImport);
+      if (res.success && res.prospects && res.prospects.length > 0) {
+        setLeads((prev) => prev.filter((l) => !selectedIds.has(leadId(l))));
+        setSelectedIds(new Set());
+        setCampaignProspects(res.prospects);
+        setWizardOpen(true);
+        toast.success(`${res.imported} prospect(s) importé(s). Configurez votre campagne.`);
       } else {
         toast.error(res.error ?? "Erreur lors de l'import.");
       }
@@ -312,7 +340,8 @@ export default function LocalRadarPage() {
                 </Button>
                 <Button
                   size="sm"
-                  className="h-8 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50"
+                  variant="outline"
+                  className="h-8 rounded-xl border-indigo-200 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
                   disabled={selectedIds.size === 0 || importing}
                   onClick={handleBulkImport}
                 >
@@ -321,7 +350,22 @@ export default function LocalRadarPage() {
                   ) : (
                     <>
                       <Download className="mr-1.5 h-3.5 w-3.5" />
-                      Importer ({selectedIds.size}) dans le CRM
+                      Importer ({selectedIds.size})
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50"
+                  disabled={selectedIds.size === 0 || importing}
+                  onClick={handleLaunchCampaign}
+                >
+                  {importing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Rocket className="mr-1.5 h-3.5 w-3.5" />
+                      Lancer une campagne ({selectedIds.size})
                     </>
                   )}
                 </Button>
@@ -447,6 +491,20 @@ export default function LocalRadarPage() {
               Modifiez l&apos;activité ou la localisation.
             </p>
           </div>
+        )}
+
+        {/* Campaign Wizard */}
+        {workspaceId && (
+          <CampaignWizard
+            workspaceId={workspaceId}
+            prospects={campaignProspects}
+            open={wizardOpen}
+            onOpenChange={setWizardOpen}
+            onCreated={() => {
+              setWizardOpen(false);
+              toast.success("Campagne créée avec succès !");
+            }}
+          />
         )}
 
         {/* État initial */}

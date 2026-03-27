@@ -26,14 +26,18 @@ import {
   ArrowRight,
   Zap,
   AlertCircle,
+  Rocket,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import Link from "next/link";
 import { getUserWorkspace } from "@/actions/leads";
-import { scanJobSignalsAction, addSignalToCrmAction } from "@/actions/cso-sales";
+import { scanJobSignalsAction, addSignalToCrmAction, bulkAddSignalsToCrmAction } from "@/actions/cso-sales";
 import type { AnalyzedSignal } from "@/lib/services/sales/intent-signals";
 import { toast } from "sonner";
 import { CREDIT_COSTS } from "@/lib/credits";
 import { cn } from "@/lib/utils";
+import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
 
 const COST = CREDIT_COSTS.job_board_signals;
 
@@ -46,6 +50,12 @@ export default function SignalsRadarPage() {
   const [isMockData, setIsMockData] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [detailSignal, setDetailSignal] = useState<AnalyzedSignal | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [campaignProspects, setCampaignProspects] = useState<{ id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]>([]);
+  const [wizardOpen, setWizardOpen] = useState(false);
+
+  const signalId = (s: AnalyzedSignal) => s.companyName + s.jobTitle;
 
   useEffect(() => {
     getUserWorkspace().then((r) => {
@@ -63,6 +73,7 @@ export default function SignalsRadarPage() {
       setScanning(true);
       setSignals([]);
       setIsMockData(false);
+      setSelectedIds(new Set());
       try {
         const res = await scanJobSignalsAction(workspaceId, keyword.trim(), location.trim());
         if (res.success && res.signals?.length) {
@@ -115,10 +126,53 @@ export default function SignalsRadarPage() {
   const handleIgnore = useCallback((signal: AnalyzedSignal) => {
     const id = signal.companyName + signal.jobTitle;
     setSignals((prev) => prev.filter((s) => s.companyName + s.jobTitle !== id));
+    setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     setDetailSignal((prev) =>
       prev && prev.companyName + prev.jobTitle === id ? null : prev
     );
   }, []);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === signals.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(signals.map(signalId)));
+    }
+  }, [signals, selectedIds.size]);
+
+  const handleLaunchCampaign = useCallback(async () => {
+    if (!workspaceId || selectedIds.size === 0) {
+      toast.error("Sélectionnez au moins un signal.");
+      return;
+    }
+    const toImport = signals.filter((s) => selectedIds.has(signalId(s)));
+    setBulkImporting(true);
+    try {
+      const res = await bulkAddSignalsToCrmAction(workspaceId, toImport);
+      if (res.success && res.prospects && res.prospects.length > 0) {
+        setSignals((prev) => prev.filter((s) => !selectedIds.has(signalId(s))));
+        setSelectedIds(new Set());
+        setCampaignProspects(res.prospects);
+        setWizardOpen(true);
+        toast.success(`${res.imported} signal(aux) importé(s). Configurez votre campagne.`);
+      } else {
+        toast.error(res.error ?? "Erreur lors de l'import.");
+      }
+    } catch {
+      toast.error("Erreur lors de l'import.");
+    } finally {
+      setBulkImporting(false);
+    }
+  }, [workspaceId, signals, selectedIds]);
 
   if (!workspaceId) {
     return (
@@ -147,11 +201,38 @@ export default function SignalsRadarPage() {
               </p>
             </div>
             {signals.length > 0 && (
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-                <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                {signals.length} signal{signals.length > 1 ? "aux" : ""} détecté
-                {signals.length > 1 ? "s" : ""}
-              </span>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
+                  <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  {signals.length} signal{signals.length > 1 ? "aux" : ""} détecté{signals.length > 1 ? "s" : ""}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 rounded-xl px-2 text-xs text-gray-500 hover:bg-gray-100"
+                  onClick={toggleSelectAll}
+                >
+                  {selectedIds.size === signals.length ? (
+                    <><CheckSquare className="mr-1 h-3.5 w-3.5" />Tout désélectionner</>
+                  ) : (
+                    <><Square className="mr-1 h-3.5 w-3.5" />Tout sélectionner</>
+                  )}
+                </Button>
+                {selectedIds.size > 0 && (
+                  <Button
+                    size="sm"
+                    disabled={bulkImporting}
+                    onClick={handleLaunchCampaign}
+                    className="h-7 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500"
+                  >
+                    {bulkImporting ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <><Rocket className="mr-1 h-3 w-3" />Campagne ({selectedIds.size})</>
+                    )}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
 
@@ -268,16 +349,21 @@ export default function SignalsRadarPage() {
         {/* Résultats */}
         {!scanning && signals.length > 0 && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 animate-stagger">
-            {signals.map((signal, i) => (
-              <SignalCard
-                key={signal.companyName + signal.jobTitle + i}
-                signal={signal}
-                onView={() => setDetailSignal(signal)}
-                onAdd={() => handleAddToCrm(signal)}
-                onIgnore={() => handleIgnore(signal)}
-                adding={addingId === signal.companyName + signal.jobTitle}
-              />
-            ))}
+            {signals.map((signal, i) => {
+              const id = signalId(signal);
+              return (
+                <SignalCard
+                  key={id + i}
+                  signal={signal}
+                  onView={() => setDetailSignal(signal)}
+                  onAdd={() => handleAddToCrm(signal)}
+                  onIgnore={() => handleIgnore(signal)}
+                  adding={addingId === id}
+                  selected={selectedIds.has(id)}
+                  onToggleSelect={() => toggleSelect(id)}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -286,6 +372,20 @@ export default function SignalsRadarPage() {
 
         {/* État initial */}
         {!keyword && !scanning && <InitialState />}
+
+        {/* Campaign Wizard */}
+        {workspaceId && (
+          <CampaignWizard
+            workspaceId={workspaceId}
+            prospects={campaignProspects}
+            open={wizardOpen}
+            onOpenChange={setWizardOpen}
+            onCreated={() => {
+              setWizardOpen(false);
+              toast.success("Campagne créée avec succès !");
+            }}
+          />
+        )}
       </div>
 
       {/* ── Side panel ── */}
@@ -400,12 +500,16 @@ function SignalCard({
   onAdd,
   onIgnore,
   adding,
+  selected,
+  onToggleSelect,
 }: {
   signal: AnalyzedSignal;
   onView: () => void;
   onAdd: () => void;
   onIgnore: () => void;
   adding: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const [removing, setRemoving] = useState(false);
   const initial = signal.companyName.slice(0, 2).toUpperCase();
@@ -421,13 +525,26 @@ function SignalCard({
   return (
     <div
       className={cn(
-        "group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-gray-200",
+        "group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5",
+        selected ? "border-indigo-400 ring-1 ring-indigo-300" : "border-gray-100 hover:border-gray-200",
         removing && "pointer-events-none scale-95 opacity-0"
       )}
       onClick={onView}
     >
       {/* Header */}
       <div className="flex items-center gap-3 p-4 pb-3">
+        {/* Checkbox */}
+        <div
+          className="shrink-0"
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30"
+          />
+        </div>
         {/* Avatar */}
         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50">
           <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-indigo-600">

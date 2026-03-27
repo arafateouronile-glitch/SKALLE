@@ -586,12 +586,12 @@ export async function scanLocalRadarAction(
 export async function bulkImportLocalLeadsAction(
   workspaceId: string,
   leads: LocalLeadEvaluated[]
-): Promise<{ success: boolean; imported?: number; error?: string }> {
+): Promise<{ success: boolean; imported?: number; prospects?: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]; error?: string }> {
   try {
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
     const result = await bulkProcessLocalLeads(workspaceId, leads);
-    return { success: true, imported: result.imported };
+    return { success: true, imported: result.imported, prospects: result.prospects };
   } catch (error) {
     console.error("bulkImportLocalLeadsAction:", error);
     return {
@@ -731,14 +731,53 @@ export async function scanNewbornRadarAction(
 export async function bulkImportNewbornLeadsAction(
   workspaceId: string,
   leads: NewbornLeadEnriched[]
-): Promise<{ success: boolean; imported?: number; error?: string }> {
+): Promise<{ success: boolean; imported?: number; prospects?: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]; error?: string }> {
   try {
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
     const result = await bulkSaveNewbornLeads(workspaceId, leads);
-    return { success: true, imported: result.imported };
+    return { success: true, imported: result.imported, prospects: result.prospects };
   } catch (error) {
     console.error("bulkImportNewbornLeadsAction:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erreur lors de l'import",
+    };
+  }
+}
+
+/**
+ * Importe plusieurs signaux en masse dans le CRM et retourne les prospects créés.
+ * Utilisé par le Signals Radar pour lancer une campagne directement.
+ */
+export async function bulkAddSignalsToCrmAction(
+  workspaceId: string,
+  signals: AnalyzedSignal[]
+): Promise<{ success: boolean; imported?: number; prospects?: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]; error?: string }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const prospects: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[] = [];
+    let imported = 0;
+
+    for (const signal of signals) {
+      const res = await saveSignalToCrm(workspaceId, signal);
+      if (res.success && res.prospectId) {
+        prospects.push({
+          id: res.prospectId,
+          name: signal.companyName,
+          email: null,
+          company: signal.companyName,
+          jobTitle: signal.jobTitle,
+        });
+        imported++;
+      }
+    }
+
+    return { success: true, imported, prospects };
+  } catch (error) {
+    console.error("bulkAddSignalsToCrmAction:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erreur lors de l'import",
