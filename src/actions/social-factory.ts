@@ -4,7 +4,6 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasEnoughCredits, useCredits } from "@/lib/credits";
 import type { OperationType } from "@/lib/credits";
-import { inngest } from "@/inngest/client";
 import {
   initializeBrandStrategy,
   type MarketingPersona,
@@ -115,11 +114,18 @@ export async function startContentFactory(
     };
   }
 
-  // Déclencher le job Inngest
+  // Déclencher le job en background (fire-and-forget)
   try {
-    await inngest.send({
-      name: "social-factory/generate",
-      data: {
+    const baseUrl = process.env.NEXTAUTH_URL ?? process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000";
+    fetch(`${baseUrl}/api/internal/social-factory/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": process.env.INTERNAL_JOB_SECRET ?? "",
+      },
+      body: JSON.stringify({
         contentPlanId: contentPlan.id,
         workspaceId,
         userId: userId!,
@@ -128,11 +134,10 @@ export async function startContentFactory(
         objectives: input.objectives,
         month: input.month,
         year: input.year,
-      },
-    });
+      }),
+    }).catch((e) => console.error("[startContentFactory] Background job error:", e));
   } catch (e) {
-    console.error("[startContentFactory] Inngest error:", e);
-    // Plan is created — return success so polling can start; Inngest will retry
+    console.error("[startContentFactory] Failed to trigger background job:", e);
   }
 
   return { success: true as const, contentPlanId: contentPlan.id, error: null };
