@@ -410,3 +410,32 @@ export async function listContentPlans(workspaceId: string) {
 
   return { success: true as const, data: plans, error: null };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. CANCEL CONTENT PLAN (reset PENDING/GENERATING → FAILED)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function cancelContentPlan(contentPlanId: string) {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false as const, error: "Non autorisé" };
+
+  const plan = await prisma.contentPlan.findUnique({
+    where: { id: contentPlanId },
+    include: { workspace: { select: { userId: true } } },
+  });
+
+  if (!plan || plan.workspace.userId !== session.user.id) {
+    return { success: false as const, error: "Plan non trouvé" };
+  }
+
+  if (plan.status !== "PENDING" && plan.status !== "GENERATING") {
+    return { success: false as const, error: "Ce plan ne peut pas être annulé" };
+  }
+
+  await prisma.contentPlan.update({
+    where: { id: contentPlanId },
+    data: { status: "FAILED" },
+  });
+
+  return { success: true as const };
+}
