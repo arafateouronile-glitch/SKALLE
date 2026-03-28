@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { Sidebar } from "@/components/modules/sidebar";
 import { Header } from "@/components/modules/header";
 import { Toaster } from "@/components/ui/sonner";
@@ -72,7 +73,11 @@ export default async function CmoWorkspaceLayout({
     );
   }
 
-  if (!hasCmoAccess) {
+  const headersList = await headers();
+  const pathname = headersList.get("x-pathname") ?? headersList.get("x-invoke-path") ?? "";
+  const isSettingsPage = pathname.includes("/marketing-os/settings");
+
+  if (!hasCmoAccess && !isSettingsPage) {
     return <UpgradeToCmo />;
   }
 
