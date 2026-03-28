@@ -116,9 +116,8 @@ export async function startContentFactory(
 
   // Déclencher le job en background (fire-and-forget)
   try {
-    const baseUrl = process.env.NEXTAUTH_URL ?? process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
+    const baseUrl = process.env.NEXTAUTH_URL
+      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
     fetch(`${baseUrl}/api/internal/social-factory/generate`, {
       method: "POST",
       headers: {
