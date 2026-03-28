@@ -46,6 +46,7 @@ export async function analyzeBrandVoice(
     return await withCredits("brand_voice", workspaceId, async () => {
     // Fetch and parse the website
     const response = await fetch(url, {
+      cache: "no-store",
       headers: {
         "User-Agent":
           "Mozilla/5.0 (compatible; ViralTrends/1.0; +https://viraltrends.io)",
