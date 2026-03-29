@@ -24,12 +24,13 @@ interface FactoryJobInput {
   vision: string;
   niche: string;
   objectives: string[];
+  networks: string[];
   month: number;
   year: number;
 }
 
 export async function runSocialFactoryJob(input: FactoryJobInput): Promise<void> {
-  const { contentPlanId, workspaceId, userId, vision, niche, objectives, month, year } = input;
+  const { contentPlanId, workspaceId, userId, vision, niche, objectives, networks, month, year } = input;
 
   // Step 1: Mark as GENERATING
   await prisma.contentPlan.update({
@@ -51,6 +52,7 @@ export async function runSocialFactoryJob(input: FactoryJobInput): Promise<void>
       vision,
       niche,
       objectives,
+      networks,
       workspaceId,
     });
     if (!conceptsResult.success || !conceptsResult.concepts) {

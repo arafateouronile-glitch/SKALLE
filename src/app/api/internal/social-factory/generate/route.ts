@@ -12,14 +12,14 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { contentPlanId, workspaceId, userId, vision, niche, objectives, month, year } = body;
+  const { contentPlanId, workspaceId, userId, vision, niche, objectives, networks, month, year } = body;
 
   if (!contentPlanId || !workspaceId || !userId) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
   // Run synchronously — this route is called fire-and-forget from the server action
-  await runSocialFactoryJob({ contentPlanId, workspaceId, userId, vision, niche, objectives, month, year });
+  await runSocialFactoryJob({ contentPlanId, workspaceId, userId, vision, niche, objectives, networks: networks ?? [], month, year });
 
   return NextResponse.json({ ok: true });
 }

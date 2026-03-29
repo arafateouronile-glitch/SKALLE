@@ -21,6 +21,14 @@ import { getWorkspaceBrandType } from "@/actions/workspace";
 import type { MarketingPersona } from "@/lib/services/social/content-factory";
 import { useCreditsContext } from "@/components/providers/credits-provider";
 
+const NETWORKS_OPTIONS = [
+  { value: "LINKEDIN", label: "LinkedIn", icon: "💼" },
+  { value: "X", label: "X (Twitter)", icon: "𝕏" },
+  { value: "INSTAGRAM", label: "Instagram", icon: "📸" },
+  { value: "TIKTOK", label: "TikTok", icon: "🎵" },
+  { value: "FACEBOOK", label: "Facebook", icon: "👥" },
+];
+
 const OBJECTIVES_OPTIONS = [
   { value: "leads", label: "Génération de leads" },
   { value: "authority", label: "Autorité / Expertise" },
@@ -51,6 +59,7 @@ export function StrategyForm({
   const [vision, setVision] = useState("");
   const [niche, setNiche] = useState("");
   const [objectives, setObjectives] = useState<string[]>([]);
+  const [networks, setNetworks] = useState<string[]>(["LINKEDIN", "X", "INSTAGRAM", "TIKTOK", "FACEBOOK"]);
   const [persona, setPersona] = useState<MarketingPersona | null>(existingPersona ?? null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -64,6 +73,16 @@ export function StrategyForm({
     setObjectives((prev) =>
       prev.includes(value) ? prev.filter((o) => o !== value) : [...prev, value]
     );
+  };
+
+  const toggleNetwork = (value: string) => {
+    setNetworks((prev) => {
+      if (prev.includes(value)) {
+        if (prev.length === 1) return prev; // garder au moins 1
+        return prev.filter((n) => n !== value);
+      }
+      return [...prev, value];
+    });
   };
 
   const handleInitStrategy = async () => {
@@ -108,6 +127,7 @@ export function StrategyForm({
         vision,
         niche,
         objectives,
+        networks,
         month,
         year,
       });
@@ -269,6 +289,24 @@ export function StrategyForm({
                 </Badge>
               ))}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Réseaux & canaux</Label>
+            <div className="flex flex-wrap gap-2">
+              {NETWORKS_OPTIONS.map((net) => (
+                <Badge
+                  key={net.value}
+                  variant={networks.includes(net.value) ? "default" : "outline"}
+                  className="cursor-pointer transition-colors select-none"
+                  onClick={() => toggleNetwork(net.value)}
+                >
+                  <span className="mr-1">{net.icon}</span>
+                  {net.label}
+                </Badge>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400">Du contenu sera généré uniquement pour les réseaux sélectionnés</p>
           </div>
 
           <Button

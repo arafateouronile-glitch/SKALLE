@@ -68,6 +68,7 @@ export async function startContentFactory(
     vision: string;
     niche: string;
     objectives: string[];
+    networks: string[];
     month: number;
     year: number;
   }
@@ -103,6 +104,7 @@ export async function startContentFactory(
         vision: input.vision,
         niche: input.niche,
         objectives: input.objectives,
+        networks: input.networks,
         workspaceId,
       },
     });
@@ -126,6 +128,7 @@ export async function startContentFactory(
         vision: input.vision,
         niche: input.niche,
         objectives: input.objectives,
+        networks: input.networks,
         month: input.month,
         year: input.year,
       },

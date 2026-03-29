@@ -765,6 +765,7 @@ model ContentPlan {
   vision        String?
   niche         String?
   objectives    String[]
+  networks      String[]
   keywordsUsed  Json?
   adsUsed       Json?
   totalConcepts Int       @default(30)

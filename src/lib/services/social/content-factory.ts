@@ -29,10 +29,14 @@ export interface MarketingPersona {
   competitiveAdvantages: string[];
 }
 
+export const ALL_NETWORKS = ["LINKEDIN", "X", "INSTAGRAM", "TIKTOK", "FACEBOOK"] as const;
+export type SocialNetwork = typeof ALL_NETWORKS[number];
+
 export interface StrategyInput {
   vision: string;
   niche: string;
   objectives: string[];
+  networks: string[];
   workspaceId: string;
 }
 
@@ -261,12 +265,15 @@ export async function generateContentConcepts(
       .filter(Boolean)
       .slice(0, 15);
 
+    const allowedNetworks = input.networks.length > 0 ? input.networks : [...ALL_NETWORKS];
+    const networksInstruction = `RÉSEAUX AUTORISÉS : ${allowedNetworks.join(", ")} — n'utilise QUE ces réseaux dans "targetNetworks".`;
+
     const conceptMessages = [
       new SystemMessage(
-        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.\n\n${brandTypeCtx.conceptDistribution}\n\n${brandTypeCtx.conceptInstructions}\n\nRÈGLES :\n- Chaque concept doit avoir un angle unique et un titre accrocheur\n- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)\n- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible\n- Les concepts "awareness" sont basés sur le storytelling et la vision\n- Varier les réseaux cibles (LINKEDIN, X, INSTAGRAM, TIKTOK, FACEBOOK)\n- Le "rationale" explique POURQUOI ce post est stratégique\n\nRéponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:\n[\n  {\n    "index": number (0-29),\n    "category": "education" | "conversion" | "awareness",\n    "title": string,\n    "angle": string,\n    "sourceKeyword": string | null,\n    "sourceAdId": string | null,\n    "rationale": string,\n    "targetNetworks": array of "LINKEDIN"|"X"|"INSTAGRAM"|"TIKTOK"|"FACEBOOK"\n  }\n]`
+        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.\n\n${brandTypeCtx.conceptDistribution}\n\n${brandTypeCtx.conceptInstructions}\n\nRÈGLES :\n- Chaque concept doit avoir un angle unique et un titre accrocheur\n- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)\n- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible\n- Les concepts "awareness" sont basés sur le storytelling et la vision\n- ${networksInstruction}\n- Le "rationale" explique POURQUOI ce post est stratégique\n\nRéponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:\n[\n  {\n    "index": number (0-29),\n    "category": "education" | "conversion" | "awareness",\n    "title": string,\n    "angle": string,\n    "sourceKeyword": string | null,\n    "sourceAdId": string | null,\n    "rationale": string,\n    "targetNetworks": array of ${allowedNetworks.map(n => `"${n}"`).join("|")}\n  }\n]`
       ),
       new HumanMessage(
-        `CONTEXTE DE LA MARQUE :\nVision: ${input.vision}\nNiche: ${input.niche}\nObjectifs: ${input.objectives.join(", ")}\nPersona: ${persona ? JSON.stringify(persona) : "Non défini"}\n\nDONNÉES SEO (pour concepts "education"):\nMots-clés top:\n${keywordsContext}\n\nQuick Wins SEO:\n${quickWinsContext}\n\nQuestions PAA du public:\n${paaQuestions.length > 0 ? paaQuestions.map((q) => `- ${q}`).join("\n") : "Aucune question PAA"}\n\nDONNÉES PUBLICITAIRES (pour concepts "conversion"):\nAds performantes:\n${adsContext}\n\nGénère les 30 concepts maintenant.`
+        `CONTEXTE DE LA MARQUE :\nVision: ${input.vision}\nNiche: ${input.niche}\nObjectifs: ${input.objectives.join(", ")}\nRéseaux cibles: ${allowedNetworks.join(", ")}\nPersona: ${persona ? JSON.stringify(persona) : "Non défini"}\n\nDONNÉES SEO (pour concepts "education"):\nMots-clés top:\n${keywordsContext}\n\nQuick Wins SEO:\n${quickWinsContext}\n\nQuestions PAA du public:\n${paaQuestions.length > 0 ? paaQuestions.map((q) => `- ${q}`).join("\n") : "Aucune question PAA"}\n\nDONNÉES PUBLICITAIRES (pour concepts "conversion"):\nAds performantes:\n${adsContext}\n\nGénère les 30 concepts maintenant.`
       ),
     ];
 
@@ -283,7 +290,13 @@ export async function generateContentConcepts(
       return { success: false, error: "Aucun concept généré" };
     }
 
-    return { success: true, concepts };
+    // Garantir que les réseaux assignés sont dans la liste autorisée
+    const filteredConcepts = concepts.map((c: ContentConcept) => ({
+      ...c,
+      targetNetworks: c.targetNetworks.filter((n) => allowedNetworks.includes(n as string)),
+    }));
+
+    return { success: true, concepts: filteredConcepts };
   } catch (error) {
     console.error("[Content Factory] Erreur generateContentConcepts:", error);
     return {

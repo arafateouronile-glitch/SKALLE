@@ -36,6 +36,7 @@ export const generateSocialFactory = inngest.createFunction(
       vision,
       niche,
       objectives,
+      networks,
       month,
       year,
     } = event.data;
@@ -64,6 +65,7 @@ export const generateSocialFactory = inngest.createFunction(
         vision,
         niche,
         objectives,
+        networks: networks ?? [],
         workspaceId,
       });
 
