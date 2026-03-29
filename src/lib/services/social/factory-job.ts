@@ -83,11 +83,11 @@ export async function runSocialFactoryJob(input: FactoryJobInput): Promise<void>
       try {
         const workspace = await prisma.workspace.findUnique({
           where: { id: workspaceId },
-          select: { brandVoice: true },
+          select: { brandVoice: true, brandType: true },
         });
         const brandVoice = (workspace?.brandVoice as Record<string, unknown>) ?? {};
 
-        const postSet = await generatePostFormats(concept, persona as MarketingPersona, brandVoice);
+        const postSet = await generatePostFormats(concept, persona as MarketingPersona, brandVoice, workspace?.brandType ?? "B2C");
         const ids: Array<{ id: string; type: string; category: string }> = [];
 
         if (postSet.linkedin) {

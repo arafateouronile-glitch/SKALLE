@@ -76,6 +76,8 @@ export async function getCurrentUserSettings(): Promise<{
     credits: number;
     monthlyCredits: number;
     hasStripeCustomer: boolean;
+    workspaceId: string | null;
+    brandType: "PERSONAL_BRAND" | "B2B" | "B2C" | null;
   };
   error?: string;
 }> {
@@ -83,10 +85,18 @@ export async function getCurrentUserSettings(): Promise<{
     const session = await requireAuth();
     const u = await prisma.user.findUnique({
       where: { id: session.user!.id! },
-      select: { name: true, email: true, plan: true, credits: true, stripeCustomerId: true },
+      select: {
+        name: true,
+        email: true,
+        plan: true,
+        credits: true,
+        stripeCustomerId: true,
+        workspaces: { select: { id: true, brandType: true }, orderBy: { createdAt: "asc" }, take: 1 },
+      },
     });
     if (!u) return { success: false, error: "Utilisateur non trouvé" };
     const monthlyCredits = PLAN_LIMITS[u.plan].monthlyCredits;
+    const workspace = u.workspaces[0] ?? null;
     return {
       success: true,
       user: {
@@ -96,6 +106,8 @@ export async function getCurrentUserSettings(): Promise<{
         credits: u.credits,
         monthlyCredits,
         hasStripeCustomer: !!u.stripeCustomerId,
+        workspaceId: workspace?.id ?? null,
+        brandType: workspace?.brandType ?? null,
       },
     };
   } catch (e) {

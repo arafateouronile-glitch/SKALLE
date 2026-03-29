@@ -58,8 +58,30 @@ import { saveCMSConfig, deleteCMSConfig } from "@/actions/cms";
 import { getCurrentUserSettings } from "@/actions/credits";
 import { getGSCAuthUrlAction, getGSCStatusAction, disconnectGSCAction } from "@/actions/integrations";
 import { listApiKeysAction, createApiKeyAction, revokeApiKeyAction } from "@/actions/api-keys";
+import { updateWorkspaceBrandType } from "@/actions/workspace";
 import { PricingTable, PLANS } from "@/components/pricing/pricing-table";
 import { toast } from "sonner";
+
+const BRAND_TYPE_OPTIONS = [
+  {
+    value: "PERSONAL_BRAND" as const,
+    label: "Personal Brand",
+    description: "Expertise personnelle, thought leadership, parcours individuel",
+    icon: "👤",
+  },
+  {
+    value: "B2B" as const,
+    label: "B2B",
+    description: "Entreprise ciblant d'autres entreprises, ROI, décideurs",
+    icon: "🏢",
+  },
+  {
+    value: "B2C" as const,
+    label: "B2C",
+    description: "Marque grand public, lifestyle, émotions, communauté",
+    icon: "🛍️",
+  },
+];
 
 interface UserSettings {
   name: string;
@@ -136,6 +158,9 @@ export default function SettingsPage() {
   });
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [stripeLoading, setStripeLoading] = useState< string | null>(null); // "portal" | "checkout" | plan id
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [brandType, setBrandType] = useState<"PERSONAL_BRAND" | "B2B" | "B2C">("B2C");
+  const [brandTypeLoading, setBrandTypeLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: user.name,
@@ -155,6 +180,8 @@ export default function SettingsPage() {
           hasStripeCustomer: u.hasStripeCustomer,
         });
         setFormData({ name: u.name ?? "", email: u.email });
+        if (u.workspaceId) setWorkspaceId(u.workspaceId);
+        if (u.brandType) setBrandType(u.brandType);
       }
       setSettingsLoaded(true);
     });
@@ -272,6 +299,19 @@ export default function SettingsPage() {
     username: "",
     apiKey: "",
   });
+
+  const handleBrandTypeChange = async (value: "PERSONAL_BRAND" | "B2B" | "B2C") => {
+    if (!workspaceId || value === brandType) return;
+    setBrandTypeLoading(true);
+    const res = await updateWorkspaceBrandType(workspaceId, value);
+    setBrandTypeLoading(false);
+    if (res.success) {
+      setBrandType(value);
+      toast.success("Type de marque mis à jour");
+    } else {
+      toast.error(res.error ?? "Erreur");
+    }
+  };
 
   const handleSaveProfile = async () => {
     setIsLoading(true);
@@ -407,6 +447,50 @@ export default function SettingsPage() {
                     )}
                     Enregistrer
                   </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
+                <CardHeader>
+                  <CardTitle className="text-gray-900 flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-emerald-600" />
+                    Type de marque
+                  </CardTitle>
+                  <CardDescription className="text-gray-500">
+                    Les prompts IA s&apos;adaptent automatiquement selon ce paramètre
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {BRAND_TYPE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => handleBrandTypeChange(opt.value)}
+                        disabled={brandTypeLoading}
+                        className={`relative flex flex-col gap-1 rounded-xl border-2 p-4 text-left transition-all ${
+                          brandType === opt.value
+                            ? "border-emerald-500 bg-emerald-50/60"
+                            : "border-gray-200 bg-white/60 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="text-2xl">{opt.icon}</span>
+                        <span className={`font-semibold text-sm ${brandType === opt.value ? "text-emerald-700" : "text-gray-900"}`}>
+                          {opt.label}
+                        </span>
+                        <span className="text-xs text-gray-500 leading-snug">{opt.description}</span>
+                        {brandType === opt.value && (
+                          <span className="absolute top-2 right-2">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  {brandTypeLoading && (
+                    <p className="mt-3 text-xs text-gray-400 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Mise à jour...
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 

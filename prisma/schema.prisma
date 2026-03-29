@@ -59,11 +59,18 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+enum BrandType {
+  PERSONAL_BRAND
+  B2B
+  B2C
+}
+
 model Workspace {
   id                        String                     @id @default(cuid())
   name                      String
   domainUrl                 String
   brandVoice                Json?
+  brandType                 BrandType                  @default(B2C)
   userId                    String
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt

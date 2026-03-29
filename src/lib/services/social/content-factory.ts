@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { getClaude, getOpenAI, getStringParser } from "@/lib/ai/langchain";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { analyzeUserSite, type UserSiteAnalysis } from "@/lib/seo/discovery";
-import type { PostType } from "@prisma/client";
+import type { BrandType, PostType } from "@prisma/client";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -60,6 +60,54 @@ export interface GeneratedPostSet {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// BRAND TYPE CONTEXT HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getBrandTypeContext(brandType: BrandType): {
+  personaInstructions: string;
+  conceptInstructions: string;
+  postToneInstructions: string;
+  conceptDistribution: string;
+} {
+  switch (brandType) {
+    case "PERSONAL_BRAND":
+      return {
+        personaInstructions:
+          "Il s'agit d'une personal brand. Mets en avant l'expertise personnelle, le parcours, la personnalité unique et le thought leadership de l'individu. La proposition de valeur doit être centrée sur la personne, pas sur une entreprise.",
+        conceptInstructions:
+          "Pour une personal brand : privilégie les posts d'opinion (point de vue tranché), les récits personnels (storytelling), les leçons tirées d'expériences vécues, et les prises de position sur des sujets de ta niche. Le 'je' est naturel et authentique.",
+        conceptDistribution:
+          "RÉPARTITION POUR PERSONAL BRAND :\n- 10 concepts \"education\" (33%) : expertise partagée, tutoriels, frameworks personnels\n- 8 concepts \"awareness\" (27%) : storytelling personnel, parcours, behind-the-scenes\n- 7 concepts \"conversion\" (23%) : offres, services, résultats clients\n- 5 concepts \"engagement\" (17%) : opinions, sondages, questions à la communauté",
+        postToneInstructions:
+          "Ton: authentique, première personne (je), direct et sans jargon corporate. L'auteur parle en son nom. Partage d'expériences personnelles bienvenu.",
+      };
+    case "B2B":
+      return {
+        personaInstructions:
+          "Il s'agit d'une entreprise B2B. Mets en avant la valeur métier, le ROI, les cas clients, et les problématiques des décideurs (C-level, managers). Le ton doit être professionnel et orienté résultats.",
+        conceptInstructions:
+          "Pour un contexte B2B : priorise les études de cas, les données chiffrées, les insights sectoriels, les solutions à des pain points métier précis, et les contenus orientés ROI. Cible les décideurs et influenceurs d'achat.",
+        conceptDistribution:
+          "RÉPARTITION POUR B2B :\n- 13 concepts \"education\" (43%) : guides pratiques, études de cas, benchmarks, best practices\n- 10 concepts \"conversion\" (33%) : démonstrations de valeur, ROI, témoignages clients, offres\n- 7 concepts \"awareness\" (24%) : vision du marché, tendances sectorielles, positionnement expert",
+        postToneInstructions:
+          "Ton: professionnel, orienté résultats et ROI, avec données et chiffres. Cible les décideurs. Évite le trop casual. LinkedIn est le réseau prioritaire.",
+      };
+    case "B2C":
+    default:
+      return {
+        personaInstructions:
+          "Il s'agit d'une marque B2C. Mets en avant les bénéfices consommateur, les émotions, le style de vie et la communauté. Le ton doit être accessible, chaleureux et inspirant.",
+        conceptInstructions:
+          "Pour un contexte B2C : privilégie les contenus lifestyle, les témoignages clients, les tutoriels d'utilisation, les tendances, et les contenus émotionnels qui créent un sentiment d'appartenance à la marque.",
+        conceptDistribution:
+          "RÉPARTITION POUR B2C :\n- 12 concepts \"education\" (40%) : tutoriels, conseils, guides d'utilisation\n- 9 concepts \"conversion\" (30%) : offres, produits, promotions, témoignages\n- 9 concepts \"awareness\" (30%) : lifestyle, valeurs de marque, communauté, tendances",
+        postToneInstructions:
+          "Ton: chaleureux, accessible, orienté émotions et bénéfices consommateurs. Instagram et TikTok sont prioritaires. Storytelling visuel et lifestyle.",
+      };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 1. BRAND STRATEGY INITIALIZATION
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -73,7 +121,7 @@ export async function initializeBrandStrategy(
   try {
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { domainUrl: true, brandVoice: true },
+      select: { domainUrl: true, brandVoice: true, brandType: true },
     });
 
     if (!workspace) {
@@ -91,11 +139,12 @@ export async function initializeBrandStrategy(
     }
 
     const existingBrandVoice = (workspace.brandVoice as Record<string, unknown>) ?? {};
+    const brandTypeCtx = getBrandTypeContext(workspace.brandType ?? "B2C");
 
     // Construire les messages pour générer la persona
     const personaMessages = [
       new SystemMessage(
-        `Tu es un expert en stratégie marketing et branding. À partir des données fournies sur un site web et sa marque, génère une "Marketing Persona" complète au format JSON.\n\nLe JSON doit contenir exactement ces champs:\n- brandColors: array de 3-5 couleurs hex identifiées ou suggérées\n- services: array des services/produits clés identifiés\n- tone: le ton de communication (ex: "professionnel et inspirant", "technique et expert")\n- targetAudience: description de l'audience cible en 1-2 phrases\n- uniqueValueProp: proposition de valeur unique en 1 phrase\n- contentPillars: array de 3-5 piliers de contenu récurrents\n- competitiveAdvantages: array de 3-5 avantages concurrentiels\n\nRéponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`
+        `Tu es un expert en stratégie marketing et branding. À partir des données fournies sur un site web et sa marque, génère une "Marketing Persona" complète au format JSON.\n\n${brandTypeCtx.personaInstructions}\n\nLe JSON doit contenir exactement ces champs:\n- brandColors: array de 3-5 couleurs hex identifiées ou suggérées\n- services: array des services/produits clés identifiés\n- tone: le ton de communication (ex: "professionnel et inspirant", "technique et expert")\n- targetAudience: description de l'audience cible en 1-2 phrases\n- uniqueValueProp: proposition de valeur unique en 1 phrase\n- contentPillars: array de 3-5 piliers de contenu récurrents\n- competitiveAdvantages: array de 3-5 avantages concurrentiels\n\nRéponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`
       ),
       new HumanMessage(
         `Données du site web:\nURL: ${workspace.domainUrl}\nTitre: ${siteAnalysis?.title ?? "Non disponible"}\nDescription: ${siteAnalysis?.metaDescription ?? "Non disponible"}\nThème principal: ${siteAnalysis?.theme ?? "Non disponible"}\nMots-clés d'intention: ${siteAnalysis?.intentKeywords?.join(", ") ?? "Non disponible"}\nContenu principal (extrait): ${siteAnalysis?.mainContent?.slice(0, 2000) ?? "Non disponible"}\n\nBrand Voice existant:\n${JSON.stringify(existingBrandVoice, null, 2)}`
@@ -185,13 +234,14 @@ export async function generateContentConcepts(
       },
     });
 
-    // 4. Récupérer la persona
+    // 4. Récupérer la persona et le brandType
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { brandVoice: true },
+      select: { brandVoice: true, brandType: true },
     });
     const brandVoice = (workspace?.brandVoice as Record<string, unknown>) ?? {};
     const persona = brandVoice.marketingPersona as MarketingPersona | undefined;
+    const brandTypeCtx = getBrandTypeContext(workspace?.brandType ?? "B2C");
 
     // 5. Construire les messages de génération de concepts
     const keywordsContext = keywords.length > 0
@@ -213,7 +263,7 @@ export async function generateContentConcepts(
 
     const conceptMessages = [
       new SystemMessage(
-        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.\n\nRÉPARTITION OBLIGATOIRE :\n- 12 concepts "education" (40%) : basés sur les mots-clés SEO et questions PAA\n- 9 concepts "conversion" (30%) : basés sur les structures/hooks des publicités performantes\n- 9 concepts "awareness" (30%) : basés sur la vision et la niche de l'utilisateur\n\nRÈGLES :\n- Chaque concept doit avoir un angle unique et un titre accrocheur\n- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)\n- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible\n- Les concepts "awareness" sont basés sur le storytelling et la vision\n- Varier les réseaux cibles (LINKEDIN, X, INSTAGRAM, TIKTOK, FACEBOOK)\n- Le "rationale" explique POURQUOI ce post est stratégique\n\nRéponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:\n[\n  {\n    "index": number (0-29),\n    "category": "education" | "conversion" | "awareness",\n    "title": string,\n    "angle": string,\n    "sourceKeyword": string | null,\n    "sourceAdId": string | null,\n    "rationale": string,\n    "targetNetworks": array of "LINKEDIN"|"X"|"INSTAGRAM"|"TIKTOK"|"FACEBOOK"\n  }\n]`
+        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.\n\n${brandTypeCtx.conceptDistribution}\n\n${brandTypeCtx.conceptInstructions}\n\nRÈGLES :\n- Chaque concept doit avoir un angle unique et un titre accrocheur\n- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)\n- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible\n- Les concepts "awareness" sont basés sur le storytelling et la vision\n- Varier les réseaux cibles (LINKEDIN, X, INSTAGRAM, TIKTOK, FACEBOOK)\n- Le "rationale" explique POURQUOI ce post est stratégique\n\nRéponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:\n[\n  {\n    "index": number (0-29),\n    "category": "education" | "conversion" | "awareness",\n    "title": string,\n    "angle": string,\n    "sourceKeyword": string | null,\n    "sourceAdId": string | null,\n    "rationale": string,\n    "targetNetworks": array of "LINKEDIN"|"X"|"INSTAGRAM"|"TIKTOK"|"FACEBOOK"\n  }\n]`
       ),
       new HumanMessage(
         `CONTEXTE DE LA MARQUE :\nVision: ${input.vision}\nNiche: ${input.niche}\nObjectifs: ${input.objectives.join(", ")}\nPersona: ${persona ? JSON.stringify(persona) : "Non défini"}\n\nDONNÉES SEO (pour concepts "education"):\nMots-clés top:\n${keywordsContext}\n\nQuick Wins SEO:\n${quickWinsContext}\n\nQuestions PAA du public:\n${paaQuestions.length > 0 ? paaQuestions.map((q) => `- ${q}`).join("\n") : "Aucune question PAA"}\n\nDONNÉES PUBLICITAIRES (pour concepts "conversion"):\nAds performantes:\n${adsContext}\n\nGénère les 30 concepts maintenant.`
@@ -253,16 +303,20 @@ export async function generateContentConcepts(
 export async function generatePostFormats(
   concept: ContentConcept,
   persona: MarketingPersona,
-  brandVoice: Record<string, unknown>
+  brandVoice: Record<string, unknown>,
+  brandType: BrandType = "B2C"
 ): Promise<GeneratedPostSet> {
   const openai = getOpenAI();
   const parser = getStringParser();
+  const brandTypeCtx = getBrandTypeContext(brandType);
 
   const brandContext = `
 Ton: ${persona.tone}
 Audience: ${persona.targetAudience}
 Piliers: ${persona.contentPillars.join(", ")}
-Proposition de valeur: ${persona.uniqueValueProp}`;
+Proposition de valeur: ${persona.uniqueValueProp}
+Type de marque: ${brandType === "PERSONAL_BRAND" ? "Personal Brand" : brandType}
+${brandTypeCtx.postToneInstructions}`;
 
   const result: GeneratedPostSet = { conceptIndex: concept.index };
 
@@ -272,9 +326,14 @@ Proposition de valeur: ${persona.uniqueValueProp}`;
   if (concept.targetNetworks.includes("LINKEDIN")) {
     promises.push(
       (async () => {
+        const linkedinStyle = brandType === "PERSONAL_BRAND"
+          ? "personal branding LinkedIn (première personne, récit personnel, prise de position)"
+          : brandType === "B2B"
+          ? "content marketing B2B LinkedIn (cas clients, ROI, insights sectoriels, ton professionnel)"
+          : "brand content LinkedIn (valeurs de marque, bénéfices, communauté)";
         const msgs = [
           new SystemMessage(
-            `Tu es un expert en personal branding LinkedIn. Crée un post LinkedIn percutant.\n\nRègles:\n- Hook: première ligne accrocheuse (question ou stat choc)\n- Corps: insights avec espaces entre paragraphes courts\n- Conclusion: leçon ou call-to-action\n- 3-5 hashtags pertinents\n- Longueur: 1200-1500 caractères\n- Adapte au ton de la marque\n\n${brandContext}`
+            `Tu es un expert en ${linkedinStyle}. Crée un post LinkedIn percutant.\n\nRègles:\n- Hook: première ligne accrocheuse (question ou stat choc)\n- Corps: insights avec espaces entre paragraphes courts\n- Conclusion: leçon ou call-to-action\n- 3-5 hashtags pertinents\n- Longueur: 1200-1500 caractères\n- Adapte au ton de la marque\n\n${brandContext}`
           ),
           new HumanMessage(
             `Sujet: ${concept.title}\nAngle: ${concept.angle}\nCatégorie: ${concept.category}${concept.sourceKeyword ? `\nMot-clé SEO à intégrer: ${concept.sourceKeyword}` : ""}\n\nGénère le post LinkedIn complet.`

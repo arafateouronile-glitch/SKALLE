@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +17,7 @@ import { Loader2, Brain, Sparkles, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { initializeStrategy, startContentFactory } from "@/actions/social-factory";
+import { getWorkspaceBrandType } from "@/actions/workspace";
 import type { MarketingPersona } from "@/lib/services/social/content-factory";
 import { useCreditsContext } from "@/components/providers/credits-provider";
 
@@ -28,6 +29,12 @@ const OBJECTIVES_OPTIONS = [
   { value: "traffic", label: "Trafic vers le site" },
   { value: "sales", label: "Ventes directes" },
 ];
+
+const BRAND_TYPE_LABELS: Record<string, { label: string; icon: string }> = {
+  PERSONAL_BRAND: { label: "Personal Brand", icon: "👤" },
+  B2B: { label: "B2B", icon: "🏢" },
+  B2C: { label: "B2C", icon: "🛍️" },
+};
 
 interface StrategyFormProps {
   workspaceId: string;
@@ -47,6 +54,11 @@ export function StrategyForm({
   const [persona, setPersona] = useState<MarketingPersona | null>(existingPersona ?? null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [brandType, setBrandType] = useState<string | null>(null);
+
+  useEffect(() => {
+    getWorkspaceBrandType(workspaceId).then(setBrandType);
+  }, [workspaceId]);
 
   const toggleObjective = (value: string) => {
     setObjectives((prev) =>
@@ -115,6 +127,17 @@ export function StrategyForm({
 
   return (
     <div className="space-y-6">
+      {brandType && (
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>Prompts optimisés pour :</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium text-xs">
+            {BRAND_TYPE_LABELS[brandType]?.icon} {BRAND_TYPE_LABELS[brandType]?.label}
+          </span>
+          <Link href="/marketing-os/settings" className="text-xs text-gray-400 hover:text-emerald-600 underline underline-offset-2">
+            Modifier
+          </Link>
+        </div>
+      )}
       {isDepleted && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-center justify-between gap-4">
           <p className="text-sm font-medium text-red-800">

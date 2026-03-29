@@ -109,14 +109,15 @@ export const generateSocialFactory = inngest.createFunction(
         const posts = await step.run(`gen-post-${concept.index}`, async () => {
           const workspace = await prisma.workspace.findUnique({
             where: { id: workspaceId },
-            select: { brandVoice: true },
+            select: { brandVoice: true, brandType: true },
           });
           const brandVoice = (workspace?.brandVoice as Record<string, unknown>) ?? {};
 
           const postSet = await generatePostFormats(
             concept,
             persona as MarketingPersona,
-            brandVoice
+            brandVoice,
+            workspace?.brandType ?? "B2C"
           );
 
           const ids: Array<{ id: string; type: string; category: string }> = [];
