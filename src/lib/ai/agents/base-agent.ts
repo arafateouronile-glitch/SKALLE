@@ -373,12 +373,17 @@ export function createAgent(config: AgentConfig) {
   // 📤 RETURN AGENT INTERFACE
   // ═══════════════════════════════════════════════════════════════════════════
 
+  function withExtraTools(extraTools: DynamicStructuredTool[]) {
+    return createAgent({ ...config, tools: [...config.tools, ...extraTools] });
+  }
+
   return {
     name,
     description: config.description,
     run,
     stream,
     graph,
+    withExtraTools,
   };
 }
 

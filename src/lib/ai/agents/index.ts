@@ -140,7 +140,7 @@ export function getAgent(agentId: AgentType) {
 
 /**
  * Exécute un agent par son ID avec des paramètres génériques.
- * @param workspaceId - Si fourni, les anomalies (limitReached, toolErrors) sont persistées dans workspace.brandVoice.agentMetrics
+ * @param workspaceId - Si fourni, les anomalies sont persistées + les outils MCP du workspace sont injectés.
  */
 export async function executeAgent(
   agentId: AgentType,
@@ -153,7 +153,22 @@ export async function executeAgent(
     throw new Error(`Agent "${agentId}" not found`);
   }
 
-  const result = await agentInfo.agent.run(input, context);
+  // Inject MCP tools from workspace's active MCP servers
+  let agentInstance = agentInfo.agent;
+  if (workspaceId) {
+    try {
+      const { listWorkspaceMcpTools } = await import("@/lib/mcp/client-manager");
+      const { mcpToolsToLangchain } = await import("@/lib/mcp/tool-adapter");
+      const mcpTools = await listWorkspaceMcpTools(workspaceId);
+      if (mcpTools.length > 0) {
+        agentInstance = agentInfo.agent.withExtraTools(mcpToolsToLangchain(mcpTools));
+      }
+    } catch {
+      // MCP injection is best-effort — never block the agent
+    }
+  }
+
+  const result = await agentInstance.run(input, context);
 
   const hasAnomaly = result.limitReached || (result.toolErrors?.length ?? 0) > 0;
 

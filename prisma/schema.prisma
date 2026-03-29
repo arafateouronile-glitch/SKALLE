@@ -105,6 +105,7 @@ model Workspace {
   smtpConfigs               SmtpConfig[]
   socialInteractions        SocialInteraction[]
   webhookEndpoints          WebhookEndpoint[]
+  mcpServerConfigs          MCPServerConfig[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -996,4 +997,43 @@ enum CampaignStatus {
   PAUSED
   COMPLETED
   FAILED
+}
+
+enum MCPTransport {
+  HTTP
+  SSE
+}
+
+model MCPServerConfig {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  name           String
+  url            String
+  transport      MCPTransport @default(HTTP)
+  encryptedToken String?
+  tokenIv        String?
+  isActive       Boolean      @default(true)
+  lastTestedAt   DateTime?
+  lastTestOk     Boolean?
+  cachedTools    Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model MCPAccessLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  apiKeyId    String
+  method      String
+  toolName    String?
+  resourceUri String?
+  durationMs  Int?
+  success     Boolean
+  errorMsg    String?
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
 }

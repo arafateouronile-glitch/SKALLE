@@ -53,12 +53,16 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
+  Network,
+  Wrench,
+  RefreshCw,
 } from "lucide-react";
 import { saveCMSConfig, deleteCMSConfig } from "@/actions/cms";
 import { getCurrentUserSettings } from "@/actions/credits";
 import { getGSCAuthUrlAction, getGSCStatusAction, disconnectGSCAction } from "@/actions/integrations";
 import { listApiKeysAction, createApiKeyAction, revokeApiKeyAction } from "@/actions/api-keys";
 import { updateWorkspaceBrandType } from "@/actions/workspace";
+import { getMcpServers, addMcpServer, deleteMcpServer, testMcpServer, updateMcpServer } from "@/actions/mcp-servers";
 import { PricingTable, PLANS } from "@/components/pricing/pricing-table";
 import { toast } from "sonner";
 
@@ -290,6 +294,85 @@ export default function SettingsPage() {
   };
 
   // Integrations state
+  // ── MCP Servers state ──────────────────────────────────────────────────────
+  interface MCPServerItem {
+    id: string;
+    name: string;
+    url: string;
+    transport: "HTTP" | "SSE";
+    isActive: boolean;
+    lastTestedAt: Date | null;
+    lastTestOk: boolean | null;
+    cachedTools: unknown;
+  }
+  const [mcpServers, setMcpServers] = useState<MCPServerItem[]>([]);
+  const [mcpLoaded, setMcpLoaded] = useState(false);
+  const [isAddMcpOpen, setIsAddMcpOpen] = useState(false);
+  const [mcpForm, setMcpForm] = useState({ name: "", url: "", token: "" });
+  const [isAddingMcp, setIsAddingMcp] = useState(false);
+  const [testingMcpId, setTestingMcpId] = useState<string | null>(null);
+  const [deletingMcpId, setDeletingMcpId] = useState<string | null>(null);
+
+  const loadMcpServers = async () => {
+    const result = await getMcpServers();
+    if (result.success && result.data) {
+      setMcpServers(result.data as MCPServerItem[]);
+    }
+    setMcpLoaded(true);
+  };
+
+  const handleAddMcpServer = async () => {
+    if (!mcpForm.name.trim() || !mcpForm.url.trim()) {
+      toast.error("Nom et URL requis");
+      return;
+    }
+    setIsAddingMcp(true);
+    try {
+      const result = await addMcpServer({ name: mcpForm.name, url: mcpForm.url, token: mcpForm.token || undefined });
+      if (result.success) {
+        toast.success("Serveur MCP ajouté");
+        setIsAddMcpOpen(false);
+        setMcpForm({ name: "", url: "", token: "" });
+        await loadMcpServers();
+      } else {
+        toast.error(result.error ?? "Erreur lors de l'ajout");
+      }
+    } finally {
+      setIsAddingMcp(false);
+    }
+  };
+
+  const handleTestMcpServer = async (id: string) => {
+    setTestingMcpId(id);
+    try {
+      const result = await testMcpServer(id);
+      if (result.success && result.data) {
+        toast.success(`Connexion OK — ${result.data.toolCount} outil(s) disponible(s)`);
+        await loadMcpServers();
+      } else {
+        toast.error(result.error ?? "Connexion échouée");
+      }
+    } finally {
+      setTestingMcpId(null);
+    }
+  };
+
+  const handleDeleteMcpServer = async (id: string) => {
+    setDeletingMcpId(id);
+    try {
+      await deleteMcpServer(id);
+      setMcpServers((prev) => prev.filter((s) => s.id !== id));
+      toast.success("Serveur MCP supprimé");
+    } finally {
+      setDeletingMcpId(null);
+    }
+  };
+
+  const handleToggleMcpServer = async (id: string, isActive: boolean) => {
+    await updateMcpServer(id, { isActive });
+    setMcpServers((prev) => prev.map((s) => (s.id === id ? { ...s, isActive } : s)));
+  };
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCmsLoading, setIsCmsLoading] = useState(false);
   const [cmsConfig, setCmsConfig] = useState<CMSConfig | null>(null);
@@ -396,6 +479,9 @@ export default function SettingsPage() {
           <TabsTrigger value="integrations">Intégrations</TabsTrigger>
           <TabsTrigger value="api" onClick={() => { if (!apiKeysLoaded) loadApiKeys(); }}>
             Clés API
+          </TabsTrigger>
+          <TabsTrigger value="mcp" onClick={() => { if (!mcpLoaded) loadMcpServers(); }}>
+            MCP
           </TabsTrigger>
         </TabsList>
 
@@ -1284,6 +1370,217 @@ export default function SettingsPage() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── MCP ── */}
+        <TabsContent value="mcp" className="mt-6 space-y-6">
+          {/* SKALLE as MCP Server */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Network className="h-5 w-5 text-emerald-600" />
+                SKALLE comme serveur MCP
+              </CardTitle>
+              <CardDescription>
+                Connectez Claude Desktop, Cursor ou tout autre client MCP à votre workspace SKALLE.
+                Utilisez votre clé API (onglet Clés API) comme Bearer token.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 space-y-2">
+                <p className="text-sm font-medium text-gray-700">Endpoint MCP</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs bg-white border rounded px-3 py-2 font-mono text-emerald-700 break-all">
+                    {typeof window !== "undefined" ? window.location.origin : "https://skalle.vercel.app"}/api/mcp
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const url = `${window.location.origin}/api/mcp`;
+                      navigator.clipboard.writeText(url);
+                      toast.success("URL copiée");
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-4">
+                <p className="text-sm font-semibold text-blue-800 mb-2">Configuration Claude Desktop</p>
+                <pre className="text-xs text-blue-700 whitespace-pre-wrap font-mono bg-white border border-blue-100 rounded p-3">{`{
+  "mcpServers": {
+    "skalle": {
+      "url": "${typeof window !== "undefined" ? window.location.origin : "https://skalle.vercel.app"}/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <votre-clé-api>"
+      }
+    }
+  }
+}`}</pre>
+              </div>
+              <p className="text-xs text-gray-500">
+                Outils disponibles : créer/chercher des prospects, planifier des posts, consulter les stats, lire les mots-clés SEO et la brand voice.
+                Requiert un plan SCALE.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* SKALLE as MCP Client */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Wrench className="h-5 w-5 text-emerald-600" />
+                    Serveurs MCP externes
+                  </CardTitle>
+                  <CardDescription>
+                    Connectez des serveurs MCP tiers — leurs outils seront automatiquement injectés dans les agents IA SKALLE.
+                  </CardDescription>
+                </div>
+                <Dialog open={isAddMcpOpen} onOpenChange={setIsAddMcpOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="gap-1">
+                      <Plus className="h-4 w-4" />
+                      Ajouter
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Connecter un serveur MCP</DialogTitle>
+                      <DialogDescription>
+                        Ajoutez un serveur MCP externe. Ses outils seront disponibles dans tous vos agents IA.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="mcp-name">Nom</Label>
+                        <Input
+                          id="mcp-name"
+                          placeholder="Ex: GitHub MCP, Notion MCP..."
+                          value={mcpForm.name}
+                          onChange={(e) => setMcpForm((f) => ({ ...f, name: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="mcp-url">URL du serveur MCP</Label>
+                        <Input
+                          id="mcp-url"
+                          placeholder="https://mcp.example.com/mcp"
+                          value={mcpForm.url}
+                          onChange={(e) => setMcpForm((f) => ({ ...f, url: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="mcp-token">Token d&apos;authentification (optionnel)</Label>
+                        <Input
+                          id="mcp-token"
+                          type="password"
+                          placeholder="Bearer token ou clé API"
+                          value={mcpForm.token}
+                          onChange={(e) => setMcpForm((f) => ({ ...f, token: e.target.value }))}
+                        />
+                        <p className="text-xs text-gray-400">Chiffré en AES-256 — jamais exposé côté client</p>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsAddMcpOpen(false)}>Annuler</Button>
+                      <Button onClick={handleAddMcpServer} disabled={isAddingMcp}>
+                        {isAddingMcp && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                        Connecter
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!mcpLoaded ? (
+                <div className="flex items-center justify-center py-8 text-gray-400">
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  Chargement...
+                </div>
+              ) : mcpServers.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  <Network className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p>Aucun serveur MCP connecté</p>
+                  <p className="text-xs mt-1">Ajoutez un serveur pour étendre les capacités de vos agents IA</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {mcpServers.map((server) => {
+                    const toolList = Array.isArray(server.cachedTools) ? server.cachedTools as { name: string }[] : [];
+                    return (
+                      <div
+                        key={server.id}
+                        className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4"
+                      >
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{server.name}</span>
+                            <Badge variant={server.isActive ? "default" : "outline"} className="text-xs">
+                              {server.isActive ? "Actif" : "Inactif"}
+                            </Badge>
+                            {server.lastTestedAt && (
+                              server.lastTestOk
+                                ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                : <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 font-mono truncate">{server.url}</p>
+                          {toolList.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {toolList.slice(0, 5).map((t) => (
+                                <Badge key={t.name} variant="outline" className="text-xs py-0">{t.name}</Badge>
+                              ))}
+                              {toolList.length > 5 && (
+                                <Badge variant="outline" className="text-xs py-0">+{toolList.length - 5}</Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleTestMcpServer(server.id)}
+                            disabled={testingMcpId === server.id}
+                            title="Tester la connexion"
+                          >
+                            {testingMcpId === server.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <RefreshCw className="h-3.5 w-3.5" />
+                            }
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleToggleMcpServer(server.id, !server.isActive)}
+                            title={server.isActive ? "Désactiver" : "Activer"}
+                          >
+                            {server.isActive ? <XCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteMcpServer(server.id)}
+                            disabled={deletingMcpId === server.id}
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          >
+                            {deletingMcpId === server.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Trash2 className="h-3.5 w-3.5" />
+                            }
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
