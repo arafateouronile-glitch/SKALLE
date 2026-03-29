@@ -78,7 +78,7 @@ export function ConceptCard({
   onPreview,
 }: ConceptCardProps) {
   const [showRationale, setShowRationale] = useState(false);
-  const categoryConfig = CATEGORY_CONFIG[category];
+  const categoryConfig = CATEGORY_CONFIG[category] ?? { label: category, color: "bg-gray-100 text-gray-800 border-gray-200" };
 
   return (
     <Card className={`transition-all ${approved === true ? "ring-2 ring-emerald-400" : approved === false ? "opacity-50" : ""}`}>

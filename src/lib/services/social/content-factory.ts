@@ -81,7 +81,7 @@ function getBrandTypeContext(brandType: BrandType): {
         conceptInstructions:
           "Pour une personal brand : privilégie les posts d'opinion (point de vue tranché), les récits personnels (storytelling), les leçons tirées d'expériences vécues, et les prises de position sur des sujets de ta niche. Le 'je' est naturel et authentique.",
         conceptDistribution:
-          "RÉPARTITION POUR PERSONAL BRAND :\n- 10 concepts \"education\" (33%) : expertise partagée, tutoriels, frameworks personnels\n- 8 concepts \"awareness\" (27%) : storytelling personnel, parcours, behind-the-scenes\n- 7 concepts \"conversion\" (23%) : offres, services, résultats clients\n- 5 concepts \"engagement\" (17%) : opinions, sondages, questions à la communauté",
+          "RÉPARTITION POUR PERSONAL BRAND :\n- 12 concepts \"education\" (40%) : expertise partagée, tutoriels, frameworks personnels, opinions tranchées\n- 10 concepts \"awareness\" (33%) : storytelling personnel, parcours, behind-the-scenes, prises de position\n- 8 concepts \"conversion\" (27%) : offres, services, résultats clients, témoignages",
         postToneInstructions:
           "Ton: authentique, première personne (je), direct et sans jargon corporate. L'auteur parle en son nom. Partage d'expériences personnelles bienvenu.",
       };
