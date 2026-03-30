@@ -611,10 +611,24 @@ model EmailCampaign {
   smtpConfigId        String?
   smtpConfig          SmtpConfig?        @relation(fields: [smtpConfigId], references: [id])
   sequences           OutreachSequence[]
+  attachments         CampaignAttachment[]
 
   @@index([workspaceId])
   @@index([status])
   @@index([smtpConfigId])
+}
+
+model CampaignAttachment {
+  id          String        @id @default(cuid())
+  campaignId  String
+  filename    String
+  contentType String
+  size        Int
+  data        Bytes
+  createdAt   DateTime      @default(now())
+  campaign    EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
 }
 
 model ProspectList {

@@ -74,20 +74,20 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-purple-50 to-white p-4">
       <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
 
-      <Card className="w-full max-w-md relative bg-slate-900/80 border-purple-500/20 backdrop-blur-xl">
+      <Card className="w-full max-w-md relative bg-white border-purple-500/20 backdrop-blur-xl">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
             <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
               <Zap className="w-8 h-8 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold text-white">
+          <CardTitle className="text-2xl font-bold text-gray-900">
             Créer un compte
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-gray-500">
             Commencez à automatiser votre marketing
           </CardDescription>
         </CardHeader>
@@ -101,7 +101,7 @@ export default function RegisterPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-slate-300">
+              <Label htmlFor="name" className="text-gray-700">
                 Nom
               </Label>
               <Input
@@ -111,12 +111,12 @@ export default function RegisterPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-purple-500"
+                className="bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-purple-500"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-300">
+              <Label htmlFor="email" className="text-gray-700">
                 Email
               </Label>
               <Input
@@ -126,12 +126,12 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-purple-500"
+                className="bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-purple-500"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-slate-300">
+              <Label htmlFor="password" className="text-gray-700">
                 Mot de passe
               </Label>
               <Input
@@ -141,12 +141,12 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-purple-500"
+                className="bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-purple-500"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-slate-300">
+              <Label htmlFor="confirmPassword" className="text-gray-700">
                 Confirmer le mot de passe
               </Label>
               <Input
@@ -156,7 +156,7 @@ export default function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-purple-500"
+                className="bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-purple-500"
               />
             </div>
 
@@ -172,7 +172,7 @@ export default function RegisterPage() {
         </CardContent>
 
         <CardFooter className="flex justify-center">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-gray-500">
             Déjà un compte ?{" "}
             <Link
               href="/login"

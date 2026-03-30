@@ -128,15 +128,15 @@ export function ReplyAssistant({
 
   const intentionColor = (intention: string) => {
     const i = intention.toUpperCase();
-    if (i === "OBJECTION" || i === "PRIX") return "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400";
-    if (i === "CONFIANCE" || i === "CURIOSITE_SCEPTIQUE") return "border-violet-500/50 bg-violet-500/10 text-violet-700 dark:text-violet-400";
-    if (i === "ENGAGEMENT") return "border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
-    return "border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300";
+    if (i === "OBJECTION" || i === "PRIX") return "border-amber-500/50 bg-amber-500/10 text-amber-700";
+    if (i === "CONFIANCE" || i === "CURIOSITE_SCEPTIQUE") return "border-violet-500/50 bg-violet-500/10 text-violet-700";
+    if (i === "ENGAGEMENT") return "border-emerald-500/50 bg-emerald-500/10 text-emerald-700";
+    return "border-gray-300 bg-gray-50 text-gray-600";
   };
 
   return (
     <div className={className}>
-      <Card className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/80 shadow-sm">
+      <Card className="border-gray-200 bg-white shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
             <MessageCircle className="h-5 w-5 text-violet-500" />
@@ -149,13 +149,13 @@ export function ReplyAssistant({
         <CardContent className="space-y-4">
           {/* 1. Message reçu */}
           <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Message reçu</p>
-            <div className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60 p-3">
+            <p className="text-xs font-medium text-gray-9000 mb-1">Message reçu</p>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
               <Textarea
                 placeholder="Colle ici le message du prospect..."
                 value={incomingMessage}
                 onChange={(e) => setIncomingMessage(e.target.value)}
-                className="min-h-[80px] resize-none bg-transparent border-0 focus-visible:ring-0 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                className="min-h-[80px] resize-none bg-transparent border-0 focus-visible:ring-0 text-sm text-gray-700 placeholder:text-gray-500"
                 rows={3}
               />
             </div>
@@ -190,7 +190,7 @@ export function ReplyAssistant({
               {/* Suggestion statut CRM (En Discussion / Gagné) */}
               {result.suggestedPipelineStatus && (
                 <div className="rounded-lg border border-violet-500/40 bg-violet-500/10 p-3 flex items-center justify-between gap-3">
-                  <p className="text-sm text-violet-800 dark:text-violet-300">
+                  <p className="text-sm text-violet-800">
                     <Sparkles className="h-4 w-4 inline mr-2 text-violet-500" />
                     L&apos;IA suggère : passer ce lead en{" "}
                     <strong>
@@ -200,7 +200,7 @@ export function ReplyAssistant({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="border-violet-500 text-violet-700 dark:text-violet-400 shrink-0"
+                    className="border-violet-500 text-violet-700 shrink-0"
                     disabled={applyingStatus}
                     onClick={async () => {
                       setApplyingStatus(true);
@@ -230,19 +230,19 @@ export function ReplyAssistant({
 
               {/* 3. Options A & B */}
               <div className="space-y-3">
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                <p className="text-xs font-medium text-gray-9000 flex items-center gap-1">
                   <Target className="h-3.5 w-3" />
                   Suggestions
                 </p>
                 <div className="space-y-2">
-                  <div className="rounded-lg border border-slate-200 dark:border-slate-600 p-3 bg-white dark:bg-slate-800/40">
+                  <div className="rounded-lg border border-gray-200 p-3 bg-white">
                     <Badge variant="outline" className="mb-2 text-xs">Option A — Douce</Badge>
-                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{result.optionA}</p>
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{result.optionA}</p>
                     <div className="mt-2 flex gap-2">
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1 border-violet-300 dark:border-violet-600 text-violet-700 dark:text-violet-400"
+                        className="flex-1 border-violet-300 text-violet-700"
                         onClick={() => copyAndOpen(result.optionA, "a")}
                       >
                         {copiedId === "a" ? <Copy className="h-4 w-4 mr-1 text-green-500" /> : <Copy className="h-4 w-4 mr-1" />}
@@ -251,7 +251,7 @@ export function ReplyAssistant({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-slate-500"
+                        className="text-gray-9000"
                         title="Ajouter à la bibliothèque d'objections"
                         disabled={savingBankId !== null}
                         onClick={() => addToLibrary(result.optionA, "a")}
@@ -260,14 +260,14 @@ export function ReplyAssistant({
                       </Button>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 dark:border-slate-600 p-3 bg-white dark:bg-slate-800/40">
+                  <div className="rounded-lg border border-gray-200 p-3 bg-white">
                     <Badge variant="outline" className="mb-2 text-xs">Option B — Directe</Badge>
-                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{result.optionB}</p>
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{result.optionB}</p>
                     <div className="mt-2 flex gap-2">
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1 border-violet-300 dark:border-violet-600 text-violet-700 dark:text-violet-400"
+                        className="flex-1 border-violet-300 text-violet-700"
                         onClick={() => copyAndOpen(result.optionB, "b")}
                       >
                         {copiedId === "b" ? <Copy className="h-4 w-4 mr-1 text-green-500" /> : <Copy className="h-4 w-4 mr-1" />}
@@ -276,7 +276,7 @@ export function ReplyAssistant({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-slate-500"
+                        className="text-gray-9000"
                         title="Ajouter à la bibliothèque d'objections"
                         disabled={savingBankId !== null}
                         onClick={() => addToLibrary(result.optionB, "b")}
@@ -289,17 +289,17 @@ export function ReplyAssistant({
               </div>
 
               {/* Note stratégique */}
-              <div className="rounded-lg border border-slate-200 dark:border-slate-600 p-3 bg-slate-50 dark:bg-slate-800/30">
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1 mb-1">
+              <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+                <p className="text-xs font-semibold text-gray-9000 flex items-center gap-1 mb-1">
                   <Shield className="h-3.5 w-3" />
                   Pourquoi cette réponse ?
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">{result.strategicNote}</p>
+                <p className="text-sm text-gray-400">{result.strategicNote}</p>
               </div>
 
               {/* Personnalisation : régénérer */}
               <div>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Personnaliser (ex: &quot;Il a l&apos;air pressé, raccourcis&quot;)</p>
+                <p className="text-xs font-medium text-gray-9000 mb-1">Personnaliser (ex: &quot;Il a l&apos;air pressé, raccourcis&quot;)</p>
                 <div className="flex gap-2">
                   <Textarea
                     placeholder="Consigne pour l'IA..."
@@ -321,8 +321,8 @@ export function ReplyAssistant({
 
               {/* Stripe Closing — liens statiques */}
               {(paymentLink || calendarLink) && (
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Liens rapides</p>
+                <div className="pt-2 border-t border-gray-200">
+                  <p className="text-xs font-medium text-gray-9000 mb-2">Liens rapides</p>
                   <div className="flex flex-wrap gap-2">
                     {paymentLink && (
                       <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-700">
@@ -346,7 +346,7 @@ export function ReplyAssistant({
             </>
           )}
           {/* One-Click Checkout — toujours visible */}
-          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+          <div className="pt-4 border-t border-gray-200">
             <PaymentGenerator
               prospectId={prospectId}
               workspaceId={workspaceId}

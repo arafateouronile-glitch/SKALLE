@@ -19,6 +19,12 @@ export interface SmtpConnectionConfig {
   password: string;
 }
 
+export interface EmailAttachment {
+  filename: string;
+  contentType: string;
+  content: Buffer;
+}
+
 export interface SendEmailParams {
   from: string;
   fromName: string;
@@ -26,6 +32,7 @@ export interface SendEmailParams {
   subject: string;
   html: string;
   replyTo?: string;
+  attachments?: EmailAttachment[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -84,6 +91,11 @@ export async function sendEmailViaSMTP(
       replyTo: params.replyTo || params.from,
       subject: params.subject,
       html: params.html,
+      attachments: params.attachments?.map((a) => ({
+        filename: a.filename,
+        contentType: a.contentType,
+        content: a.content,
+      })),
     });
 
     return { success: true, messageId: info.messageId };

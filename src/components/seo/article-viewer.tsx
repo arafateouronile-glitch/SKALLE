@@ -98,7 +98,7 @@ function ArticleImage({ src, alt }: { src?: string; alt?: string }) {
         {/* Légende en overlay bas */}
         {loaded && resolvedAlt && (
           <div className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-gradient-to-t from-black/60 to-transparent">
-            <p className="text-white text-sm italic leading-tight">{resolvedAlt}</p>
+            <p className="text-gray-900 text-sm italic leading-tight">{resolvedAlt}</p>
           </div>
         )}
       </div>

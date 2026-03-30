@@ -42,6 +42,9 @@ import {
   Plus,
   Trash2,
   Info,
+  Paperclip,
+  X,
+  FileText,
 } from "lucide-react";
 import {
   createCampaign,
@@ -109,6 +112,9 @@ export function CampaignWizard({
   const [stepTemplates, setStepTemplates] = useState<StepTemplate[]>([]);
   const [personalizationMode, setPersonalizationMode] = useState<"template" | "ai">("template");
   const [hasAI, setHasAI] = useState(false);
+
+  // Step 2: Attachments
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
 
   // Step 3: Preview
   const [previewProspectId, setPreviewProspectId] = useState<string>("");
@@ -234,14 +240,34 @@ export function CampaignWizard({
         personalizationMode,
       });
 
-      if (result.success) {
-        toast.success("Campagne créée !");
+      if (result.success && result.campaignId) {
+        // Uploader les pièces jointes si présentes
+        if (attachmentFiles.length > 0) {
+          let uploadErrors = 0;
+          for (const file of attachmentFiles) {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch(`/api/campaigns/${result.campaignId}/attachments`, {
+              method: "POST",
+              body: fd,
+            });
+            if (!res.ok) uploadErrors++;
+          }
+          if (uploadErrors > 0) {
+            toast.warning(`Campagne créée, mais ${uploadErrors} pièce(s) jointe(s) n'ont pas pu être uploadée(s).`);
+          } else {
+            toast.success("Campagne créée avec pièces jointes !");
+          }
+        } else {
+          toast.success("Campagne créée !");
+        }
         onOpenChange(false);
         onCreated();
         // Reset
         setStep(1);
         setCampaignName("");
         setPreviewData([]);
+        setAttachmentFiles([]);
       } else {
         toast.error(result.error || "Erreur de création");
       }
@@ -279,10 +305,10 @@ export function CampaignWizard({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-slate-900 border-slate-800 max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-white border-gray-200 max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-white">Créer une campagne email</DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogTitle className="text-gray-900">Créer une campagne email</DialogTitle>
+          <DialogDescription className="text-gray-500">
             Étape {step} sur 4
           </DialogDescription>
         </DialogHeader>
@@ -293,7 +319,7 @@ export function CampaignWizard({
             <div
               key={s}
               className={`h-1.5 flex-1 rounded-full transition-colors ${
-                s <= step ? "bg-purple-500" : "bg-slate-700"
+                s <= step ? "bg-purple-500" : "bg-gray-200"
               }`}
             />
           ))}
@@ -308,7 +334,7 @@ export function CampaignWizard({
                 value={campaignName}
                 onChange={(e) => setCampaignName(e.target.value)}
                 placeholder="Ex: Campagne Formation Q1 2026"
-                className="bg-slate-800 border-slate-700"
+                className="bg-gray-100 border-gray-300"
               />
             </div>
 
@@ -319,7 +345,7 @@ export function CampaignWizard({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs border-slate-700"
+                    className="text-xs border-gray-300"
                     onClick={() =>
                       setSelectedProspectIds(new Set(prospects.map((p) => p.id)))
                     }
@@ -329,7 +355,7 @@ export function CampaignWizard({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs border-slate-700"
+                    className="text-xs border-gray-300"
                     onClick={() => setSelectedProspectIds(new Set())}
                   >
                     Tout désélectionner
@@ -337,14 +363,14 @@ export function CampaignWizard({
                 </div>
               </div>
 
-              <div className="max-h-60 overflow-y-auto space-y-2 rounded-lg border border-slate-700 p-2">
+              <div className="max-h-60 overflow-y-auto space-y-2 rounded-lg border border-gray-300 p-2">
                 {prospects.map((prospect) => (
                   <div
                     key={prospect.id}
                     className={`flex items-center gap-3 p-2 rounded cursor-pointer transition-colors ${
                       selectedProspectIds.has(prospect.id)
                         ? "bg-purple-500/10 border border-purple-500/30"
-                        : "hover:bg-slate-800"
+                        : "hover:bg-gray-100"
                     }`}
                     onClick={() => toggleProspect(prospect.id)}
                   >
@@ -355,10 +381,10 @@ export function CampaignWizard({
                       className="rounded"
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-white truncate">
+                      <div className="text-sm font-medium text-gray-900 truncate">
                         {prospect.name}
                       </div>
-                      <div className="text-xs text-slate-400 truncate">
+                      <div className="text-xs text-gray-500 truncate">
                         {prospect.company}
                         {prospect.jobTitle && ` - ${prospect.jobTitle}`}
                       </div>
@@ -391,13 +417,13 @@ export function CampaignWizard({
         {step === 2 && (
           <div className="space-y-4">
             {/* 2a — But de la campagne */}
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-gray-50 border-gray-300">
               <CardHeader className="py-3 px-4">
-                <CardTitle className="text-sm text-white flex items-center gap-2">
+                <CardTitle className="text-sm text-gray-900 flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-purple-400" />
                   Quel est le but de cette campagne ?
                 </CardTitle>
-                <CardDescription className="text-slate-400 text-xs">
+                <CardDescription className="text-gray-500 text-xs">
                   Décrivez l’objectif (ex. prise de rendez-vous, démo, relance prospects). L’IA rédigera un template de mail personnalisable pour chaque prospect.
                 </CardDescription>
               </CardHeader>
@@ -406,7 +432,7 @@ export function CampaignWizard({
                   value={campaignGoal}
                   onChange={(e) => setCampaignGoal(e.target.value)}
                   placeholder="Ex. : Prendre des rendez-vous avec des directeurs marketing pour présenter notre outil de génération de leads..."
-                  className="bg-slate-700 border-slate-600 text-sm min-h-[80px] resize-none"
+                  className="bg-gray-200 border-gray-400 text-sm min-h-[80px] resize-none"
                   rows={3}
                 />
               </CardContent>
@@ -419,10 +445,10 @@ export function CampaignWizard({
                   value={String(stepCount)}
                   onValueChange={(v) => handleStepCountChange(v as "2" | "3")}
                 >
-                  <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectTrigger className="bg-gray-100 border-gray-300">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800">
+                  <SelectContent className="bg-white border-gray-200">
                     <SelectItem value="2">2 emails</SelectItem>
                     <SelectItem value="3">3 emails</SelectItem>
                   </SelectContent>
@@ -437,10 +463,10 @@ export function CampaignWizard({
                     setPersonalizationMode(v as "template" | "ai")
                   }
                 >
-                  <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectTrigger className="bg-gray-100 border-gray-300">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800">
+                  <SelectContent className="bg-white border-gray-200">
                     <SelectItem value="template">
                       Template (variables)
                     </SelectItem>
@@ -467,19 +493,19 @@ export function CampaignWizard({
             </div>
 
             {!hasAI && (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-gray-9000">
                 Configurez OPENAI_API_KEY pour que l’IA rédige les templates à partir du but. Sinon, utilisez les templates par défaut ci-dessous après avoir choisi le nombre d’étapes.
               </p>
             )}
 
             {/* Variables reference */}
             <div className="flex flex-wrap gap-1.5">
-              <span className="text-xs text-slate-500 mr-1">Variables :</span>
+              <span className="text-xs text-gray-9000 mr-1">Variables :</span>
               {AVAILABLE_VARIABLES.map((v) => (
                 <Badge
                   key={v.key}
                   variant="outline"
-                  className="text-xs cursor-default border-slate-700 text-slate-400"
+                  className="text-xs cursor-default border-gray-300 text-gray-500"
                 >
                   {`{${v.key}}`} = {v.label}
                 </Badge>
@@ -487,18 +513,77 @@ export function CampaignWizard({
             </div>
 
             {/* 2b — Templates à valider / éditer */}
-            <div className="text-sm font-medium text-slate-300">
+            <div className="text-sm font-medium text-gray-700">
               {stepTemplates.length > 0
                 ? "Validez ou modifiez les templates ci-dessous, puis passez à l’étape suivante."
                 : "Remplissez le but de la campagne et cliquez sur « Générer les templates avec l’IA », ou choisissez le nombre d’étapes pour charger des templates par défaut."}
             </div>
 
             {/* Email step editors */}
+            {/* Pièces jointes (communes à tous les emails de la campagne) */}
+            <Card className="bg-gray-50 border-gray-300">
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm text-gray-900 flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 text-gray-500" />
+                  Pièces jointes
+                  <span className="text-xs font-normal text-gray-9000">(optionnel — communes à tous les emails)</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 space-y-3">
+                {attachmentFiles.length > 0 && (
+                  <div className="space-y-2">
+                    {attachmentFiles.map((file, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-gray-200/50 rounded px-3 py-2">
+                        <FileText className="h-4 w-4 text-gray-500 shrink-0" />
+                        <span className="text-sm text-gray-700 flex-1 truncate">{file.name}</span>
+                        <span className="text-xs text-gray-9000 shrink-0">
+                          {(file.size / 1024).toFixed(0)} KB
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAttachmentFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="text-gray-9000 hover:text-red-400 transition-colors shrink-0"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {attachmentFiles.length < 5 && (
+                  <label className="flex items-center gap-2 border border-dashed border-gray-400 rounded-lg px-4 py-3 cursor-pointer hover:border-gray-500 transition-colors">
+                    <Paperclip className="h-4 w-4 text-gray-9000" />
+                    <span className="text-sm text-gray-9000">
+                      Ajouter un fichier (PDF, image, Word, Excel… max 10 MB)
+                    </span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 10 * 1024 * 1024) {
+                          toast.error("Fichier trop volumineux (max 10 MB)");
+                          return;
+                        }
+                        setAttachmentFiles((prev) => [...prev, file]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+                {attachmentFiles.length >= 5 && (
+                  <p className="text-xs text-gray-9000">Maximum 5 pièces jointes atteint.</p>
+                )}
+              </CardContent>
+            </Card>
+
             {stepTemplates.map((template, index) => (
-              <Card key={index} className="bg-slate-800/50 border-slate-700">
+              <Card key={index} className="bg-gray-50 border-gray-300">
                 <CardHeader className="py-3 px-4">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm text-white">
+                    <CardTitle className="text-sm text-gray-900">
                       Étape {template.stepNumber}
                       {template.stepNumber === 1
                         ? " - Premier contact"
@@ -508,7 +593,7 @@ export function CampaignWizard({
                     </CardTitle>
                     {template.stepNumber > 1 && (
                       <div className="flex items-center gap-2">
-                        <Label className="text-xs text-slate-400">Délai :</Label>
+                        <Label className="text-xs text-gray-500">Délai :</Label>
                         <Input
                           type="number"
                           min={1}
@@ -521,9 +606,9 @@ export function CampaignWizard({
                               parseInt(e.target.value) || 1
                             )
                           }
-                          className="w-16 h-7 text-xs bg-slate-700 border-slate-600"
+                          className="w-16 h-7 text-xs bg-gray-200 border-gray-400"
                         />
-                        <span className="text-xs text-slate-400">jours</span>
+                        <span className="text-xs text-gray-500">jours</span>
                       </div>
                     )}
                   </div>
@@ -537,7 +622,7 @@ export function CampaignWizard({
                         updateTemplate(index, "subject", e.target.value)
                       }
                       placeholder="Objet de l'email..."
-                      className="bg-slate-700 border-slate-600 text-sm"
+                      className="bg-gray-200 border-gray-400 text-sm"
                     />
                   </div>
                   <div className="space-y-1">
@@ -548,7 +633,7 @@ export function CampaignWizard({
                         updateTemplate(index, "content", e.target.value)
                       }
                       placeholder="Contenu de l'email..."
-                      className="bg-slate-700 border-slate-600 text-sm min-h-[120px] font-mono"
+                      className="bg-gray-200 border-gray-400 text-sm min-h-[120px] font-mono"
                       rows={6}
                     />
                   </div>
@@ -559,7 +644,7 @@ export function CampaignWizard({
                         key={v.key}
                         variant="outline"
                         size="sm"
-                        className="text-xs h-6 px-2 border-slate-600 text-slate-400 hover:text-white"
+                        className="text-xs h-6 px-2 border-gray-400 text-gray-500 hover:text-gray-900"
                         onClick={() => insertVariable(index, "content", v.key)}
                       >
                         +{`{${v.key}}`}
@@ -585,10 +670,10 @@ export function CampaignWizard({
                     setPreviewData([]);
                   }}
                 >
-                  <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectTrigger className="bg-gray-100 border-gray-300">
                     <SelectValue placeholder="Choisir un prospect" />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800">
+                  <SelectContent className="bg-white border-gray-200">
                     {selectedProspects.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         {p.name} - {p.company}
@@ -614,7 +699,7 @@ export function CampaignWizard({
             {previewData.length > 0 ? (
               <div className="space-y-3">
                 {previewData.map((preview, index) => (
-                  <Card key={index} className="bg-slate-800/50 border-slate-700">
+                  <Card key={index} className="bg-gray-50 border-gray-300">
                     <CardContent className="p-4 space-y-2">
                       <div className="flex items-center justify-between">
                         <Badge variant="outline" className="text-xs">
@@ -626,11 +711,11 @@ export function CampaignWizard({
                           </Badge>
                         )}
                       </div>
-                      <div className="text-sm font-medium text-white">
+                      <div className="text-sm font-medium text-gray-900">
                         Objet : {preview.subject}
                       </div>
                       <div
-                        className="text-sm text-slate-300 bg-slate-900/50 rounded p-3 prose prose-sm prose-invert max-w-none"
+                        className="text-sm text-gray-700 bg-gray-50 rounded p-3 prose prose-sm prose-invert max-w-none"
                         dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(preview.content) }}
                       />
                     </CardContent>
@@ -638,7 +723,7 @@ export function CampaignWizard({
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-slate-500 text-sm">
+              <div className="text-center py-8 text-gray-9000 text-sm">
                 <Eye className="h-8 w-8 mx-auto mb-3 opacity-50" />
                 Cliquez sur "Prévisualiser" pour voir le rendu personnalisé
               </div>
@@ -649,38 +734,46 @@ export function CampaignWizard({
         {/* Step 4: Confirmation */}
         {step === 4 && (
           <div className="space-y-4">
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-gray-50 border-gray-300">
               <CardContent className="p-4 space-y-3">
-                <h3 className="font-medium text-white">Résumé de la campagne</h3>
+                <h3 className="font-medium text-gray-900">Résumé de la campagne</h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-slate-400">Nom :</span>
-                    <span className="text-white ml-2">{campaignName}</span>
+                    <span className="text-gray-500">Nom :</span>
+                    <span className="text-gray-900 ml-2">{campaignName}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400">Prospects :</span>
-                    <span className="text-white ml-2">{selectedProspectIds.size}</span>
+                    <span className="text-gray-500">Prospects :</span>
+                    <span className="text-gray-900 ml-2">{selectedProspectIds.size}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400">Étapes :</span>
-                    <span className="text-white ml-2">{stepTemplates.length} emails</span>
+                    <span className="text-gray-500">Étapes :</span>
+                    <span className="text-gray-900 ml-2">{stepTemplates.length} emails</span>
                   </div>
                   <div>
-                    <span className="text-slate-400">Mode :</span>
-                    <span className="text-white ml-2">
+                    <span className="text-gray-500">Mode :</span>
+                    <span className="text-gray-900 ml-2">
                       {personalizationMode === "ai" ? "AI (GPT-4)" : "Template"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-400">Avec email :</span>
-                    <span className="text-white ml-2">{prospectsWithEmail.length}</span>
+                    <span className="text-gray-500">Avec email :</span>
+                    <span className="text-gray-900 ml-2">{prospectsWithEmail.length}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400">Total emails :</span>
-                    <span className="text-white ml-2">
+                    <span className="text-gray-500">Total emails :</span>
+                    <span className="text-gray-900 ml-2">
                       ~{prospectsWithEmail.length * stepTemplates.length}
                     </span>
                   </div>
+                  {attachmentFiles.length > 0 && (
+                    <div className="col-span-2">
+                      <span className="text-gray-500">Pièces jointes :</span>
+                      <span className="text-gray-900 ml-2">
+                        {attachmentFiles.map((f) => f.name).join(", ")}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -736,7 +829,7 @@ export function CampaignWizard({
               </CardContent>
             </Card>
 
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="flex items-center gap-2 text-xs text-gray-9000">
               <Info className="h-3 w-3" />
               La campagne sera créée en mode BROUILLON. Vous pourrez la personnaliser et la lancer depuis le dashboard.
             </div>
@@ -744,11 +837,11 @@ export function CampaignWizard({
         )}
 
         {/* Navigation */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-700">
+        <div className="flex items-center justify-between pt-4 border-t border-gray-300">
           <Button
             variant="outline"
             onClick={() => (step === 1 ? onOpenChange(false) : setStep(step - 1))}
-            className="border-slate-700"
+            className="border-gray-300"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             {step === 1 ? "Annuler" : "Précédent"}

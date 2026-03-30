@@ -141,14 +141,14 @@ export function PaymentGenerator({
         {linkUrl && (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Statut</span>
+              <span className="text-xs font-medium text-gray-9000">Statut</span>
               <span
                 className={`inline-flex h-2.5 w-2.5 rounded-full ${
-                  status === "PAID" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" : "bg-slate-400"
+                  status === "PAID" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" : "bg-gray-300"
                 }`}
                 title={status === "PAID" ? "Payé" : "En attente"}
               />
-              <span className="text-xs text-slate-500 dark:text-slate-400">
+              <span className="text-xs text-gray-9000">
                 {status === "PAID" ? "Payé" : "En attente"}
               </span>
             </div>
@@ -156,7 +156,7 @@ export function PaymentGenerator({
               <Input
                 readOnly
                 value={linkUrl}
-                className="font-mono text-xs bg-slate-50 dark:bg-slate-800"
+                className="font-mono text-xs bg-gray-50"
               />
               <Button
                 size="icon"

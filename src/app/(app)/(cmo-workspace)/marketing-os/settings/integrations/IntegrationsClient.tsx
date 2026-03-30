@@ -362,7 +362,7 @@ export function IntegrationsClient({ workspaceId }: IntegrationsClientProps) {
           <CardContent className="flex items-center gap-3 pt-6">
             <AlertTriangle className="h-5 w-5 text-amber-600" />
             <div>
-              <p className="font-medium text-amber-800 dark:text-amber-200">{apiError}</p>
+              <p className="font-medium text-amber-800">{apiError}</p>
               <p className="text-sm text-muted-foreground">
                 Passez à un plan AGENCY ou SCALE pour activer les intégrations API.
               </p>

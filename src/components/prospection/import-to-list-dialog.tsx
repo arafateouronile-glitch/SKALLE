@@ -132,13 +132,13 @@ export function ImportToListDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-slate-900 border-slate-800 max-w-md">
+      <DialogContent className="bg-white border-gray-200 max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
+          <DialogTitle className="text-gray-900 flex items-center gap-2">
             <FolderPlus className="h-5 w-5 text-purple-400" />
             Importer dans une liste
           </DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogDescription className="text-gray-500">
             {leads.length} lead{leads.length > 1 ? "s" : ""} selectionne
             {leads.length > 1 ? "s" : ""}
           </DialogDescription>
@@ -147,9 +147,9 @@ export function ImportToListDialog({
         <div className="space-y-4 py-2">
           {/* Choisir une liste existante */}
           <div className="space-y-2">
-            <Label className="text-slate-300">Liste existante</Label>
+            <Label className="text-gray-700">Liste existante</Label>
             {isLoadingLists ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div className="flex items-center gap-2 text-sm text-gray-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Chargement...
               </div>
@@ -158,17 +158,17 @@ export function ImportToListDialog({
                 value={selectedListId}
                 onValueChange={setSelectedListId}
               >
-                <SelectTrigger className="bg-slate-800 border-slate-700">
+                <SelectTrigger className="bg-gray-100 border-gray-300">
                   <SelectValue placeholder="Choisir une liste..." />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-800">
+                <SelectContent className="bg-white border-gray-200">
                   {lists.map((list) => (
                     <SelectItem key={list.id} value={list.id}>
                       {list.name} ({list._count.prospects} prospects)
                     </SelectItem>
                   ))}
                   {lists.length === 0 && (
-                    <div className="px-2 py-1.5 text-sm text-slate-500">
+                    <div className="px-2 py-1.5 text-sm text-gray-9000">
                       Aucune liste. Creez-en une ci-dessous.
                     </div>
                   )}
@@ -179,14 +179,14 @@ export function ImportToListDialog({
 
           {/* Separateur */}
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-slate-700" />
-            <span className="text-xs text-slate-500 uppercase">ou</span>
-            <div className="flex-1 h-px bg-slate-700" />
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-9000 uppercase">ou</span>
+            <div className="flex-1 h-px bg-gray-200" />
           </div>
 
           {/* Creer une nouvelle liste */}
           <div className="space-y-2">
-            <Label className="text-slate-300">Nouvelle liste</Label>
+            <Label className="text-gray-700">Nouvelle liste</Label>
             <div className="flex items-center gap-2">
               <Input
                 placeholder="Nom de la liste..."
@@ -195,14 +195,14 @@ export function ImportToListDialog({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleCreateList();
                 }}
-                className="bg-slate-800 border-slate-700 flex-1"
+                className="bg-gray-100 border-gray-300 flex-1"
               />
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleCreateList}
                 disabled={isCreatingList || !newListName.trim()}
-                className="border-slate-700"
+                className="border-gray-300"
               >
                 {isCreatingList ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -218,7 +218,7 @@ export function ImportToListDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-slate-700 text-slate-300"
+            className="border-gray-300 text-gray-700"
           >
             Annuler
           </Button>

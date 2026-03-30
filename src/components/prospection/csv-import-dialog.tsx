@@ -157,13 +157,13 @@ export function CSVImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-slate-900 border-slate-800 max-w-2xl">
+      <DialogContent className="bg-white border-gray-200 max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
+          <DialogTitle className="text-gray-900 flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-green-400" />
             Importer un fichier CSV
           </DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogDescription className="text-gray-500">
             {step === "upload" && "Deposez ou selectionnez un fichier CSV"}
             {step === "preview" && `${preview?.totalRows || 0} lignes detectees`}
             {step === "importing" && "Import en cours..."}
@@ -175,7 +175,7 @@ export function CSVImportDialog({
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
-              className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-purple-500 transition-colors cursor-pointer"
+              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-purple-500 transition-colors cursor-pointer"
               onClick={() => {
                 const input = document.createElement("input");
                 input.type = "file";
@@ -187,11 +187,11 @@ export function CSVImportDialog({
                 input.click();
               }}
             >
-              <Upload className="h-10 w-10 text-slate-500 mx-auto mb-3" />
-              <p className="text-slate-300 mb-1">
+              <Upload className="h-10 w-10 text-gray-9000 mx-auto mb-3" />
+              <p className="text-gray-700 mb-1">
                 Glissez-deposez un fichier CSV ici
               </p>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-gray-9000">
                 ou cliquez pour selectionner un fichier
               </p>
             </div>
@@ -199,10 +199,10 @@ export function CSVImportDialog({
 
           {step === "preview" && preview && (
             <>
-              <div className="bg-slate-800 rounded-lg p-3">
+              <div className="bg-gray-100 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <CheckCircle2 className="h-4 w-4 text-green-400" />
-                  <span className="text-sm text-slate-300">
+                  <span className="text-sm text-gray-700">
                     {fileName} - {preview.totalRows} prospects
                   </span>
                 </div>
@@ -215,7 +215,7 @@ export function CSVImportDialog({
                       className={`text-xs px-2 py-0.5 rounded ${
                         preview.mappings[h]
                           ? "bg-green-900/50 text-green-300"
-                          : "bg-slate-700 text-slate-400"
+                          : "bg-gray-200 text-gray-500"
                       }`}
                     >
                       {h} {preview.mappings[h] ? `→ ${preview.mappings[h]}` : "(ignore)"}
@@ -227,9 +227,9 @@ export function CSVImportDialog({
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-slate-700">
+                      <tr className="border-b border-gray-300">
                         {preview.headers.slice(0, 6).map((h) => (
-                          <th key={h} className="text-left text-slate-400 pb-1 pr-3">
+                          <th key={h} className="text-left text-gray-500 pb-1 pr-3">
                             {h}
                           </th>
                         ))}
@@ -237,9 +237,9 @@ export function CSVImportDialog({
                     </thead>
                     <tbody>
                       {preview.preview.slice(0, 3).map((row, i) => (
-                        <tr key={i} className="border-b border-slate-800">
+                        <tr key={i} className="border-b border-gray-200">
                           {preview.headers.slice(0, 6).map((h) => (
-                            <td key={h} className="text-slate-300 py-1 pr-3 truncate max-w-[150px]">
+                            <td key={h} className="text-gray-700 py-1 pr-3 truncate max-w-[150px]">
                               {row[h] || "-"}
                             </td>
                           ))}
@@ -252,12 +252,12 @@ export function CSVImportDialog({
 
               {/* Selection de liste */}
               <div className="space-y-2">
-                <Label className="text-slate-300">Liste de destination (optionnel)</Label>
+                <Label className="text-gray-700">Liste de destination (optionnel)</Label>
                 <Select value={selectedListId} onValueChange={setSelectedListId}>
-                  <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectTrigger className="bg-gray-100 border-gray-300">
                     <SelectValue placeholder="Choisir une liste..." />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800">
+                  <SelectContent className="bg-white border-gray-200">
                     {lists.map((list) => (
                       <SelectItem key={list.id} value={list.id}>
                         {list.name} ({list._count.prospects})
@@ -274,14 +274,14 @@ export function CSVImportDialog({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleCreateList();
                     }}
-                    className="bg-slate-800 border-slate-700 flex-1"
+                    className="bg-gray-100 border-gray-300 flex-1"
                   />
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={handleCreateList}
                     disabled={isCreatingList || !newListName.trim()}
-                    className="border-slate-700"
+                    className="border-gray-300"
                   >
                     {isCreatingList ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   </Button>
@@ -293,7 +293,7 @@ export function CSVImportDialog({
           {step === "importing" && (
             <div className="flex flex-col items-center py-8 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
-              <p className="text-slate-300">Import en cours...</p>
+              <p className="text-gray-700">Import en cours...</p>
             </div>
           )}
         </div>
@@ -310,7 +310,7 @@ export function CSVImportDialog({
                 onOpenChange(false);
               }
             }}
-            className="border-slate-700 text-slate-300"
+            className="border-gray-300 text-gray-700"
           >
             {step === "preview" ? "Retour" : "Annuler"}
           </Button>

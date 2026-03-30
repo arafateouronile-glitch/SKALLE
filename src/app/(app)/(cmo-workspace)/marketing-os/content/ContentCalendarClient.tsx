@@ -401,9 +401,9 @@ export function ContentCalendarClient({
                     }}
                     className={`h-20 p-1.5 rounded-lg border cursor-pointer transition-colors ${
                       isSelected
-                        ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-950/20"
+                        ? "border-emerald-400 bg-emerald-50"
                         : isToday(day)
-                        ? "border-blue-200 bg-blue-50/50 dark:bg-blue-950/10"
+                        ? "border-blue-200 bg-blue-50/50"
                         : "border-border hover:border-muted-foreground/30"
                     }`}
                   >

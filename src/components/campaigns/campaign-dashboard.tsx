@@ -46,7 +46,7 @@ const statusConfig: Record<
 > = {
   DRAFT: {
     label: "Brouillon",
-    color: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    color: "bg-gray-400/20 text-gray-500 border-gray-500/30",
     icon: <Clock className="h-3 w-3" />,
   },
   PERSONALIZING: {
@@ -188,13 +188,13 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
 
   if (campaigns.length === 0) {
     return (
-      <Card className="bg-slate-900/50 border-slate-800">
+      <Card className="bg-gray-50 border-gray-200">
         <CardContent className="py-16 text-center">
-          <Mail className="h-12 w-12 text-slate-600 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">
+          <Mail className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
             Aucune campagne
           </h3>
-          <p className="text-slate-400 mb-4">
+          <p className="text-gray-500 mb-4">
             Sélectionnez des prospects dans l'onglet "Prospects" pour créer votre première campagne
           </p>
         </CardContent>
@@ -206,31 +206,31 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
     <div className="space-y-4">
       {/* Stats summary */}
       <div className="grid grid-cols-4 gap-4">
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="bg-gray-50 border-gray-200">
           <CardContent className="p-4">
-            <div className="text-xs text-slate-400 mb-1">Campagnes</div>
-            <div className="text-2xl font-bold text-white">{campaigns.length}</div>
+            <div className="text-xs text-gray-500 mb-1">Campagnes</div>
+            <div className="text-2xl font-bold text-gray-900">{campaigns.length}</div>
           </CardContent>
         </Card>
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="bg-gray-50 border-gray-200">
           <CardContent className="p-4">
-            <div className="text-xs text-slate-400 mb-1">En cours</div>
+            <div className="text-xs text-gray-500 mb-1">En cours</div>
             <div className="text-2xl font-bold text-purple-400">
               {campaigns.filter((c) => c.status === "SENDING").length}
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="bg-gray-50 border-gray-200">
           <CardContent className="p-4">
-            <div className="text-xs text-slate-400 mb-1">Emails envoyés</div>
+            <div className="text-xs text-gray-500 mb-1">Emails envoyés</div>
             <div className="text-2xl font-bold text-green-400">
               {campaigns.reduce((sum: number, c: any) => sum + (c.totalSent || 0), 0)}
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="bg-gray-50 border-gray-200">
           <CardContent className="p-4">
-            <div className="text-xs text-slate-400 mb-1">Échecs</div>
+            <div className="text-xs text-gray-500 mb-1">Échecs</div>
             <div className="text-2xl font-bold text-red-400">
               {campaigns.reduce((sum: number, c: any) => sum + (c.totalFailed || 0), 0)}
             </div>
@@ -245,19 +245,19 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
         const isExpanded = expandedId === campaign.id;
 
         return (
-          <Card key={campaign.id} className="bg-slate-900/50 border-slate-800">
+          <Card key={campaign.id} className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               {/* Header row */}
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold text-white">{campaign.name}</h3>
+                    <h3 className="font-semibold text-gray-900">{campaign.name}</h3>
                     <Badge variant="outline" className={status.color}>
                       {status.icon}
                       <span className="ml-1">{status.label}</span>
                     </Badge>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-slate-400">
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span className="flex items-center gap-1">
                       <Users className="h-3 w-3" />
                       {campaign.totalProspects} prospects
@@ -284,7 +284,7 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-slate-700 text-xs"
+                      className="border-gray-300 text-xs"
                       onClick={() => handlePersonalize(campaign.id)}
                       disabled={actionLoading === campaign.id}
                     >
@@ -331,7 +331,7 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-slate-400"
+                    className="text-gray-500"
                     onClick={() => handleExpand(campaign.id)}
                   >
                     {isExpanded ? (
@@ -346,11 +346,11 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
               {/* Progress bar */}
               {(campaign.status === "SENDING" || campaign.status === "COMPLETED") && (
                 <div className="mb-3">
-                  <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
                     <span>Progression</span>
                     <span>{progress}%</span>
                   </div>
-                  <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
                       className={`h-2 rounded-full transition-all ${
                         campaign.status === "COMPLETED"
@@ -365,21 +365,21 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
 
               {/* Expanded detail */}
               {isExpanded && expandedDetail && (
-                <div className="border-t border-slate-700 pt-3 mt-3">
-                  <h4 className="text-sm font-medium text-white mb-3">
+                <div className="border-t border-gray-300 pt-3 mt-3">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">
                     Détail par prospect
                   </h4>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {expandedDetail.sequences?.map((seq: any) => (
                       <div
                         key={seq.id}
-                        className="flex items-center justify-between bg-slate-800/50 rounded-lg p-3"
+                        className="flex items-center justify-between bg-gray-50 rounded-lg p-3"
                       >
                         <div className="flex-1">
-                          <div className="text-sm text-white">
+                          <div className="text-sm text-gray-900">
                             {seq.prospect?.name}
                           </div>
-                          <div className="text-xs text-slate-400">
+                          <div className="text-xs text-gray-500">
                             {seq.prospect?.email || "Pas d'email"} -{" "}
                             {seq.prospect?.company}
                           </div>
@@ -392,12 +392,12 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
                                 : s.status === "FAILED"
                                 ? "bg-red-500"
                                 : s.status === "PENDING"
-                                ? "bg-slate-600"
+                                ? "bg-gray-300"
                                 : "bg-yellow-500";
                             return (
                               <div
                                 key={s.id || s.stepNumber}
-                                className={`w-6 h-6 rounded-full ${stepColor} flex items-center justify-center text-xs text-white font-medium`}
+                                className={`w-6 h-6 rounded-full ${stepColor} flex items-center justify-center text-xs text-gray-900 font-medium`}
                                 title={`Étape ${s.stepNumber}: ${s.status}`}
                               >
                                 {s.stepNumber}

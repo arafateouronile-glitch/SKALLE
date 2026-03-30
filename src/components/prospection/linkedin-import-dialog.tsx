@@ -160,13 +160,13 @@ export function LinkedInImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-slate-900 border-slate-800 max-w-2xl">
+      <DialogContent className="bg-white border-gray-200 max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
+          <DialogTitle className="text-gray-900 flex items-center gap-2">
             <Linkedin className="h-5 w-5 text-blue-400" />
             Importer depuis LinkedIn
           </DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogDescription className="text-gray-500">
             {step === "upload" && "Importez un export CSV de LinkedIn Basic, Sales Navigator ou Recruiter Lite"}
             {step === "preview" && parseResult && `${FORMAT_LABELS[parseResult.format]} - ${parseResult.leads.length} prospects`}
             {step === "importing" && "Import en cours..."}
@@ -179,7 +179,7 @@ export function LinkedInImportDialog({
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
-                className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer"
                 onClick={() => {
                   const input = document.createElement("input");
                   input.type = "file";
@@ -192,15 +192,15 @@ export function LinkedInImportDialog({
                 }}
               >
                 <Linkedin className="h-10 w-10 text-blue-500/50 mx-auto mb-3" />
-                <p className="text-slate-300 mb-1">
+                <p className="text-gray-700 mb-1">
                   Deposez votre export LinkedIn CSV
                 </p>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-gray-9000">
                   Formats supportes : Basic, Sales Navigator, Recruiter Lite
                 </p>
               </div>
 
-              <div className="text-xs text-slate-500 space-y-1">
+              <div className="text-xs text-gray-9000 space-y-1">
                 <p>Comment exporter depuis LinkedIn :</p>
                 <p>1. LinkedIn Basic : Parametres &gt; Obtenir une copie de vos donnees &gt; Connections</p>
                 <p>2. Sales Navigator : Lead Lists &gt; Export</p>
@@ -211,19 +211,19 @@ export function LinkedInImportDialog({
 
           {step === "preview" && parseResult && (
             <>
-              <div className="bg-slate-800 rounded-lg p-3">
+              <div className="bg-gray-100 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2">
                   {parseResult.format !== "unknown" ? (
                     <CheckCircle2 className="h-4 w-4 text-green-400" />
                   ) : (
                     <AlertCircle className="h-4 w-4 text-yellow-400" />
                   )}
-                  <span className="text-sm text-slate-300">
+                  <span className="text-sm text-gray-700">
                     {FORMAT_LABELS[parseResult.format]} - {fileName}
                   </span>
                 </div>
 
-                <p className="text-sm text-slate-400 mb-3">
+                <p className="text-sm text-gray-500 mb-3">
                   {parseResult.leads.length} prospects detectes sur {parseResult.totalRows} lignes
                 </p>
 
@@ -238,16 +238,16 @@ export function LinkedInImportDialog({
                 {/* Preview des premiers leads */}
                 <div className="space-y-1">
                   {parseResult.leads.slice(0, 5).map((lead, i) => (
-                    <div key={i} className="flex items-center gap-3 text-xs text-slate-300 py-1 border-b border-slate-700/50">
+                    <div key={i} className="flex items-center gap-3 text-xs text-gray-700 py-1 border-b border-gray-300/50">
                       <span className="font-medium w-32 truncate">{lead.name}</span>
-                      <span className="text-slate-400 w-28 truncate">{lead.company}</span>
-                      <span className="text-slate-500 truncate">{lead.jobTitle || "-"}</span>
+                      <span className="text-gray-500 w-28 truncate">{lead.company}</span>
+                      <span className="text-gray-9000 truncate">{lead.jobTitle || "-"}</span>
                       {lead.email && <span className="text-green-400 text-[10px]">email</span>}
                       {lead.linkedInUrl && <span className="text-blue-400 text-[10px]">linkedin</span>}
                     </div>
                   ))}
                   {parseResult.leads.length > 5 && (
-                    <p className="text-xs text-slate-500 pt-1">
+                    <p className="text-xs text-gray-9000 pt-1">
                       et {parseResult.leads.length - 5} de plus...
                     </p>
                   )}
@@ -256,12 +256,12 @@ export function LinkedInImportDialog({
 
               {/* Selection de liste */}
               <div className="space-y-2">
-                <Label className="text-slate-300">Liste de destination (optionnel)</Label>
+                <Label className="text-gray-700">Liste de destination (optionnel)</Label>
                 <Select value={selectedListId} onValueChange={setSelectedListId}>
-                  <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectTrigger className="bg-gray-100 border-gray-300">
                     <SelectValue placeholder="Choisir une liste..." />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800">
+                  <SelectContent className="bg-white border-gray-200">
                     {lists.map((list) => (
                       <SelectItem key={list.id} value={list.id}>
                         {list.name} ({list._count.prospects})
@@ -278,14 +278,14 @@ export function LinkedInImportDialog({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleCreateList();
                     }}
-                    className="bg-slate-800 border-slate-700 flex-1"
+                    className="bg-gray-100 border-gray-300 flex-1"
                   />
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={handleCreateList}
                     disabled={isCreatingList || !newListName.trim()}
-                    className="border-slate-700"
+                    className="border-gray-300"
                   >
                     {isCreatingList ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   </Button>
@@ -297,7 +297,7 @@ export function LinkedInImportDialog({
           {step === "importing" && (
             <div className="flex flex-col items-center py-8 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
-              <p className="text-slate-300">Import en cours...</p>
+              <p className="text-gray-700">Import en cours...</p>
             </div>
           )}
         </div>
@@ -313,7 +313,7 @@ export function LinkedInImportDialog({
                 onOpenChange(false);
               }
             }}
-            className="border-slate-700 text-slate-300"
+            className="border-gray-300 text-gray-700"
           >
             {step === "preview" ? "Retour" : "Annuler"}
           </Button>

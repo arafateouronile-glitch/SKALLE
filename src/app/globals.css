@@ -51,9 +51,9 @@
   --radius: 0.75rem;
   /* Palette "Soft Power" - Light Mode */
   /* Blanc cassé très subtil pour éviter l'effet clinique */
-  --background: oklch(0.985 0.002 240); 
-  /* Gris anthracite profond au lieu du noir pur */
-  --foreground: oklch(0.21 0.03 260); 
+  --background: oklch(1 0 0);
+  /* Near black foreground */
+  --foreground: oklch(0.15 0.02 260);
   
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.21 0.03 260);

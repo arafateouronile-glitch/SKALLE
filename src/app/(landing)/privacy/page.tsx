@@ -13,12 +13,12 @@ const COMPANY_NAME = "Skalle";
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="min-h-screen bg-white text-gray-900">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Back */}
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm mb-12 transition-colors"
+          className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 text-sm mb-12 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Retour
@@ -26,16 +26,16 @@ export default function PrivacyPage() {
 
         {/* Header */}
         <div className="mb-12">
-          <h1 className="text-4xl font-bold text-white mb-4">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
             Politique de confidentialité
           </h1>
-          <p className="text-slate-400 text-sm">
+          <p className="text-gray-500 text-sm">
             Dernière mise à jour : {LAST_UPDATED}
           </p>
         </div>
 
         {/* Content */}
-        <div className="space-y-10 text-slate-300 leading-relaxed">
+        <div className="space-y-10 text-gray-700 leading-relaxed">
 
           {/* Intro */}
           <Section title="1. Introduction">
@@ -112,12 +112,12 @@ export default function PrivacyPage() {
           <Section title="3. Finalités du traitement">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="text-left text-slate-400 border-b border-slate-700">
+                <tr className="text-left text-gray-500 border-b border-gray-300">
                   <th className="pb-2 pr-4 font-medium">Finalité</th>
                   <th className="pb-2 font-medium">Base légale</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-gray-200">
                 {[
                   ["Fournir et améliorer les services", "Exécution du contrat"],
                   ["Authentification et sécurité", "Exécution du contrat"],
@@ -143,8 +143,8 @@ export default function PrivacyPage() {
                   ],
                 ].map(([purpose, basis]) => (
                   <tr key={purpose}>
-                    <td className="py-2 pr-4 text-slate-300">{purpose}</td>
-                    <td className="py-2 text-slate-400">{basis}</td>
+                    <td className="py-2 pr-4 text-gray-700">{purpose}</td>
+                    <td className="py-2 text-gray-500">{basis}</td>
                   </tr>
                 ))}
               </tbody>
@@ -192,19 +192,19 @@ export default function PrivacyPage() {
               ].map(({ name, role, region }) => (
                 <li
                   key={name}
-                  className="flex items-start gap-3 bg-slate-900 rounded-lg px-4 py-3"
+                  className="flex items-start gap-3 bg-gray-50 rounded-lg px-4 py-3"
                 >
-                  <span className="text-white font-medium min-w-[180px]">
+                  <span className="text-gray-900 font-medium min-w-[180px]">
                     {name}
                   </span>
-                  <span className="text-slate-400 flex-1">{role}</span>
-                  <span className="text-slate-500 text-xs whitespace-nowrap">
+                  <span className="text-gray-500 flex-1">{role}</span>
+                  <span className="text-gray-400 text-xs whitespace-nowrap">
                     {region}
                   </span>
                 </li>
               ))}
             </ul>
-            <p className="mt-4 text-sm text-slate-400">
+            <p className="mt-4 text-sm text-gray-500">
               Les transferts vers les USA sont encadrés par les clauses
               contractuelles types (CCT) de la Commission européenne et/ou le
               Data Privacy Framework (DPF).
@@ -253,10 +253,10 @@ export default function PrivacyPage() {
             <p>Nous utilisons uniquement des cookies strictement nécessaires :</p>
             <ul className="list-disc list-inside space-y-1 mt-2">
               <li>
-                Cookie de session NextAuth (<code className="text-slate-300">next-auth.session-token</code>) — authentification
+                Cookie de session NextAuth (<code className="text-gray-700">next-auth.session-token</code>) — authentification
               </li>
               <li>
-                Cookie CSRF (<code className="text-slate-300">next-auth.csrf-token</code>) — protection CSRF
+                Cookie CSRF (<code className="text-gray-700">next-auth.csrf-token</code>) — protection CSRF
               </li>
             </ul>
             <p className="mt-3">
@@ -296,10 +296,10 @@ export default function PrivacyPage() {
                 ],
               ].map(([right, desc]) => (
                 <li key={right} className="flex gap-3">
-                  <span className="text-white font-medium min-w-[160px]">
+                  <span className="text-gray-900 font-medium min-w-[160px]">
                     {right}
                   </span>
-                  <span className="text-slate-400">{desc}</span>
+                  <span className="text-gray-500">{desc}</span>
                 </li>
               ))}
             </ul>
@@ -307,7 +307,7 @@ export default function PrivacyPage() {
               Pour exercer ces droits, contactez-nous à{" "}
               <a
                 href={`mailto:${CONTACT_EMAIL}`}
-                className="text-white underline hover:text-slate-300"
+                className="text-gray-900 underline hover:text-gray-700"
               >
                 {CONTACT_EMAIL}
               </a>
@@ -317,7 +317,7 @@ export default function PrivacyPage() {
                 href="https://www.cnil.fr"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-white underline hover:text-slate-300"
+                className="text-gray-900 underline hover:text-gray-700"
               >
                 CNIL
               </a>
@@ -335,7 +335,7 @@ export default function PrivacyPage() {
                 href="https://developers.facebook.com/policy/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-white underline hover:text-slate-300"
+                className="text-gray-900 underline hover:text-gray-700"
               >
                 Politiques de la plateforme Meta
               </a>
@@ -396,7 +396,7 @@ export default function PrivacyPage() {
                   Envoyant une demande à{" "}
                   <a
                     href={`mailto:${CONTACT_EMAIL}`}
-                    className="text-white underline hover:text-slate-300"
+                    className="text-gray-900 underline hover:text-gray-700"
                   >
                     {CONTACT_EMAIL}
                   </a>{" "}
@@ -437,16 +437,16 @@ export default function PrivacyPage() {
             <p>
               Pour toute question relative à cette politique ou à vos données :
             </p>
-            <div className="mt-3 bg-slate-900 rounded-lg px-4 py-4 space-y-1 text-sm">
+            <div className="mt-3 bg-gray-50 rounded-lg px-4 py-4 space-y-1 text-sm">
               <p>
-                <span className="text-slate-400">Responsable du traitement :</span>{" "}
+                <span className="text-gray-500">Responsable du traitement :</span>{" "}
                 {COMPANY_NAME}
               </p>
               <p>
-                <span className="text-slate-400">E-mail :</span>{" "}
+                <span className="text-gray-500">E-mail :</span>{" "}
                 <a
                   href={`mailto:${CONTACT_EMAIL}`}
-                  className="text-white hover:underline"
+                  className="text-gray-900 hover:underline"
                 >
                   {CONTACT_EMAIL}
                 </a>
@@ -468,7 +468,7 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="text-xl font-semibold text-white mb-4">{title}</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">{title}</h2>
       {children}
     </section>
   );
@@ -483,7 +483,7 @@ function Subsection({
 }) {
   return (
     <div className="mb-4">
-      <h3 className="text-base font-medium text-slate-200 mb-2">{title}</h3>
+      <h3 className="text-base font-medium text-gray-800 mb-2">{title}</h3>
       {children}
     </div>
   );

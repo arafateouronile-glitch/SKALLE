@@ -94,9 +94,9 @@ export function LinkedInActionsQueue({ workspaceId }: LinkedInActionsQueueProps)
   if (queue.length === 0) {
     return (
       <div className="text-center py-12">
-        <Linkedin className="h-12 w-12 text-slate-600 mx-auto mb-3" />
-        <p className="text-slate-400">Aucune action LinkedIn en attente</p>
-        <p className="text-sm text-slate-500 mt-1">
+        <Linkedin className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+        <p className="text-gray-500">Aucune action LinkedIn en attente</p>
+        <p className="text-sm text-gray-9000 mt-1">
           Les actions apparaitront ici lorsque des sequences LinkedIn seront actives
         </p>
       </div>
@@ -113,7 +113,7 @@ export function LinkedInActionsQueue({ workspaceId }: LinkedInActionsQueueProps)
         <div className="bg-blue-900/30 text-blue-300 px-3 py-1.5 rounded-lg">
           {queue.length} action{queue.length > 1 ? "s" : ""} en attente
         </div>
-        <div className="text-slate-500">
+        <div className="text-gray-9000">
           Invitations aujourd&apos;hui : {todayActions}/50 max
         </div>
       </div>
@@ -123,7 +123,7 @@ export function LinkedInActionsQueue({ workspaceId }: LinkedInActionsQueueProps)
         {queue.map((item) => (
           <div
             key={item.id}
-            className="bg-slate-800 border border-slate-700 rounded-lg p-4"
+            className="bg-gray-100 border border-gray-300 rounded-lg p-4"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
@@ -134,21 +134,21 @@ export function LinkedInActionsQueue({ workspaceId }: LinkedInActionsQueueProps)
                   <span className="text-xs bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded">
                     {ACTION_LABELS[item.linkedInAction] || "Message"}
                   </span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-gray-9000">
                     Etape {item.stepNumber}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="font-medium text-white">{item.prospect.name}</span>
-                  <span className="text-sm text-slate-400">{item.prospect.company}</span>
+                  <span className="font-medium text-gray-900">{item.prospect.name}</span>
+                  <span className="text-sm text-gray-500">{item.prospect.company}</span>
                   {item.prospect.jobTitle && (
-                    <span className="text-xs text-slate-500">{item.prospect.jobTitle}</span>
+                    <span className="text-xs text-gray-9000">{item.prospect.jobTitle}</span>
                   )}
                 </div>
 
                 {/* Message content */}
-                <div className="bg-slate-900 rounded p-3 text-sm text-slate-300 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                <div className="bg-white rounded p-3 text-sm text-gray-700 whitespace-pre-wrap max-h-24 overflow-y-auto">
                   {item.content}
                 </div>
               </div>
@@ -168,7 +168,7 @@ export function LinkedInActionsQueue({ workspaceId }: LinkedInActionsQueueProps)
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-slate-700"
+                  className="border-gray-300"
                   onClick={() => handleCopy(item.content)}
                 >
                   <Copy className="h-3 w-3 mr-1" />

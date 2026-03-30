@@ -13,12 +13,12 @@ const COMPANY_NAME = "Skalle";
 
 export default function CguPage() {
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="min-h-screen bg-white text-gray-900">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Back */}
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm mb-12 transition-colors"
+          className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 text-sm mb-12 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Retour
@@ -26,16 +26,16 @@ export default function CguPage() {
 
         {/* Header */}
         <div className="mb-12">
-          <h1 className="text-4xl font-bold text-white mb-4">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
             Conditions Générales d&apos;Utilisation
           </h1>
-          <p className="text-slate-400 text-sm">
+          <p className="text-gray-500 text-sm">
             Dernière mise à jour : {LAST_UPDATED}
           </p>
         </div>
 
         {/* Content */}
-        <div className="space-y-10 text-slate-300 leading-relaxed">
+        <div className="space-y-10 text-gray-700 leading-relaxed">
 
           {/* Intro */}
           <Section title="1. Présentation">
@@ -84,7 +84,7 @@ export default function CguPage() {
               <p>
                 Le Service est proposé selon plusieurs plans tarifaires (Free,
                 Business, Agency, Scale) détaillés sur la page{" "}
-                <Link href="/pricing" className="text-white underline hover:text-slate-300">
+                <Link href="/pricing" className="text-gray-900 underline hover:text-gray-700">
                   Tarification
                 </Link>
                 . Certaines fonctionnalités consomment des crédits IA. Les
@@ -112,7 +112,7 @@ export default function CguPage() {
                 "Utiliser le Service pour former des modèles d'IA concurrents",
               ].map((item) => (
                 <li key={item} className="flex gap-3">
-                  <span className="text-slate-500 mt-0.5">✗</span>
+                  <span className="text-gray-400 mt-0.5">✗</span>
                   <span>{item}</span>
                 </li>
               ))}
@@ -174,7 +174,7 @@ export default function CguPage() {
             <Subsection title="6.1 Prix">
               <p>
                 Les prix sont indiqués en euros, hors taxes, sur la page{" "}
-                <Link href="/pricing" className="text-white underline hover:text-slate-300">
+                <Link href="/pricing" className="text-gray-900 underline hover:text-gray-700">
                   Tarification
                 </Link>
                 . Nous nous réservons le droit de modifier nos tarifs avec un
@@ -251,7 +251,7 @@ export default function CguPage() {
                 Vous pouvez supprimer votre compte à tout moment depuis les
                 paramètres. La suppression entraîne l&apos;effacement de vos
                 données dans les délais prévus par notre{" "}
-                <Link href="/privacy" className="text-white underline hover:text-slate-300">
+                <Link href="/privacy" className="text-gray-900 underline hover:text-gray-700">
                   Politique de confidentialité
                 </Link>
                 .
@@ -300,23 +300,23 @@ export default function CguPage() {
           {/* Contact */}
           <Section title="13. Contact">
             <p>Pour toute question relative aux présentes CGU :</p>
-            <div className="mt-3 bg-slate-900 rounded-lg px-4 py-4 space-y-1 text-sm">
+            <div className="mt-3 bg-gray-50 rounded-lg px-4 py-4 space-y-1 text-sm">
               <p>
-                <span className="text-slate-400">Éditeur :</span> {COMPANY_NAME}
+                <span className="text-gray-500">Éditeur :</span> {COMPANY_NAME}
               </p>
               <p>
-                <span className="text-slate-400">E-mail :</span>{" "}
+                <span className="text-gray-500">E-mail :</span>{" "}
                 <a
                   href={`mailto:${CONTACT_EMAIL}`}
-                  className="text-white hover:underline"
+                  className="text-gray-900 hover:underline"
                 >
                   {CONTACT_EMAIL}
                 </a>
               </p>
             </div>
 
-            <div className="mt-6 pt-6 border-t border-slate-800 flex flex-wrap gap-4 text-sm">
-              <Link href="/privacy" className="text-slate-400 hover:text-white transition-colors">
+            <div className="mt-6 pt-6 border-t border-gray-200 flex flex-wrap gap-4 text-sm">
+              <Link href="/privacy" className="text-gray-500 hover:text-gray-900 transition-colors">
                 Politique de confidentialité →
               </Link>
             </div>
@@ -336,7 +336,7 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="text-xl font-semibold text-white mb-4">{title}</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">{title}</h2>
       {children}
     </section>
   );
@@ -351,7 +351,7 @@ function Subsection({
 }) {
   return (
     <div className="mb-4">
-      <h3 className="text-base font-medium text-slate-200 mb-2">{title}</h3>
+      <h3 className="text-base font-medium text-gray-800 mb-2">{title}</h3>
       {children}
     </div>
   );

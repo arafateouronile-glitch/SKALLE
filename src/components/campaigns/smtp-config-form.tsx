@@ -261,8 +261,8 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
       {/* Header + Add button */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-white">Comptes d'envoi</h3>
-          <p className="text-sm text-slate-400">
+          <h3 className="text-lg font-semibold text-gray-900">Comptes d'envoi</h3>
+          <p className="text-sm text-gray-500">
             Configurez plusieurs comptes SMTP pour vos campagnes
           </p>
         </div>
@@ -277,10 +277,10 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
 
       {/* Sender cards */}
       {configs.length === 0 ? (
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="bg-gray-50 border-gray-200">
           <CardContent className="py-12 text-center">
-            <Mail className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400 mb-4">
+            <Mail className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+            <p className="text-gray-500 mb-4">
               Aucun compte SMTP configuré
             </p>
             <Button
@@ -297,13 +297,13 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
           {configs.map((cfg) => (
             <Card
               key={cfg.id}
-              className={`bg-slate-900/50 border-slate-800 ${
+              className={`bg-gray-50 border-gray-200 ${
                 cfg.isDefault ? "ring-1 ring-purple-500/50" : ""
               }`}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-white text-base flex items-center gap-2">
+                  <CardTitle className="text-gray-900 text-base flex items-center gap-2">
                     <Mail className="h-4 w-4 text-purple-400" />
                     {cfg.label || cfg.fromEmail}
                   </CardTitle>
@@ -326,12 +326,12 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                     )}
                   </div>
                 </div>
-                <CardDescription className="text-slate-400 text-sm">
+                <CardDescription className="text-gray-500 text-sm">
                   {cfg.fromName} &lt;{cfg.fromEmail}&gt;
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="text-xs text-slate-500 space-y-1">
+                <div className="text-xs text-gray-9000 space-y-1">
                   <div>Serveur: {cfg.host}:{cfg.port}</div>
                   <div>Fournisseur: {PRESETS[cfg.provider]?.label || cfg.provider}</div>
                   <div>Limite: {cfg.dailyLimit}/jour, {cfg.perMinuteLimit}/min</div>
@@ -342,11 +342,11 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 pt-2 border-t border-slate-700">
+                <div className="flex items-center gap-2 pt-2 border-t border-gray-300">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="border-slate-700 text-xs"
+                    className="border-gray-300 text-xs"
                     onClick={() => handleTest(cfg.id)}
                     disabled={isTesting === cfg.id}
                   >
@@ -361,7 +361,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-slate-700 text-xs"
+                      className="border-gray-300 text-xs"
                       onClick={() => handleSetDefault(cfg.id)}
                     >
                       <Star className="h-3 w-3 mr-1" />
@@ -391,10 +391,10 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
 
       {/* Add SMTP Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="bg-slate-900 border-slate-800 max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-white border-gray-200 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white">Ajouter un compte email</DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogTitle className="text-gray-900">Ajouter un compte email</DialogTitle>
+            <DialogDescription className="text-gray-500">
               Configurez un nouveau compte SMTP pour vos campagnes
             </DialogDescription>
           </DialogHeader>
@@ -407,7 +407,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                 value={form.label}
                 onChange={(e) => setForm({ ...form, label: e.target.value })}
                 placeholder="Ex: Gmail Principal, Outlook Pro..."
-                className="bg-slate-800 border-slate-700"
+                className="bg-gray-100 border-gray-300"
               />
             </div>
 
@@ -415,10 +415,10 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
             <div className="space-y-2">
               <Label>Fournisseur</Label>
               <Select value={provider} onValueChange={handleProviderChange}>
-                <SelectTrigger className="bg-slate-800 border-slate-700">
+                <SelectTrigger className="bg-gray-100 border-gray-300">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-800">
+                <SelectContent className="bg-white border-gray-200">
                   {Object.entries(PRESETS).map(([key, preset]) => (
                     <SelectItem key={key} value={key}>
                       {preset.label}
@@ -427,7 +427,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                 </SelectContent>
               </Select>
               {PRESETS[provider]?.help && (
-                <p className="text-xs text-slate-500">{PRESETS[provider].help}</p>
+                <p className="text-xs text-gray-9000">{PRESETS[provider].help}</p>
               )}
             </div>
 
@@ -439,7 +439,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   value={form.host}
                   onChange={(e) => setForm({ ...form, host: e.target.value })}
                   placeholder="smtp.example.com"
-                  className="bg-slate-800 border-slate-700"
+                  className="bg-gray-100 border-gray-300"
                   disabled={provider !== "custom"}
                 />
               </div>
@@ -449,7 +449,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   type="number"
                   value={form.port}
                   onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 587 })}
-                  className="bg-slate-800 border-slate-700"
+                  className="bg-gray-100 border-gray-300"
                   disabled={provider !== "custom"}
                 />
               </div>
@@ -462,7 +462,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   value={form.username}
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
                   placeholder="votre@email.com"
-                  className="bg-slate-800 border-slate-700"
+                  className="bg-gray-100 border-gray-300"
                 />
               </div>
               <div className="space-y-2">
@@ -472,7 +472,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   placeholder="Mot de passe d'application"
-                  className="bg-slate-800 border-slate-700"
+                  className="bg-gray-100 border-gray-300"
                 />
               </div>
             </div>
@@ -485,7 +485,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   value={form.fromEmail}
                   onChange={(e) => setForm({ ...form, fromEmail: e.target.value })}
                   placeholder="votre@email.com"
-                  className="bg-slate-800 border-slate-700"
+                  className="bg-gray-100 border-gray-300"
                 />
               </div>
               <div className="space-y-2">
@@ -494,17 +494,17 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   value={form.fromName}
                   onChange={(e) => setForm({ ...form, fromName: e.target.value })}
                   placeholder="Jean Dupont"
-                  className="bg-slate-800 border-slate-700"
+                  className="bg-gray-100 border-gray-300"
                 />
               </div>
             </div>
 
             {/* IMAP Section */}
-            <div className="border-t border-slate-700 pt-4">
+            <div className="border-t border-gray-300 pt-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <Label className="text-sm font-medium">Détection de réponses (IMAP)</Label>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-xs text-gray-9000 mt-0.5">
                     Détectez automatiquement les réponses pour stopper les follow-ups
                   </p>
                 </div>
@@ -519,7 +519,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                       value={form.imapHost}
                       onChange={(e) => setForm({ ...form, imapHost: e.target.value })}
                       placeholder="imap.gmail.com"
-                      className="bg-slate-800 border-slate-700"
+                      className="bg-gray-100 border-gray-300"
                     />
                   </div>
                   <div className="space-y-2">
@@ -528,7 +528,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                       type="number"
                       value={form.imapPort}
                       onChange={(e) => setForm({ ...form, imapPort: parseInt(e.target.value) || 993 })}
-                      className="bg-slate-800 border-slate-700"
+                      className="bg-gray-100 border-gray-300"
                     />
                   </div>
                 </div>
@@ -540,7 +540,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
             <Button
               variant="outline"
               onClick={() => setShowAddDialog(false)}
-              className="border-slate-700 text-slate-300"
+              className="border-gray-300 text-gray-700"
             >
               Annuler
             </Button>

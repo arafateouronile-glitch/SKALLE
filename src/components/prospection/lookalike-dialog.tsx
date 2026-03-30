@@ -207,24 +207,24 @@ export function LookalikeDialog({
   const scoreColor = (score: number) => {
     if (score >= 70) return "text-green-400";
     if (score >= 40) return "text-yellow-400";
-    return "text-slate-400";
+    return "text-gray-500";
   };
 
   const scoreBg = (score: number) => {
     if (score >= 70) return "bg-green-900/30";
     if (score >= 40) return "bg-yellow-900/30";
-    return "bg-slate-800";
+    return "bg-gray-100";
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-slate-900 border-slate-800 max-w-3xl max-h-[85vh] flex flex-col">
+      <DialogContent className="bg-white border-gray-200 max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
+          <DialogTitle className="text-gray-900 flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-400" />
             Trouver des profils similaires
           </DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogDescription className="text-gray-500">
             {step === "analyzing" &&
               `Analyse de la liste "${listName}" en cours...`}
             {step === "results" &&
@@ -243,8 +243,8 @@ export function LookalikeDialog({
                 <Search className="h-5 w-5 text-purple-300 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
               </div>
               <div className="text-center">
-                <p className="text-white font-medium">Analyse en cours</p>
-                <p className="text-sm text-slate-400 mt-1">
+                <p className="text-gray-900 font-medium">Analyse en cours</p>
+                <p className="text-sm text-gray-500 mt-1">
                   Extraction des traits communs, synthese ICP, recherche de
                   profils...
                 </p>
@@ -258,7 +258,7 @@ export function LookalikeDialog({
               <p className="text-red-400 mb-2">{error}</p>
               <Button
                 variant="outline"
-                className="border-slate-700"
+                className="border-gray-300"
                 onClick={() => onOpenChange(false)}
               >
                 Fermer
@@ -275,7 +275,7 @@ export function LookalikeDialog({
                   <Sparkles className="h-4 w-4" />
                   Profil type detecte (ICP)
                 </h3>
-                <p className="text-sm text-slate-300 mb-3">{icp.summary}</p>
+                <p className="text-sm text-gray-700 mb-3">{icp.summary}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {icp.targetJobTitles.slice(0, 3).map((t) => (
                     <span
@@ -307,13 +307,13 @@ export function LookalikeDialog({
               {/* Selection controls */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400">
+                  <span className="text-sm text-gray-500">
                     {selected.size}/{results.length} selectionne(s)
                   </span>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-slate-400 hover:text-white"
+                    className="text-xs text-gray-500 hover:text-gray-900"
                     onClick={selectAll}
                   >
                     Tout selectionner
@@ -321,7 +321,7 @@ export function LookalikeDialog({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-slate-400 hover:text-white"
+                    className="text-xs text-gray-500 hover:text-gray-900"
                     onClick={deselectAll}
                   >
                     Deselectionner
@@ -336,8 +336,8 @@ export function LookalikeDialog({
                     key={index}
                     className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                       selected.has(index)
-                        ? "bg-slate-800 border-purple-700/50"
-                        : "bg-slate-800/50 border-slate-700/50 opacity-70"
+                        ? "bg-gray-100 border-purple-700/50"
+                        : "bg-gray-50 border-gray-300/50 opacity-70"
                     }`}
                     onClick={() => toggleSelect(index)}
                   >
@@ -345,13 +345,13 @@ export function LookalikeDialog({
                       type="checkbox"
                       checked={selected.has(index)}
                       onChange={() => toggleSelect(index)}
-                      className="rounded border-slate-600"
+                      className="rounded border-gray-400"
                       onClick={(e) => e.stopPropagation()}
                     />
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-white text-sm truncate">
+                        <span className="font-medium text-gray-900 text-sm truncate">
                           {result.name}
                         </span>
                         {result.linkedInUrl && (
@@ -366,7 +366,7 @@ export function LookalikeDialog({
                           </a>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                      <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
                         {result.jobTitle && <span>{result.jobTitle}</span>}
                         {result.jobTitle && result.company && <span>-</span>}
                         <span>{result.company}</span>
@@ -376,7 +376,7 @@ export function LookalikeDialog({
                           {result.matchReasons.map((reason, ri) => (
                             <span
                               key={ri}
-                              className="text-[10px] bg-slate-700/50 text-slate-400 px-1.5 py-0.5 rounded"
+                              className="text-[10px] bg-gray-200/50 text-gray-500 px-1.5 py-0.5 rounded"
                             >
                               {reason}
                             </span>
@@ -400,8 +400,8 @@ export function LookalikeDialog({
               </div>
 
               {/* Destination list */}
-              <div className="border-t border-slate-800 pt-4">
-                <label className="text-sm text-slate-400 mb-2 block">
+              <div className="border-t border-gray-200 pt-4">
+                <label className="text-sm text-gray-500 mb-2 block">
                   Ajouter a une liste (optionnel)
                 </label>
                 <div className="flex gap-2">
@@ -409,10 +409,10 @@ export function LookalikeDialog({
                     value={selectedListId}
                     onValueChange={setSelectedListId}
                   >
-                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white flex-1">
+                    <SelectTrigger className="bg-gray-100 border-gray-300 text-gray-900 flex-1">
                       <SelectValue placeholder="Aucune liste" />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
+                    <SelectContent className="bg-gray-100 border-gray-300">
                       <SelectItem value="none">Aucune liste</SelectItem>
                       {lists.map((list) => (
                         <SelectItem key={list.id} value={list.id}>
@@ -426,7 +426,7 @@ export function LookalikeDialog({
                       placeholder="Nouvelle liste..."
                       value={newListName}
                       onChange={(e) => setNewListName(e.target.value)}
-                      className="bg-slate-800 border-slate-700 text-white w-40"
+                      className="bg-gray-100 border-gray-300 text-gray-900 w-40"
                       onKeyDown={(e) =>
                         e.key === "Enter" && handleCreateList()
                       }
@@ -434,7 +434,7 @@ export function LookalikeDialog({
                     <Button
                       size="icon"
                       variant="outline"
-                      className="border-slate-700 shrink-0"
+                      className="border-gray-300 shrink-0"
                       onClick={handleCreateList}
                       disabled={isCreatingList || !newListName.trim()}
                     >
@@ -454,7 +454,7 @@ export function LookalikeDialog({
           {step === "importing" && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
-              <p className="text-slate-400">
+              <p className="text-gray-500">
                 Import de {selected.size} profil(s)...
               </p>
             </div>
@@ -465,8 +465,8 @@ export function LookalikeDialog({
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <CheckCircle2 className="h-10 w-10 text-green-400" />
               <div className="text-center">
-                <p className="text-white font-medium">Import termine</p>
-                <p className="text-sm text-slate-400 mt-1">
+                <p className="text-gray-900 font-medium">Import termine</p>
+                <p className="text-sm text-gray-500 mt-1">
                   {importResult.imported} profil(s) importe(s)
                   {importResult.duplicates > 0 &&
                     `, ${importResult.duplicates} doublon(s) ignore(s)`}
@@ -481,7 +481,7 @@ export function LookalikeDialog({
             <>
               <Button
                 variant="outline"
-                className="border-slate-700"
+                className="border-gray-300"
                 onClick={() => onOpenChange(false)}
               >
                 Annuler

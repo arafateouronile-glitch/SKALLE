@@ -23,31 +23,31 @@ export default async function SkalleEliteLandingPage() {
   const stats = await getLandingStats();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white overflow-x-hidden">
+    <div className="min-h-screen bg-white text-gray-900 overflow-x-hidden">
       {/* Navbar */}
-      <nav className="fixed top-0 w-full z-50 bg-slate-950/90 backdrop-blur-xl border-b border-slate-800">
+      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-xl border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20">
                 <Zap className="h-5 w-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-white">Skalle</span>
+              <span className="text-xl font-bold text-gray-900">Skalle</span>
             </Link>
             <div className="hidden md:flex items-center gap-8">
-              <a href="#choice" className="text-slate-400 hover:text-white transition-colors text-sm">
+              <a href="#choice" className="text-gray-500 hover:text-gray-900 transition-colors text-sm">
                 CMO & CSO
               </a>
-              <a href="#proof" className="text-slate-400 hover:text-white transition-colors text-sm">
+              <a href="#proof" className="text-gray-500 hover:text-gray-900 transition-colors text-sm">
                 En direct
               </a>
-              <a href="#pricing" className="text-slate-400 hover:text-white transition-colors text-sm">
+              <a href="#pricing" className="text-gray-500 hover:text-gray-900 transition-colors text-sm">
                 Tarifs
               </a>
             </div>
             <div className="flex items-center gap-3">
               <Link href="/login">
-                <Button variant="ghost" className="text-slate-300 hover:text-white hover:bg-slate-800">
+                <Button variant="ghost" className="text-gray-700 hover:text-gray-900 hover:bg-gray-100">
                   Connexion
                 </Button>
               </Link>
@@ -64,14 +64,14 @@ export default async function SkalleEliteLandingPage() {
       {/* Hero */}
       <section className="pt-28 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-5xl mx-auto text-center">
-          <p className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-sm mb-8">
+          <p className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-50 border border-gray-300 text-gray-700 text-sm mb-8">
             <Sparkles className="h-4 w-4 text-amber-400" />
             Équipe de direction marketing et commerciale, pilotée par l&apos;IA
           </p>
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
             L&apos;IA qui ne se contente pas d&apos;écrire, elle décide.
           </h1>
-          <p className="text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto mb-10">
+          <p className="text-lg sm:text-xl text-gray-500 max-w-3xl mx-auto mb-10">
             Skalle orchestre votre SEO, vos réseaux sociaux et votre prospection commerciale 24h/24.
             Le premier agent marketing autonome pour PME ambitieuses.
           </p>
@@ -89,14 +89,14 @@ export default async function SkalleEliteLandingPage() {
               <Button
                 size="lg"
                 variant="outline"
-                className="w-full sm:w-auto border-2 border-indigo-500/60 text-indigo-300 hover:bg-indigo-500/20 hover:text-white text-base px-8 py-6 rounded-xl transition-all"
+                className="w-full sm:w-auto border-2 border-indigo-500/60 text-indigo-600 hover:bg-indigo-500/20 hover:text-gray-900 text-base px-8 py-6 rounded-xl transition-all"
               >
                 Découvrir le CSO
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
           </div>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-6 sm:gap-8 text-slate-400 text-sm">
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-6 sm:gap-8 text-gray-500 text-sm">
             {["Pas de carte requise", "100 crédits offerts", "Annulation facile"].map((item) => (
               <div key={item} className="flex items-center gap-2">
                 <Check className="h-5 w-5 text-emerald-400 shrink-0" />
@@ -110,28 +110,28 @@ export default async function SkalleEliteLandingPage() {
       {/* The Choice — Dual-Core Showcase */}
       <section id="choice" className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white text-center mb-4">
+          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 text-center mb-4">
             Une seule plateforme, deux moteurs
           </h2>
-          <p className="text-slate-400 text-center max-w-2xl mx-auto mb-12">
+          <p className="text-gray-500 text-center max-w-2xl mx-auto mb-12">
             Choisissez votre priorité : attirer (CMO) ou convertir (CSO).
           </p>
           <div className="grid md:grid-cols-2 gap-6 sm:gap-8">
             {/* CMO Card */}
             <Link
               href="/cmo"
-              className="group block p-8 sm:p-10 rounded-3xl bg-gradient-to-br from-slate-900 to-emerald-950/30 border-2 border-slate-700 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/10"
+              className="group block p-8 sm:p-10 rounded-3xl bg-gradient-to-br from-gray-50 to-emerald-50/30 border-2 border-gray-300 hover:border-emerald-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/10"
             >
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 rounded-xl bg-emerald-500/20 group-hover:bg-emerald-500/30 transition-colors">
                   <FileText className="h-8 w-8 text-emerald-400" />
                 </div>
-                <h3 className="text-2xl font-bold text-white">Skalle CMO</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Skalle CMO</h3>
               </div>
               <p className="text-xl font-semibold text-emerald-300 mb-4">
                 Dominez Google et les réseaux sociaux.
               </p>
-              <ul className="space-y-3 text-slate-300 text-sm sm:text-base">
+              <ul className="space-y-3 text-gray-700 text-sm sm:text-base">
                 <li className="flex items-center gap-2">
                   <Check className="h-5 w-5 text-emerald-400 shrink-0" />
                   E-E-A-T et articles longs (3000+ mots)
@@ -157,18 +157,18 @@ export default async function SkalleEliteLandingPage() {
             {/* CSO Card */}
             <Link
               href="/cso"
-              className="group block p-8 sm:p-10 rounded-3xl bg-gradient-to-br from-slate-900 to-indigo-950/30 border-2 border-slate-700 hover:border-indigo-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/10"
+              className="group block p-8 sm:p-10 rounded-3xl bg-gradient-to-br from-gray-50 to-indigo-50/30 border-2 border-gray-300 hover:border-indigo-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/10"
             >
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 rounded-xl bg-indigo-500/20 group-hover:bg-indigo-500/30 transition-colors">
                   <Target className="h-8 w-8 text-indigo-400" />
                 </div>
-                <h3 className="text-2xl font-bold text-white">Skalle CSO</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Skalle CSO</h3>
               </div>
               <p className="text-xl font-semibold text-indigo-300 mb-4">
                 Transformez vos interactions en revenus.
               </p>
-              <ul className="space-y-3 text-slate-300 text-sm sm:text-base">
+              <ul className="space-y-3 text-gray-700 text-sm sm:text-base">
                 <li className="flex items-center gap-2">
                   <Check className="h-5 w-5 text-indigo-400 shrink-0" />
                   Lead Scoring : triez les leads chauds
@@ -195,29 +195,29 @@ export default async function SkalleEliteLandingPage() {
       </section>
 
       {/* Live Demo / Preuve — Build in Public */}
-      <section id="proof" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-900/50 border-y border-slate-800">
+      <section id="proof" className="py-20 px-4 sm:px-6 lg:px-8 bg-gray-50 border-y border-gray-200">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
             Build in Public
           </h2>
-          <p className="text-slate-400 mb-2">
+          <p className="text-gray-500 mb-2">
             En phase Bêta : chiffres réels, pas de faux témoignages.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-8 sm:gap-12 mt-10">
-            <div className="px-6 py-4 rounded-2xl bg-slate-800/80 border border-slate-700">
+            <div className="px-6 py-4 rounded-2xl bg-gray-100 border border-gray-300">
               <p className="text-3xl sm:text-4xl font-bold text-emerald-400">
                 {stats.articlesGenerated}
               </p>
-              <p className="text-slate-400 text-sm sm:text-base mt-1">articles générés</p>
+              <p className="text-gray-500 text-sm sm:text-base mt-1">articles générés</p>
             </div>
-            <div className="px-6 py-4 rounded-2xl bg-slate-800/80 border border-slate-700">
+            <div className="px-6 py-4 rounded-2xl bg-gray-100 border border-gray-300">
               <p className="text-3xl sm:text-4xl font-bold text-indigo-400">
                 {stats.opportunitiesThisWeek}
               </p>
-              <p className="text-slate-400 text-sm sm:text-base mt-1">opportunités cette semaine</p>
+              <p className="text-gray-500 text-sm sm:text-base mt-1">opportunités cette semaine</p>
             </div>
           </div>
-          <p className="text-slate-500 text-sm mt-6">
+          <p className="text-gray-400 text-sm mt-6">
             L&apos;Agent Brain prend des décisions en continu ; les métriques sont mises à jour en temps réel.
           </p>
         </div>
@@ -226,10 +226,10 @@ export default async function SkalleEliteLandingPage() {
       {/* Transparent Pricing */}
       <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white text-center mb-4">
+          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 text-center mb-4">
             Tarification transparente
           </h2>
-          <p className="text-slate-400 text-center mb-12">
+          <p className="text-gray-500 text-center mb-12">
             Alignée avec votre usage. Pas de mauvaise surprise.
           </p>
           <PricingTable variant="landing" />
@@ -239,11 +239,11 @@ export default async function SkalleEliteLandingPage() {
       {/* CTA final */}
       <section className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-r from-slate-800/80 to-slate-900/80 border border-slate-700">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
+          <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-r from-gray-100 to-gray-50 border border-gray-300">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">
               Prêt à faire décider l&apos;IA pour vous ?
             </h2>
-            <p className="text-slate-400 mb-8">
+            <p className="text-gray-500 mb-8">
               Rejoignez les PME qui orchestrent leur marketing et leurs ventes avec Skalle.
             </p>
             <Link href="/register">
@@ -260,21 +260,21 @@ export default async function SkalleEliteLandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-12 px-4 border-t border-slate-800">
+      <footer className="py-12 px-4 border-t border-gray-200">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600">
               <Zap className="h-4 w-4 text-white" />
             </div>
-            <span className="font-bold text-white">Skalle</span>
+            <span className="font-bold text-gray-900">Skalle</span>
           </Link>
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-400">
+          <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-500">
             <Link href="/cmo" className="hover:text-emerald-400 transition-colors">CMO</Link>
             <Link href="/cso" className="hover:text-indigo-400 transition-colors">CSO</Link>
-            <Link href="/privacy" className="hover:text-white transition-colors">Confidentialité</Link>
-            <Link href="/cgu" className="hover:text-white transition-colors">CGU</Link>
+            <Link href="/privacy" className="hover:text-gray-900 transition-colors">Confidentialité</Link>
+            <Link href="/cgu" className="hover:text-gray-900 transition-colors">CGU</Link>
           </div>
-          <p className="text-sm text-slate-500">© 2026 Skalle. Tous droits réservés.</p>
+          <p className="text-sm text-gray-400">© 2026 Skalle. Tous droits réservés.</p>
         </div>
       </footer>
     </div>

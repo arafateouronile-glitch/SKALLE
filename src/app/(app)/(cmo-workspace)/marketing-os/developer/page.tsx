@@ -41,7 +41,7 @@ function CodeBlock({ code, language = "bash" }: { code: string; language?: strin
           variant="ghost"
           size="sm"
           onClick={copy}
-          className="h-6 px-2 text-gray-400 hover:text-white hover:bg-gray-800"
+          className="h-6 px-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100"
         >
           <Copy className="h-3 w-3 mr-1" />
           Copier

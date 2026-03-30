@@ -16,19 +16,19 @@ export default function SuccessPage() {
   const sessionId = searchParams.get("session_id");
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full text-center">
-        <div className="rounded-full bg-emerald-100 dark:bg-emerald-900/30 w-16 h-16 flex items-center justify-center mx-auto mb-6">
-          <CheckCircle2 className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+        <div className="rounded-full bg-emerald-100 w-16 h-16 flex items-center justify-center mx-auto mb-6">
+          <CheckCircle2 className="h-10 w-10 text-emerald-600" />
         </div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">
           Paiement réussi
         </h1>
-        <p className="text-slate-600 dark:text-slate-400 mb-6">
+        <p className="text-gray-600 mb-6">
           Merci pour votre confiance. Vous recevrez un récapitulatif par email.
         </p>
         {sessionId && (
-          <p className="text-xs text-slate-400 dark:text-slate-500 mb-6 font-mono truncate">
+          <p className="text-xs text-gray-500 mb-6 font-mono truncate">
             Session : {sessionId}
           </p>
         )}

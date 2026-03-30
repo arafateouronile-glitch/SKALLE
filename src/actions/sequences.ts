@@ -547,6 +547,22 @@ export async function sendStep(
           const metadata = (updatedStep?.metadata as any) || {};
           const snippet = metadata.snippet || "";
 
+          // Récupérer les pièces jointes de la campagne (si applicable)
+          let campaignAttachments: Array<{ filename: string; contentType: string; content: Buffer }> | undefined;
+          if (sequence.campaignId) {
+            const dbAttachments = await prisma.campaignAttachment.findMany({
+              where: { campaignId: sequence.campaignId },
+              select: { filename: true, contentType: true, data: true },
+            });
+            if (dbAttachments.length > 0) {
+              campaignAttachments = dbAttachments.map((a) => ({
+                filename: a.filename,
+                contentType: a.contentType,
+                content: Buffer.from(a.data),
+              }));
+            }
+          }
+
           deliveryResult = await sendEmail(
             prospect.email,
             updatedStep?.subject || step.subject || "",
@@ -554,7 +570,8 @@ export async function sendStep(
             snippet, // Preview text pour Gmail
             undefined, // workspaceId
             stepId, // pixel de tracking
-            prospect.id // lien unsubscribe
+            prospect.id, // lien unsubscribe
+            campaignAttachments
           );
         }
         break;
@@ -919,7 +936,8 @@ async function sendEmail(
   snippet?: string,
   workspaceId?: string,
   stepId?: string,
-  prospectId?: string
+  prospectId?: string,
+  attachments?: Array<{ filename: string; contentType: string; content: Buffer }>
 ): Promise<{ success: boolean; error?: string; emailId?: string }> {
   try {
     const htmlContent = stepId ? injectEmailExtras(content, stepId, prospectId) : content;
@@ -946,6 +964,7 @@ async function sendEmail(
           to,
           subject,
           html: htmlContent,
+          attachments,
         });
 
         transporter.close();
@@ -957,13 +976,24 @@ async function sendEmail(
     if (process.env.RESEND_API_KEY) {
       const fromEmail = process.env.FROM_EMAIL || "Skalle <noreply@skalle.io>";
 
+      const resendAttachments = attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content.toString("base64"),
+      }));
+
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ from: fromEmail, to, subject, html: htmlContent }),
+        body: JSON.stringify({
+          from: fromEmail,
+          to,
+          subject,
+          html: htmlContent,
+          ...(resendAttachments?.length ? { attachments: resendAttachments } : {}),
+        }),
       });
 
       const data = await response.json();
@@ -980,6 +1010,13 @@ async function sendEmail(
       : process.env.SENDGRID_API_KEY;
 
     if (sendgridKey) {
+      const sgAttachments = attachments?.map((a) => ({
+        content: a.content.toString("base64"),
+        filename: a.filename,
+        type: a.contentType,
+        disposition: "attachment",
+      }));
+
       const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
         headers: {
@@ -991,6 +1028,7 @@ async function sendEmail(
           from: { email: process.env.FROM_EMAIL || "noreply@skalle.io" },
           subject,
           content: [{ type: "text/html", value: htmlContent }],
+          ...(sgAttachments?.length ? { attachments: sgAttachments } : {}),
         }),
       });
 

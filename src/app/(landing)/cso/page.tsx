@@ -54,9 +54,9 @@ export default function CsoLandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-white">
       {/* Navbar */}
-      <nav className="fixed top-0 w-full z-50 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800">
+      <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
@@ -64,20 +64,20 @@ export default function CsoLandingPage() {
                 <Zap className="h-5 w-5 text-white" />
               </div>
               <div>
-                <span className="text-xl font-bold text-white">Skalle</span>
+                <span className="text-xl font-bold text-gray-900">Skalle</span>
                 <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">
                   CSO
                 </span>
               </div>
             </div>
             <div className="hidden md:flex items-center gap-8">
-              <Link href="/cmo" className="text-slate-400 hover:text-emerald-400 transition-colors">
+              <Link href="/cmo" className="text-gray-500 hover:text-emerald-400 transition-colors">
                 ← Skalle CMO
               </Link>
             </div>
             <div className="flex items-center gap-4">
               <Link href="/login">
-                <Button variant="ghost" className="text-slate-300 hover:text-white">
+                <Button variant="ghost" className="text-gray-700 hover:text-gray-900">
                   Connexion
                 </Button>
               </Link>
@@ -94,7 +94,7 @@ export default function CsoLandingPage() {
             Bientôt disponible — Rejoignez la waitlist
           </div>
 
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
+          <h1 className="text-5xl md:text-7xl font-bold text-gray-900 mb-6 leading-tight">
             Le{" "}
             <span className="bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
               Sales OS
@@ -102,25 +102,25 @@ export default function CsoLandingPage() {
             pour closer plus vite
           </h1>
 
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto mb-10">
+          <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-10">
             Prospection LinkedIn, cold email, enrichissement de leads et pipeline
             commercial. Tout ce dont votre équipe sales a besoin, propulsé par l&apos;IA.
           </p>
 
           {/* Waitlist Form */}
           <div className="max-w-md mx-auto">
-            <div className="p-8 rounded-2xl bg-slate-900/80 border border-violet-500/30 backdrop-blur-xl">
-              <h2 className="text-2xl font-bold text-white mb-2">
+            <div className="p-8 rounded-2xl bg-gray-50 border border-violet-500/30 backdrop-blur-xl">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 Rejoindre la waitlist
               </h2>
-              <p className="text-slate-400 text-sm mb-6">
+              <p className="text-gray-500 text-sm mb-6">
                 Soyez parmi les premiers à accéder à Skalle CSO.
               </p>
               <div className="space-y-3">
                 <input
                   type="email"
                   placeholder="votre@email.com"
-                  className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+                  className="w-full px-4 py-3 rounded-xl bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-violet-500 transition-colors"
                 />
                 <Button
                   className="w-full bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
@@ -130,7 +130,7 @@ export default function CsoLandingPage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </div>
-              <p className="text-xs text-slate-500 mt-4 text-center">
+              <p className="text-xs text-gray-400 mt-4 text-center">
                 Aucun spam. Vous serez notifié en avant-première.
               </p>
             </div>
@@ -139,7 +139,7 @@ export default function CsoLandingPage() {
           {/* Already have CMO? */}
           <div className="mt-8 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm">
             <CheckCircle className="h-4 w-4 text-emerald-400" />
-            <span className="text-slate-400">
+            <span className="text-gray-500">
               Vous utilisez déjà{" "}
               <Link href="/cmo" className="text-emerald-400 hover:underline">
                 Skalle CMO
@@ -151,13 +151,13 @@ export default function CsoLandingPage() {
       </section>
 
       {/* Upcoming Features */}
-      <section className="py-20 px-4 border-t border-slate-800">
+      <section className="py-20 px-4 border-t border-gray-200">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-white mb-4">
+            <h2 className="text-4xl font-bold text-gray-900 mb-4">
               Ce qui arrive dans Skalle CSO
             </h2>
-            <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+            <p className="text-xl text-gray-500 max-w-2xl mx-auto">
               Un Sales OS complet, construit pour les équipes qui veulent scaler
               leur acquisition client
             </p>
@@ -167,7 +167,7 @@ export default function CsoLandingPage() {
             {upcomingFeatures.map((feature, i) => (
               <div
                 key={i}
-                className="p-6 rounded-2xl bg-slate-900/50 border border-slate-800 hover:border-violet-500/50 transition-all group relative overflow-hidden"
+                className="p-6 rounded-2xl bg-gray-50 border border-gray-200 hover:border-violet-500/50 transition-all group relative overflow-hidden"
               >
                 <div className="absolute top-3 right-3">
                   <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">
@@ -177,10 +177,10 @@ export default function CsoLandingPage() {
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center mb-4 group-hover:from-violet-500/30 group-hover:to-purple-500/30 transition-colors">
                   <feature.icon className="h-6 w-6 text-violet-400" />
                 </div>
-                <h3 className="text-xl font-semibold text-white mb-2">
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
                   {feature.title}
                 </h3>
-                <p className="text-slate-400">{feature.description}</p>
+                <p className="text-gray-500">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -188,22 +188,22 @@ export default function CsoLandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-12 px-4 border-t border-slate-800">
+      <footer className="py-12 px-4 border-t border-gray-200">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <div className="p-2 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
                 <Zap className="h-4 w-4 text-white" />
               </div>
-              <span className="font-bold text-white">Skalle CSO</span>
+              <span className="font-bold text-gray-900">Skalle CSO</span>
             </div>
-            <div className="flex items-center gap-6 text-sm text-slate-400">
-              <Link href="/privacy" className="hover:text-white">Confidentialité</Link>
-              <Link href="/cgu" className="hover:text-white">CGU</Link>
-              <a href="#" className="hover:text-white">Contact</a>
+            <div className="flex items-center gap-6 text-sm text-gray-500">
+              <Link href="/privacy" className="hover:text-gray-900">Confidentialité</Link>
+              <Link href="/cgu" className="hover:text-gray-900">CGU</Link>
+              <a href="#" className="hover:text-gray-900">Contact</a>
               <Link href="/cmo" className="hover:text-emerald-400">Skalle CMO</Link>
             </div>
-            <p className="text-sm text-slate-500">© 2026 Skalle. Tous droits réservés.</p>
+            <p className="text-sm text-gray-400">© 2026 Skalle. Tous droits réservés.</p>
           </div>
         </div>
       </footer>
