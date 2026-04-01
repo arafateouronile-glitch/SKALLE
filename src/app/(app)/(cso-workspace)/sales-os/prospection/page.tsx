@@ -93,6 +93,9 @@ import {
   saveSearchCriteria,
   getSearchCriteria,
   getUserWorkspace,
+  qualifyProspectSearch,
+  generateLeadMessage,
+  type QualifiedSearchCriteria,
 } from "@/actions/leads";
 import { getProspectLists } from "@/actions/prospect-lists";
 import { ImportToListDialog } from "@/components/prospection/import-to-list-dialog";
@@ -184,66 +187,108 @@ const statusLabels: Record<string, string> = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔍 FIND LEADS TAB - Recherche de Leads Qualifiés
+// 🔍 FIND LEADS TAB - Recherche IA de Leads Qualifiés
 // ═══════════════════════════════════════════════════════════════════════════
 
+function CriteriaBadgeList({
+  label,
+  items,
+  onRemove,
+  onAdd,
+  placeholder,
+}: {
+  label: string;
+  items: string[];
+  onRemove: (i: number) => void;
+  onAdd: (val: string) => void;
+  placeholder: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-gray-500 uppercase tracking-wide">{label}</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item, i) => (
+          <Badge
+            key={i}
+            variant="secondary"
+            className="cursor-pointer bg-gray-100 text-gray-700 hover:bg-red-100 hover:text-red-600 transition-colors text-xs"
+            onClick={() => onRemove(i)}
+          >
+            {item} ×
+          </Badge>
+        ))}
+        <input
+          ref={inputRef}
+          placeholder={placeholder}
+          className="text-xs border border-dashed border-gray-300 rounded px-2 py-0.5 bg-transparent text-gray-600 placeholder:text-gray-400 focus:outline-none focus:border-emerald-400 w-32"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && e.currentTarget.value.trim()) {
+              onAdd(e.currentTarget.value.trim());
+              e.currentTarget.value = "";
+            }
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
+  const [query, setQuery] = useState("");
+  const [isQualifying, setIsQualifying] = useState(false);
+  const [aiSummary, setAiSummary] = useState("");
+  const [criteria, setCriteria] = useState<QualifiedSearchCriteria | null>(null);
+
   const [isSearching, setIsSearching] = useState(false);
   const [leads, setLeads] = useState<QualifiedLead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [showImportDialog, setShowImportDialog] = useState(false);
-  const [searchMode, setSearchMode] = useState<"linkedin" | "google_business">("linkedin");
-  const [minRating, setMinRating] = useState<number | undefined>(undefined);
 
-  const [searchCriteria, setSearchCriteria] = useState({
-    jobTitles: [] as string[],
-    industries: [] as string[],
-    locations: [] as string[],
-    companySizes: [] as string[],
-    keywords: [] as string[],
-    minConnections: undefined as number | undefined,
-    requireEmail: false,
-    requirePhone: false,
-    limit: 100,
-  });
+  // Message generation
+  const [generatingFor, setGeneratingFor] = useState<number | null>(null);
+  const [messageModal, setMessageModal] = useState<{
+    lead: QualifiedLead;
+    message: string;
+    connectionRequest?: string;
+    score?: number;
+    recommendations?: string[];
+  } | null>(null);
+  const [copiedMsg, setCopiedMsg] = useState(false);
 
-  const jobTitlesRef = useRef<HTMLInputElement>(null);
-  const industriesRef = useRef<HTMLInputElement>(null);
-  const locationsRef = useRef<HTMLInputElement>(null);
-  const keywordsRef = useRef<HTMLInputElement>(null);
+  const handleQualify = async () => {
+    if (!query.trim()) return;
+    setIsQualifying(true);
+    setCriteria(null);
+    setLeads([]);
+    setSelectedLeads(new Set());
+    try {
+      const result = await qualifyProspectSearch(query);
+      if (result.success && result.criteria) {
+        setCriteria(result.criteria);
+        setAiSummary(result.summary || "");
+      } else {
+        toast.error(result.error || "Erreur lors de la qualification");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsQualifying(false);
+    }
+  };
 
   const handleSearch = async () => {
-    // Collecter le texte non validé des inputs avant la recherche
-    const pendingCriteria = { ...searchCriteria };
-    const refs = [
-      { ref: jobTitlesRef, field: "jobTitles" as const },
-      { ref: industriesRef, field: "industries" as const },
-      { ref: locationsRef, field: "locations" as const },
-      { ref: keywordsRef, field: "keywords" as const },
-    ];
-    for (const { ref, field } of refs) {
-      const val = ref.current?.value?.trim();
-      if (val) {
-        pendingCriteria[field] = [...pendingCriteria[field], val];
-        ref.current!.value = "";
-      }
-    }
-    setSearchCriteria(pendingCriteria);
-
+    if (!criteria) return;
     setIsSearching(true);
     try {
-      const result = await searchQualifiedLeads(workspaceId, {
-        ...pendingCriteria,
-        searchMode,
-        minRating,
-      });
+      const result = await searchQualifiedLeads(workspaceId, criteria);
       if (result.success && result.leads) {
         setLeads(result.leads);
         toast.success(`${result.leads.length} leads trouvés !`);
       } else {
         toast.error(result.error || "Erreur de recherche");
       }
-    } catch (error) {
+    } catch {
       toast.error("Une erreur est survenue");
     } finally {
       setIsSearching(false);
@@ -258,6 +303,36 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
     setShowImportDialog(true);
   };
 
+  const handleGenerateMessage = async (lead: QualifiedLead, index: number) => {
+    setGeneratingFor(index);
+    try {
+      const result = await generateLeadMessage(workspaceId, {
+        name: lead.name,
+        company: lead.company,
+        jobTitle: lead.jobTitle,
+        linkedInUrl: lead.linkedInUrl,
+        location: lead.location,
+        industry: lead.industry,
+        enrichmentData: lead.enrichmentData as Record<string, unknown> | undefined,
+      });
+      if (result.success && result.message) {
+        setMessageModal({
+          lead,
+          message: result.message,
+          connectionRequest: result.connectionRequest,
+          score: result.personalizationScore,
+          recommendations: result.recommendations,
+        });
+      } else {
+        toast.error(result.error || "Erreur de génération");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setGeneratingFor(null);
+    }
+  };
+
   const toggleLeadSelection = (index: string) => {
     const newSelected = new Set(selectedLeads);
     if (newSelected.has(index)) {
@@ -268,292 +343,194 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
     setSelectedLeads(newSelected);
   };
 
+  const updateCriteria = (field: keyof QualifiedSearchCriteria, value: unknown) => {
+    if (!criteria) return;
+    setCriteria({ ...criteria, [field]: value });
+  };
+
+  const removeFromList = (field: "jobTitles" | "industries" | "locations" | "keywords", i: number) => {
+    if (!criteria) return;
+    setCriteria({ ...criteria, [field]: criteria[field].filter((_, idx) => idx !== i) });
+  };
+
+  const addToList = (field: "jobTitles" | "industries" | "locations" | "keywords", val: string) => {
+    if (!criteria) return;
+    setCriteria({ ...criteria, [field]: [...criteria[field], val] });
+  };
+
   return (
     <div className="space-y-6">
-      {/* Search Criteria */}
+      {/* Chat Input */}
       <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="text-gray-900 flex items-center gap-2">
-            <Search className="h-5 w-5 text-emerald-400" />
-            Critères de Recherche
+            <Sparkles className="h-5 w-5 text-emerald-500" />
+            Décrivez votre cible de prospection
           </CardTitle>
           <CardDescription className="text-gray-500">
-            Recherchez des leads qualifiés avec emails vérifiés
+            L'IA va analyser votre demande et construire les requêtes de recherche optimales
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Search Mode Toggle */}
-          <div className="flex items-center gap-2 pb-3 border-b border-gray-200">
-            <Button
-              variant={searchMode === "linkedin" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSearchMode("linkedin")}
-              className={searchMode === "linkedin"
-                ? "bg-blue-600 hover:bg-blue-700"
-                : "border-gray-200 text-gray-500"}
-            >
-              <Linkedin className="h-4 w-4 mr-2" />
-              Profils LinkedIn
-            </Button>
-            <Button
-              variant={searchMode === "google_business" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSearchMode("google_business")}
-              className={searchMode === "google_business"
-                ? "bg-emerald-600 hover:bg-emerald-700"
-                : "border-gray-200 text-gray-500"}
-            >
-              <Building2 className="h-4 w-4 mr-2" />
-              Fiches Google
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* LinkedIn only: Job Titles */}
-            {searchMode === "linkedin" && (
-              <div className="space-y-2">
-                <Label>Titres de poste</Label>
-                <Input
-                  ref={jobTitlesRef}
-                  placeholder="CMO, Marketing Director..."
-                  className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && e.currentTarget.value) {
-                      setSearchCriteria({
-                        ...searchCriteria,
-                        jobTitles: [...searchCriteria.jobTitles, e.currentTarget.value],
-                      });
-                      e.currentTarget.value = "";
-                    }
-                  }}
-                />
-                <div className="flex flex-wrap gap-2">
-                  {searchCriteria.jobTitles.map((title, i) => (
-                    <Badge
-                      key={i}
-                      variant="secondary"
-                      className="cursor-pointer hover:bg-red-500/20"
-                      onClick={() =>
-                        setSearchCriteria({
-                          ...searchCriteria,
-                          jobTitles: searchCriteria.jobTitles.filter((_, idx) => idx !== i),
-                        })
-                      }
-                    >
-                      {title} ×
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* LinkedIn only: Industries */}
-            {searchMode === "linkedin" && (
-              <div className="space-y-2">
-                <Label>Industries</Label>
-                <Input
-                  ref={industriesRef}
-                  placeholder="SaaS, E-commerce..."
-                  className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && e.currentTarget.value) {
-                      setSearchCriteria({
-                        ...searchCriteria,
-                        industries: [...searchCriteria.industries, e.currentTarget.value],
-                      });
-                      e.currentTarget.value = "";
-                    }
-                  }}
-                />
-                <div className="flex flex-wrap gap-2">
-                  {searchCriteria.industries.map((industry, i) => (
-                    <Badge
-                      key={i}
-                      variant="secondary"
-                      className="cursor-pointer hover:bg-red-500/20"
-                      onClick={() =>
-                        setSearchCriteria({
-                          ...searchCriteria,
-                          industries: searchCriteria.industries.filter((_, idx) => idx !== i),
-                        })
-                      }
-                    >
-                      {industry} ×
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Both: Keywords */}
-            <div className="space-y-2">
-              <Label>
-                {searchMode === "google_business"
-                  ? "Type d'activité"
-                  : "Mots-clés"}
-              </Label>
-              <Input
-                ref={keywordsRef}
-                placeholder={searchMode === "google_business"
-                  ? "organisme de formation, restaurant, plombier..."
-                  : "consultant qualiopi, formation..."}
-                className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.currentTarget.value) {
-                    setSearchCriteria({
-                      ...searchCriteria,
-                      keywords: [...searchCriteria.keywords, e.currentTarget.value],
-                    });
-                    e.currentTarget.value = "";
-                  }
-                }}
-              />
-              <div className="flex flex-wrap gap-2">
-                {searchCriteria.keywords.map((keyword, i) => (
-                  <Badge
-                    key={i}
-                    variant="secondary"
-                    className="cursor-pointer hover:bg-red-500/20"
-                    onClick={() =>
-                      setSearchCriteria({
-                        ...searchCriteria,
-                        keywords: searchCriteria.keywords.filter((_, idx) => idx !== i),
-                      })
-                    }
-                  >
-                    {keyword} ×
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            {/* Both: Locations */}
-            <div className="space-y-2">
-              <Label>Localisations</Label>
-              <Input
-                ref={locationsRef}
-                placeholder={searchMode === "google_business"
-                  ? "Paris, Lyon, Marseille..."
-                  : "France, Belgium..."}
-                className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.currentTarget.value) {
-                    setSearchCriteria({
-                      ...searchCriteria,
-                      locations: [...searchCriteria.locations, e.currentTarget.value],
-                    });
-                    e.currentTarget.value = "";
-                  }
-                }}
-              />
-              <div className="flex flex-wrap gap-2">
-                {searchCriteria.locations.map((location, i) => (
-                  <Badge
-                    key={i}
-                    variant="secondary"
-                    className="cursor-pointer hover:bg-red-500/20"
-                    onClick={() =>
-                      setSearchCriteria({
-                        ...searchCriteria,
-                        locations: searchCriteria.locations.filter((_, idx) => idx !== i),
-                      })
-                    }
-                  >
-                    {location} ×
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            {/* Google Business only: Min Rating */}
-            {searchMode === "google_business" && (
-              <div className="space-y-2">
-                <Label>Note Google minimum</Label>
-                <Select
-                  value={minRating ? String(minRating) : "0"}
-                  onValueChange={(val) => setMinRating(val === "0" ? undefined : parseFloat(val))}
-                >
-                  <SelectTrigger className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200">
-                    <SelectValue placeholder="Pas de minimum" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
-                    <SelectItem value="0">Pas de minimum</SelectItem>
-                    <SelectItem value="3">3+ etoiles</SelectItem>
-                    <SelectItem value="3.5">3.5+ etoiles</SelectItem>
-                    <SelectItem value="4">4+ etoiles</SelectItem>
-                    <SelectItem value="4.5">4.5+ etoiles</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm text-gray-500">Filtres</Label>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={searchCriteria.requireEmail}
-                  onChange={(e) =>
-                    setSearchCriteria({
-                      ...searchCriteria,
-                      requireEmail: e.target.checked,
-                    })
-                  }
-                  className="rounded"
-                />
-                <Label className="text-sm">Email requis</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={searchCriteria.requirePhone}
-                  onChange={(e) =>
-                    setSearchCriteria({
-                      ...searchCriteria,
-                      requirePhone: e.target.checked,
-                    })
-                  }
-                  className="rounded"
-                />
-                <Label className="text-sm">Téléphone requis</Label>
-              </div>
-            </div>
-          </div>
-
+        <CardContent className="space-y-3">
+          <Textarea
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Ex: Gérants d'organismes de formation en Île-de-France, ou Directeurs Marketing de startups SaaS B2B à Paris, ou Restaurateurs ayant une bonne note Google à Lyon..."
+            rows={3}
+            className="bg-white border-gray-200 resize-none text-gray-800 placeholder:text-gray-400"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleQualify();
+            }}
+          />
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Label>Limite de résultats:</Label>
-              <Input
-                type="number"
-                min={1}
-                max={500}
-                value={searchCriteria.limit}
-                onChange={(e) =>
-                  setSearchCriteria({
-                    ...searchCriteria,
-                    limit: parseInt(e.target.value) || 100,
-                  })
-                }
-                className="w-24 bg-white/60 backdrop-blur-sm shadow-sm border-gray-200"
-              />
-            </div>
+            <span className="text-xs text-gray-400">Entrée + ⌘/Ctrl pour envoyer</span>
             <Button
-              onClick={handleSearch}
-              disabled={isSearching}
+              onClick={handleQualify}
+              disabled={isQualifying || !query.trim()}
               className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
             >
-              {isSearching ? (
+              {isQualifying ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <Search className="h-4 w-4 mr-2" />
+                <Sparkles className="h-4 w-4 mr-2" />
               )}
-              Rechercher
+              {isQualifying ? "Analyse en cours..." : "Qualifier avec l'IA"}
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* AI Qualification Result */}
+      {criteria && (
+        <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-emerald-200/60">
+          <CardHeader className="pb-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-gray-900 text-base">Cible qualifiée</CardTitle>
+                <CardDescription className="text-gray-600 mt-0.5">{aiSummary}</CardDescription>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant={criteria.searchMode === "linkedin" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => updateCriteria("searchMode", "linkedin")}
+                  className={criteria.searchMode === "linkedin"
+                    ? "bg-blue-600 hover:bg-blue-700 text-xs h-7"
+                    : "border-gray-200 text-gray-500 text-xs h-7"}
+                >
+                  <Linkedin className="h-3 w-3 mr-1" />
+                  LinkedIn
+                </Button>
+                <Button
+                  variant={criteria.searchMode === "google_business" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => updateCriteria("searchMode", "google_business")}
+                  className={criteria.searchMode === "google_business"
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-xs h-7"
+                    : "border-gray-200 text-gray-500 text-xs h-7"}
+                >
+                  <Building2 className="h-3 w-3 mr-1" />
+                  Google
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              {criteria.searchMode === "linkedin" && (
+                <>
+                  <CriteriaBadgeList
+                    label="Titres de poste"
+                    items={criteria.jobTitles}
+                    onRemove={(i) => removeFromList("jobTitles", i)}
+                    onAdd={(v) => addToList("jobTitles", v)}
+                    placeholder="+ Ajouter..."
+                  />
+                  <CriteriaBadgeList
+                    label="Industries"
+                    items={criteria.industries}
+                    onRemove={(i) => removeFromList("industries", i)}
+                    onAdd={(v) => addToList("industries", v)}
+                    placeholder="+ Ajouter..."
+                  />
+                </>
+              )}
+              {criteria.searchMode === "google_business" && (
+                <CriteriaBadgeList
+                  label="Type d'activité"
+                  items={criteria.keywords}
+                  onRemove={(i) => removeFromList("keywords", i)}
+                  onAdd={(v) => addToList("keywords", v)}
+                  placeholder="+ Ajouter..."
+                />
+              )}
+              <CriteriaBadgeList
+                label="Localisations"
+                items={criteria.locations}
+                onRemove={(i) => removeFromList("locations", i)}
+                onAdd={(v) => addToList("locations", v)}
+                placeholder="+ Ajouter..."
+              />
+              {criteria.searchMode === "linkedin" && (
+                <CriteriaBadgeList
+                  label="Mots-clés"
+                  items={criteria.keywords}
+                  onRemove={(i) => removeFromList("keywords", i)}
+                  onAdd={(v) => addToList("keywords", v)}
+                  placeholder="+ Ajouter..."
+                />
+              )}
+            </div>
+
+            <div className="flex items-center gap-6 pt-2 border-t border-gray-100">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={criteria.requireEmail}
+                  onChange={(e) => updateCriteria("requireEmail", e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm text-gray-600">Email requis</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={criteria.requirePhone}
+                  onChange={(e) => updateCriteria("requirePhone", e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm text-gray-600">Téléphone requis</span>
+              </label>
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-sm text-gray-500">Limite :</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={criteria.limit}
+                  onChange={(e) => updateCriteria("limit", parseInt(e.target.value) || 50)}
+                  className="w-20 h-7 text-sm bg-white border-gray-200"
+                />
+                <Button
+                  onClick={handleSearch}
+                  disabled={isSearching}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 h-8"
+                >
+                  {isSearching ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4 mr-2" />
+                  )}
+                  {isSearching ? "Recherche..." : "Lancer la recherche"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Results */}
       {leads.length > 0 && (
@@ -635,7 +612,18 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
                             {lead.email && (
                               <div className="flex items-center gap-2">
                                 <Mail className="h-3 w-3" />
-                                {lead.email}
+                                <span className={lead.enrichmentData?.emailSource === "pattern-mx" ? "text-gray-400 italic" : ""}>
+                                  {lead.email}
+                                </span>
+                                {lead.enrichmentData?.emailSource === "pattern-mx" && (
+                                  <span className="text-xs text-gray-400">(probable)</span>
+                                )}
+                                {lead.enrichmentData?.emailSource === "google-search" && (
+                                  <span className="text-xs text-green-500">● Google</span>
+                                )}
+                                {lead.enrichmentData?.emailSource === "website-scrape" && (
+                                  <span className="text-xs text-blue-500">● Site web</span>
+                                )}
                               </div>
                             )}
                             {lead.phone && (
@@ -644,8 +632,19 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
                                 {lead.phone}
                               </div>
                             )}
-                            {lead.location && (
-                              <div className="text-gray-400">📍 {lead.location}</div>
+                            {(lead.location || lead.industry || !!lead.enrichmentData?.linkedInConnections) && (
+                              <div className="flex items-center gap-3 text-gray-400 text-xs flex-wrap">
+                                {lead.location && <span>📍 {String(lead.location)}</span>}
+                                {lead.industry && <span>🏭 {String(lead.industry)}</span>}
+                                {lead.enrichmentData?.linkedInConnections != null && (
+                                  <span>👥 {String(lead.enrichmentData.linkedInConnections)} relations</span>
+                                )}
+                              </div>
+                            )}
+                            {lead.enrichmentData?.linkedInBio != null && (
+                              <div className="text-xs text-gray-400 italic line-clamp-2 mt-1">
+                                {String(lead.enrichmentData.linkedInBio)}
+                              </div>
                             )}
                             {lead.enrichmentData?.websiteUrl && (
                               <div className="flex items-center gap-2">
@@ -686,12 +685,125 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
                         </a>
                       ) : null}
                     </div>
+                    {/* Bouton générer message */}
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs gap-1.5"
+                        disabled={generatingFor === index}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleGenerateMessage(lead, index);
+                        }}
+                      >
+                        {generatingFor === index ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3 w-3" />
+                        )}
+                        {generatingFor === index ? "Génération..." : "Générer message"}
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Modal message généré */}
+      {messageModal && (
+        <Dialog open={!!messageModal} onOpenChange={() => { setMessageModal(null); setCopiedMsg(false); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-purple-500" />
+                Message pour {messageModal.lead.name}
+              </DialogTitle>
+              <DialogDescription>
+                {messageModal.lead.jobTitle && `${messageModal.lead.jobTitle} · `}{messageModal.lead.company}
+                {messageModal.score != null && (
+                  <span className="ml-2 text-xs text-purple-500">Score personnalisation : {messageModal.score}/100</span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Message principal */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    {messageModal.connectionRequest ? "Message de suivi" : "Message LinkedIn"}
+                  </span>
+                  <span className="text-xs text-gray-400">{messageModal.message.length}/300 car.</span>
+                </div>
+                <div className="relative">
+                  <Textarea
+                    value={messageModal.message}
+                    onChange={(e) => setMessageModal({ ...messageModal, message: e.target.value })}
+                    className="min-h-[120px] text-sm resize-none pr-10"
+                  />
+                </div>
+              </div>
+
+              {/* Message de connexion si étape 1 */}
+              {messageModal.connectionRequest && messageModal.connectionRequest !== messageModal.message && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Demande de connexion</span>
+                    <span className="text-xs text-gray-400">{messageModal.connectionRequest.length}/300 car.</span>
+                  </div>
+                  <Textarea
+                    value={messageModal.connectionRequest}
+                    onChange={(e) => setMessageModal({ ...messageModal, connectionRequest: e.target.value })}
+                    className="min-h-[80px] text-sm resize-none"
+                  />
+                </div>
+              )}
+
+              {/* Recommandations */}
+              {messageModal.recommendations && messageModal.recommendations.length > 0 && (
+                <div className="bg-blue-50 rounded-lg p-3">
+                  <p className="text-xs font-medium text-blue-700 mb-1.5">Conseils d'envoi</p>
+                  <ul className="space-y-1">
+                    {messageModal.recommendations.slice(0, 3).map((rec, i) => (
+                      <li key={i} className="text-xs text-blue-600">• {rec}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    messageModal.connectionRequest && messageModal.connectionRequest !== messageModal.message
+                      ? messageModal.connectionRequest
+                      : messageModal.message
+                  );
+                  setCopiedMsg(true);
+                  setTimeout(() => setCopiedMsg(false), 2000);
+                }}
+              >
+                {copiedMsg ? <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" /> : <Copy className="h-3.5 w-3.5 mr-1.5" />}
+                {copiedMsg ? "Copié !" : "Copier"}
+              </Button>
+              {messageModal.lead.linkedInUrl && (
+                <Button size="sm" asChild>
+                  <a href={messageModal.lead.linkedInUrl} target="_blank" rel="noopener noreferrer">
+                    <Linkedin className="h-3.5 w-3.5 mr-1.5" />
+                    Ouvrir LinkedIn
+                  </a>
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Import Dialog */}

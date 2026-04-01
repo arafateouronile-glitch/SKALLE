@@ -199,6 +199,18 @@ function convertPlaceToLead(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 🔧 HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 🚀 MAIN EXPORT
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -218,7 +230,9 @@ export async function scrapeGoogleBusinessLeads(
     const leads: ScrapedLead[] = [];
     const industry = params.keywords.join(", ");
 
-    const queries = buildGoogleMapsQueries(params);
+    // Limiter à 3 requêtes max pour éviter les timeouts (prendre les lieux les plus pertinents)
+    const allQueries = buildGoogleMapsQueries(params);
+    const queries = allQueries.slice(0, 3);
     logger.debug(`[GoogleBiz] ${queries.length} requête(s) Maps à exécuter`, { count: queries.length });
 
     for (const query of queries) {
@@ -228,32 +242,43 @@ export async function scrapeGoogleBusinessLeads(
       const places = await searchGoogleMaps(query, Math.min(limit - leads.length, 20));
       logger.debug(`[GoogleBiz] résultats Maps`, { count: places.length });
 
-      for (const place of places) {
-        if (leads.length >= limit) break;
+      // Filtrer en premier (sans scraping)
+      const filtered = places.filter((place) => {
+        if (params.minRating && place.rating != null && place.rating < params.minRating) return false;
+        if (params.requirePhone && !place.phone) return false;
+        if (params.requireWebsite && !place.website) return false;
+        return true;
+      });
 
-        // Filtre note minimum
-        if (params.minRating && place.rating && place.rating < params.minRating) {
-          continue;
+      if (!params.requireEmail) {
+        // Sans email requis : retourner directement les résultats Maps sans scraping
+        for (const place of filtered) {
+          if (leads.length >= limit) break;
+          leads.push(convertPlaceToLead(place, {}, industry));
         }
+      } else {
+        // Avec email requis : scraper les sites en parallèle (max 5 simultanés)
+        const toScrape = filtered.slice(0, limit - leads.length);
+        const batches = chunkArray(toScrape, 5);
 
-        // Filtre téléphone requis
-        if (params.requirePhone && !place.phone) continue;
+        for (const batch of batches) {
+          if (leads.length >= limit) break;
 
-        // Filtre site web requis
-        if (params.requireWebsite && !place.website) continue;
+          const results = await Promise.all(
+            batch.map(async (place) => {
+              if (!place.website) return { place, emailData: {} as { email?: string; phone?: string } };
+              logger.debug(`[GoogleBiz] Scraping`, { url: place.website });
+              const scraped = await scrapeContactEmailFromWebsite(place.website);
+              return { place, emailData: { email: scraped.email, phone: scraped.phone } };
+            })
+          );
 
-        // Extraire l'email du site web
-        let emailData: { email?: string; phone?: string } = {};
-        if (place.website) {
-          logger.debug(`[GoogleBiz] Scraping`, { url: place.website });
-          const scraped = await scrapeContactEmailFromWebsite(place.website);
-          emailData = { email: scraped.email, phone: scraped.phone };
+          for (const { place, emailData } of results) {
+            if (leads.length >= limit) break;
+            if (!emailData.email) continue;
+            leads.push(convertPlaceToLead(place, emailData, industry));
+          }
         }
-
-        // Filtre email requis
-        if (params.requireEmail && !emailData.email) continue;
-
-        leads.push(convertPlaceToLead(place, emailData, industry));
       }
     }
 

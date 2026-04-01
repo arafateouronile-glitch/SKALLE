@@ -13,6 +13,8 @@ import { enrichMultiSource, verifyEmailCascade } from "./multi-source-enrichment
 import { calculateLeadScore, type ICPCriteria, type LeadScore } from "./lead-scoring";
 import { scrapeLeads } from "./scraper";
 import { scrapeGoogleBusinessLeads } from "./google-business-scraper";
+import { enrichLeadsWithEmails } from "./email-finder";
+import { enrichLeadsFromLinkedIn } from "./linkedin-enricher";
 import { logger } from "@/lib/logger";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -233,8 +235,8 @@ export async function findQualifiedLeads(
   const {
     provider = "apollo",
     limit = 100,
-    requireEmail = true,
-    minEmailScore = 95, // Top 1% default: 95%
+    requireEmail = false, // Par défaut false : retourner tous les leads (sans forcer email)
+    minEmailScore = 50, // Score minimum raisonnable pour les emails scrapés
     enrichmentMode = "basic",
     icpCriteria,
     minLeadScore,
@@ -352,7 +354,7 @@ export async function findQualifiedLeads(
 
       leads = verifiedLeads.filter((lead) => lead.emailVerified && (lead.emailScore || 0) >= minEmailScore);
     } else if (requireEmail && process.env.HUNTER_API_KEY) {
-      // Mode basique: Hunter seulement
+      // Mode basique: Hunter seulement (enrichit les scores sans tuer les leads scrapés)
       const verifiedLeads = await Promise.all(
         leads.map(async (lead) => {
           if (lead.email) {
@@ -360,16 +362,16 @@ export async function findQualifiedLeads(
             if (verification.success && verification.verified !== undefined) {
               return {
                 ...lead,
-                emailVerified: verification.verified && (verification.score || 0) >= minEmailScore,
-                emailScore: verification.score || 0,
+                emailVerified: verification.verified,
+                emailScore: verification.score || lead.emailScore || 0,
               };
             }
           }
           return lead;
         })
       );
-
-      leads = verifiedLeads.filter((lead) => lead.emailVerified && (lead.emailScore || 0) >= minEmailScore);
+      // Garder tous les leads avec un email (pas de filtre sur le score en mode scraper)
+      leads = verifiedLeads.filter((lead) => lead.email);
     }
 
     // Enrichissement multi-source si mode avancé/complet
@@ -437,6 +439,21 @@ export async function findQualifiedLeads(
 
     // Limiter les résultats (Top 1% = meilleurs leads en premier)
     leads = leads.slice(0, limit);
+
+    // Enrichissement LinkedIn : jobTitle, company, location, industry, connections
+    const leadsWithLinkedIn = leads.filter((l) => l.linkedInUrl);
+    if (leadsWithLinkedIn.length > 0) {
+      logger.info(`[LinkedInEnricher] Enrichissement pour ${leadsWithLinkedIn.length} leads`);
+      leads = await enrichLeadsFromLinkedIn(leads);
+    }
+
+    // Enrichissement email maison : cherche des vrais emails pour les leads sans email
+    const leadsWithoutEmail = leads.filter((l) => !l.email);
+    if (leadsWithoutEmail.length > 0) {
+      logger.info(`[EmailFinder] Enrichissement email pour ${leadsWithoutEmail.length} leads`);
+      leads = await enrichLeadsWithEmails(leads);
+      logger.info(`[EmailFinder] Emails trouvés: ${leads.filter((l) => l.email).length}/${leads.length}`);
+    }
 
     return { success: true, leads };
   } catch (error) {

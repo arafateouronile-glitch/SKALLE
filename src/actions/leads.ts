@@ -14,6 +14,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { findQualifiedLeads, enrichLeadClay, verifyEmailHunter } from "@/lib/prospection/enrichment";
 import { z } from "zod";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔐 AUTH
@@ -75,7 +76,7 @@ const leadSearchSchema = z.object({
   companySizes: z.array(z.string()).optional(),
   keywords: z.array(z.string()).optional(),
   minConnections: z.number().optional(),
-  requireEmail: z.boolean().default(true),
+  requireEmail: z.boolean().default(false),
   requirePhone: z.boolean().default(false),
   limit: z.number().min(1).max(500).default(100),
   provider: z.enum(["apollo", "clay", "both"]).optional().default("apollo"),
@@ -107,12 +108,13 @@ export async function searchQualifiedLeads(
       return { success: false, error: "Données invalides" };
     }
 
-    console.log("[Search] Critères reçus:", JSON.stringify({
+    console.log("[Search] Critères parsés:", JSON.stringify({
       searchMode: parsed.data.searchMode,
-      jobTitles: parsed.data.jobTitles,
-      industries: parsed.data.industries,
-      locations: parsed.data.locations,
+      requireEmail: parsed.data.requireEmail,
+      requirePhone: parsed.data.requirePhone,
       keywords: parsed.data.keywords,
+      locations: parsed.data.locations,
+      jobTitles: parsed.data.jobTitles,
       limit: parsed.data.limit,
     }));
 
@@ -132,6 +134,12 @@ export async function searchQualifiedLeads(
       minRating: parsed.data.minRating,
       requireWebsite: parsed.data.requireWebsite,
     });
+
+    console.log("[Search] findQualifiedLeads result:", JSON.stringify({
+      success: result.success,
+      leadsCount: result.leads?.length ?? 0,
+      error: result.error,
+    }));
 
     if (!result.success || !result.leads) {
       return { success: false, error: result.error || "Erreur de recherche" };
@@ -422,6 +430,182 @@ export async function saveSearchCriteria(
     return { success: true, data: { id: criteria.id } };
   } catch (error) {
     console.error("Save search criteria error:", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🤖 QUALIFY PROSPECT SEARCH - Qualifier une recherche en langage naturel
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface QualifiedSearchCriteria {
+  jobTitles: string[];
+  industries: string[];
+  locations: string[];
+  keywords: string[];
+  searchMode: "linkedin" | "google_business";
+  requireEmail: boolean;
+  requirePhone: boolean;
+  limit: number;
+  minRating?: number;
+}
+
+export async function qualifyProspectSearch(
+  naturalLanguageQuery: string
+): Promise<{
+  success: boolean;
+  criteria?: QualifiedSearchCriteria;
+  summary?: string;
+  error?: string;
+}> {
+  try {
+    await requireAuth();
+
+    const { getClaude } = await import("@/lib/ai/langchain");
+
+    const systemPrompt = `Tu es un assistant de prospection commerciale B2B. L'utilisateur décrit sa cible en langage naturel. Analyse et extrais les critères de recherche structurés.
+
+Réponds UNIQUEMENT avec un JSON valide dans ce format exact:
+{
+  "jobTitles": ["titre1", "titre2"],
+  "industries": ["secteur1"],
+  "locations": ["ville/region1"],
+  "keywords": ["mot1", "mot2"],
+  "searchMode": "linkedin" ou "google_business",
+  "requireEmail": false,
+  "requirePhone": false,
+  "limit": 50,
+  "minRating": null,
+  "summary": "Résumé en 1 phrase de ce que tu as compris"
+}
+
+Règles de choix du searchMode:
+- PRIORITÉ 1 — si la cible est un TYPE d'ÉTABLISSEMENT ou d'ORGANISATION (organisme de formation, restaurant, cabinet, agence, clinique, école, commerce...) → searchMode: "google_business" MÊME si l'utilisateur mentionne le rôle du décideur (gérant, directeur, fondateur...)
+- PRIORITÉ 2 — si la cible est uniquement un profil de personne avec un titre précis SANS type d'organisation spécifique (ex: "CMO de startups", "DRH", "responsable marketing") → searchMode: "linkedin"
+- En cas de doute : préfère "google_business"
+
+Exemples:
+- "gérants d'organismes de formation" → google_business (organisme de formation = établissement)
+- "directeurs de restaurants étoilés à Lyon" → google_business (restaurant = établissement)
+- "CMO de startups SaaS" → linkedin (startup SaaS = pas un type d'établissement spécifique)
+- "fondateurs d'agences web" → google_business (agence web = établissement)
+
+Autres règles:
+- Pour mode google_business: keywords = type d'activité de l'établissement (ex: "organisme de formation", "agence web"), jobTitles = [] (inutile)
+- Pour mode linkedin: génère des variantes de titres (FR + EN), keywords = domaine d'activité
+- Pour les localisations: max 3-4 valeurs principales, PAS tous les codes de département
+  - Île-de-France → ["Île-de-France", "Paris"]
+  - Grand Paris → ["Paris", "Île-de-France"]
+  - Lyon → ["Lyon", "Rhône"]
+- limit par défaut: 50, max: 100
+- minRating: null sauf si l'utilisateur mentionne une note ou qualité`;
+
+    const claude = getClaude();
+    const response = await claude.invoke([
+      new SystemMessage(systemPrompt),
+      new HumanMessage(naturalLanguageQuery),
+    ]);
+
+    const text =
+      typeof response.content === "string"
+        ? response.content
+        : response.content
+            .map((c: any) => (typeof c === "object" && "text" in c ? c.text : ""))
+            .join("");
+
+    const cleaned = text.replace(/^```\w*\s*/m, "").replace(/```\s*$/m, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      success: true,
+      criteria: {
+        jobTitles: parsed.jobTitles || [],
+        industries: parsed.industries || [],
+        locations: parsed.locations || [],
+        keywords: parsed.keywords || [],
+        searchMode: parsed.searchMode || "linkedin",
+        requireEmail: false, // Toujours false : on veut des leads même sans email
+        requirePhone: false,
+        limit: Math.min(parsed.limit || 50, 100),
+        minRating: parsed.minRating ?? undefined,
+      },
+      summary: parsed.summary || "",
+    };
+  } catch (error) {
+    console.error("Qualify prospect search error:", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✉️ GENERATE LEAD MESSAGE - Générer un message personnalisé pour un lead
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function generateLeadMessage(
+  workspaceId: string,
+  lead: {
+    name: string;
+    company: string;
+    jobTitle?: string;
+    linkedInUrl?: string;
+    location?: string;
+    industry?: string;
+    enrichmentData?: Record<string, unknown>;
+  },
+  sequenceStep: 1 | 2 | 3 | 4 | 5 = 1
+): Promise<{
+  success: boolean;
+  message?: string;
+  connectionRequest?: string;
+  personalizationScore?: number;
+  recommendations?: string[];
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth();
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { id: workspaceId, userId: session.user!.id! },
+      select: { name: true, domainUrl: true, brandVoice: true },
+    });
+
+    if (!workspace) return { success: false, error: "Workspace non trouvé" };
+
+    const brandVoice = (workspace.brandVoice ?? {}) as Record<string, unknown>;
+    const ourCompany = workspace.name || (workspace.domainUrl?.replace(/^https?:\/\/(www\.)?/, "") ?? "notre entreprise");
+    const ourOffer = (brandVoice.offer as string) || (brandVoice.description as string) || "notre solution";
+
+    const { generatePersonalizedLinkedInMessage } = await import("@/lib/prospection/linkedin-outreach");
+
+    const result = await generatePersonalizedLinkedInMessage({
+      prospect: {
+        name: lead.name,
+        company: lead.company,
+        jobTitle: lead.jobTitle,
+        linkedInUrl: lead.linkedInUrl,
+        location: lead.location,
+        industry: lead.industry,
+        emailVerified: false,
+        phoneVerified: false,
+        enrichmentData: {
+          ...lead.enrichmentData,
+          linkedInBio: lead.enrichmentData?.linkedInBio,
+        },
+      },
+      sequenceStep,
+      ourOffer,
+      ourCompany,
+    });
+
+    return {
+      success: true,
+      message: result.content,
+      connectionRequest: result.connectionRequest,
+      personalizationScore: result.personalizationScore,
+      recommendations: result.recommendations,
+    };
+  } catch (error) {
+    console.error("generateLeadMessage error:", error);
     return { success: false, error: String(error) };
   }
 }

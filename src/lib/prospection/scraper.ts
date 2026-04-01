@@ -54,42 +54,27 @@ export interface ScraperSearchParams {
  * Construit la requête Google optimisée pour trouver des profils LinkedIn
  */
 function buildLinkedInSearchQuery(params: ScraperSearchParams): string {
-  // Stratégie : combiner les termes les plus importants sans trop restreindre
-  // Google sur LinkedIn : les titres de poste et mots-clés sont les plus fiables
-  const allTerms: string[] = [];
+  // Stratégie minimaliste : 1 titre principal + 1 keyword + location
+  // Trop de termes quotés → Google retourne 0 résultats
+  const parts: string[] = ["site:linkedin.com/in"];
 
-  // Job titles - les plus importants, entre guillemets
+  // 1 seul titre de poste (le plus représentatif), entre guillemets
   if (params.jobTitles?.length) {
-    allTerms.push(...params.jobTitles);
+    parts.push(`"${params.jobTitles[0]}"`);
   }
 
-  // Keywords - termes libres
+  // 1 keyword seulement (sans guillemets)
   if (params.keywords?.length) {
-    allTerms.push(...params.keywords);
+    const kw = params.keywords[0];
+    parts.push(kw.includes(" ") ? `"${kw}"` : kw);
   }
 
-  // Industries - termes contextuels
-  if (params.industries?.length) {
-    allTerms.push(...params.industries);
-  }
-
-  // Si aucun terme de recherche, ne pas chercher (query vide = résultats random)
-  if (allTerms.length === 0) {
-    return "site:linkedin.com/in";
-  }
-
-  // Construire la query : site:linkedin.com/in + termes principaux
-  // On met les termes importants entre guillemets seulement s'ils font >1 mot
-  const quotedTerms = allTerms.map((t) =>
-    t.includes(" ") ? `"${t}"` : t
-  );
-
-  // Locations - ajoutés comme contexte mais pas obligatoires
+  // 1 location (sans guillemets)
   if (params.locations?.length) {
-    quotedTerms.push(...params.locations);
+    parts.push(params.locations[0]);
   }
 
-  return `site:linkedin.com/in ${quotedTerms.join(" ")}`;
+  return parts.join(" ");
 }
 
 /**
@@ -279,54 +264,6 @@ function extractLinkedInUrl(link: string): string | null {
   return match ? match[1] : null;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 📧 EMAIL GENERATION - Génération + vérification d'emails
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Normalise un nom pour générer un email (supprime accents, lowercase)
- */
-function normalizeForEmail(str: string): string {
-  return str
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z]/g, "");
-}
-
-/**
- * Devine le domaine email d'une entreprise
- */
-function guessCompanyDomain(company: string): string {
-  return company
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s*(sas|sarl|sa|eurl|group|groupe|consulting|conseil|france|international)\s*/gi, "")
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 20) + ".fr";
-}
-
-/**
- * Génère des variantes d'emails probables
- */
-function generateEmailVariants(
-  firstName: string,
-  lastName: string,
-  domain: string
-): string[] {
-  const fn = normalizeForEmail(firstName);
-  const ln = normalizeForEmail(lastName);
-
-  return [
-    `${fn}.${ln}@${domain}`,
-    `${fn[0]}${ln}@${domain}`,
-    `${fn}@${domain}`,
-    `${fn}${ln}@${domain}`,
-    `${fn}-${ln}@${domain}`,
-  ];
-}
-
 /**
  * Vérifie si un domaine a des enregistrements MX (accepte des emails)
  */
@@ -361,8 +298,8 @@ export async function scrapeLeads(
     const query = buildLinkedInSearchQuery(params);
     logger.debug(`[Scraper] Query Google`, { query });
 
-    // Serper retourne max 100 résultats, on fait des requêtes paginées si besoin
-    const numResults = Math.min(limit, 100);
+    // Serper free plan supporte max 10 résultats par requête
+    const numResults = Math.min(limit, 10);
     const results = await searchGoogle(query, numResults);
     logger.debug(`[Scraper] Résultats Google reçus`, { count: results.length, urls: results.map(r => r.link) });
 
@@ -380,26 +317,16 @@ export async function scrapeLeads(
       const jobTitle = extractJobTitle(result.title, result.snippet);
       const location = extractLocation(result.snippet);
 
-      // Générer un email probable si on a une entreprise
-      const nameParts = name.split(/\s+/);
-      const firstName = nameParts[0];
-      const lastName = nameParts.slice(1).join(" ");
-      let primaryEmail: string | undefined;
-      let emailVariants: string[] = [];
-      let hasMX = false;
-
-      if (company) {
-        const domain = guessCompanyDomain(company);
-        emailVariants = generateEmailVariants(firstName, lastName, domain);
-        primaryEmail = emailVariants[0];
-        hasMX = await verifyDomainMX(domain);
-      }
+      // Chercher un email dans le snippet (pas de génération d'emails inventés)
+      const emailInSnippet = result.snippet.match(
+        /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
+      )?.[0];
 
       const lead: ScrapedLead = {
         name,
-        email: primaryEmail,
-        emailVerified: false, // Scraper = email deviné, jamais "vérifié"
-        emailScore: hasMX ? 50 : 20, // Score indicatif
+        email: emailInSnippet,
+        emailVerified: false,
+        emailScore: emailInSnippet ? 60 : undefined,
         phone: undefined,
         phoneVerified: false,
         linkedInUrl,
@@ -410,8 +337,6 @@ export async function scrapeLeads(
         companySize: undefined,
         enrichmentData: {
           source: "google-linkedin-scraper",
-          emailVariants,
-          domainHasMX: hasMX,
           googleSnippet: result.snippet,
           scrapedAt: new Date().toISOString(),
         },
