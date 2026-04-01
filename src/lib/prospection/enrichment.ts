@@ -105,7 +105,7 @@ export async function searchLeadsApollo(
       companySize: person.organization?.estimated_num_employees,
       revenue: person.organization?.estimated_annual_revenue,
       linkedInConnections: person.linkedin_connections,
-      enrichmentData: person,
+      enrichmentData: { ...person, emailSource: "apollo" },
     }));
 
     return { success: true, leads };

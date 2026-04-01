@@ -36,6 +36,7 @@ import { scanCompetitorAlerts } from "./functions/competitor-alerts";
 import { syncGscDataDaily } from "./functions/gsc-sync";
 import { warmupDailyScheduler } from "./functions/warmup-scheduler";
 import { scheduledPostPublisher } from "./functions/scheduled-publisher";
+import { runSuperscaleAd } from "./functions/superscale-ads";
 
 // Export all Inngest functions
 export const functions = [
@@ -75,4 +76,6 @@ export const functions = [
   warmupDailyScheduler,
   // Social Calendar — Publication automatique des posts planifiés
   scheduledPostPublisher,
+  // Superscale Ad Agent — Pipeline créatif end-to-end
+  runSuperscaleAd,
 ];

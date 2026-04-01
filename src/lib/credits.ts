@@ -104,6 +104,9 @@ export const CREDIT_COSTS = {
   // Partnership Engine (Channel Sales)
   partner_social_search: 8,   // Recherche influenceurs + génération DM IA par profil
   partner_seo_search: 6,      // Recherche blogs affiliés via SERP + génération email IA
+
+  // Superscale Ad Agent (End-to-End Ad Creative Engine)
+  superscale_campaign: 50,    // Pipeline complet : research + copy + visuel x3 + formats x3
 } as const;
 
 export type OperationType = keyof typeof CREDIT_COSTS;

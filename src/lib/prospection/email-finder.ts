@@ -28,7 +28,7 @@ const resolveMx = promisify(dns.resolveMx);
 export interface EmailFindResult {
   email: string;
   score: number; // 0-100 (confiance)
-  source: "google-search" | "website-scrape" | "pattern-mx";
+  source: "apollo" | "google-search" | "website-scrape" | "pattern-mx";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -176,6 +176,55 @@ async function resolveCompanyDomain(company: string): Promise<string | null> {
   const fromGoogle = await findDomainViaGoogle(company);
   domainCache.set(cacheKey, fromGoogle);
   return fromGoogle;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 0️⃣ ÉTAPE 0 - Apollo People Match : email vérifié si clé API disponible
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function findEmailViaApollo(name: string, company: string): Promise<EmailFindResult | null> {
+  if (!process.env.APOLLO_API_KEY) return null;
+
+  try {
+    const nameParts = name.trim().split(/\s+/);
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+    if (!firstName || !lastName) return null;
+
+    const response = await fetch("https://api.apollo.io/v1/people/match", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        "X-Api-Key": process.env.APOLLO_API_KEY,
+      },
+      body: JSON.stringify({
+        first_name: firstName,
+        last_name: lastName,
+        organization_name: company,
+        reveal_personal_emails: false,
+        reveal_phone_number: false,
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const email = data.person?.email;
+    if (!email || isPersonalEmail(email)) return null;
+
+    const verified = data.person?.email_status === "verified";
+    logger.debug("[EmailFinder] Email trouvé via Apollo", { name, email, verified });
+
+    return {
+      email,
+      score: verified ? 98 : 80,
+      source: "apollo",
+    };
+  } catch (err) {
+    logger.debug("[EmailFinder] Apollo match échoué", { error: String(err) });
+    return null;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -335,12 +384,19 @@ export async function findEmail(
 ): Promise<EmailFindResult | null> {
   if (!name || !company) return null;
 
+  // Étape 0 : Apollo People Match (email vérifié, priorité absolue)
+  const apolloResult = await findEmailViaApollo(name, company);
+  if (apolloResult) return apolloResult;
+
+  // Étape 1 : Google Search
   const googleResult = await findEmailViaGoogle(name, company);
   if (googleResult && googleResult.score >= 70) return googleResult;
 
+  // Étape 2 : Scraping site entreprise
   const websiteResult = await findEmailViaWebsite(company, name);
   if (websiteResult) return websiteResult;
 
+  // Étape 3 : Pattern + MX fallback
   const patternResult = await findEmailViaPattern(name, company);
   if (patternResult) return patternResult;
 

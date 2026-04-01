@@ -615,6 +615,9 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
                                 <span className={lead.enrichmentData?.emailSource === "pattern-mx" ? "text-gray-400 italic" : ""}>
                                   {lead.email}
                                 </span>
+                                {lead.enrichmentData?.emailSource === "apollo" && (
+                                  <span className="text-xs text-orange-500 font-medium">● Apollo ✓</span>
+                                )}
                                 {lead.enrichmentData?.emailSource === "pattern-mx" && (
                                   <span className="text-xs text-gray-400">(probable)</span>
                                 )}

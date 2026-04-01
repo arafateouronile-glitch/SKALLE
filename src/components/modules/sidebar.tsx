@@ -68,6 +68,7 @@ const sections: NavSection[] = [
   {
     label: "CRÉATION",
     items: [
+      { name: "Superscale Ads", href: "/marketing-os/superscale-ads", icon: Zap },
       { name: "SEO Factory", href: "/marketing-os/seo-factory", icon: FileText },
       { name: "Content Factory", href: "/marketing-os/social/factory", icon: Factory },
       { name: "Calendrier", href: "/marketing-os/content", icon: CalendarDays },

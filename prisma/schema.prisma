@@ -106,6 +106,7 @@ model Workspace {
   socialInteractions        SocialInteraction[]
   webhookEndpoints          WebhookEndpoint[]
   mcpServerConfigs          MCPServerConfig[]
+  adCampaigns               AdCampaign[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -1050,4 +1051,55 @@ model MCPAccessLog {
   createdAt   DateTime @default(now())
 
   @@index([workspaceId, createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPERSCALE ADS — End-to-End Ad Creative Engine
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum AdCampaignStatus {
+  GENERATING
+  READY
+  FAILED
+  EXPORTED
+}
+
+model AdCampaign {
+  id                 String            @id @default(cuid())
+  workspaceId        String
+  niche              String
+  status             AdCampaignStatus  @default(GENERATING)
+  competitorInsights Json?
+  errorMessage       String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  variants  AdVariant[]
+
+  @@index([workspaceId, createdAt])
+}
+
+model AdVariant {
+  id           String  @id @default(cuid())
+  campaignId   String
+  angle        String
+  framework    String
+  primaryText  String  @db.Text
+  headline     String
+  subheadline  String
+  imagePrompt  String  @db.Text
+
+  backgroundUrl String?
+  squareUrl     String?
+  storyUrl      String?
+  landscapeUrl  String?
+
+  metaAdId   String?
+  exportedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
 }
