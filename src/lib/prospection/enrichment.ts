@@ -87,7 +87,8 @@ export async function searchLeadsApollo(
     const data = await response.json();
 
     if (!response.ok) {
-      return { success: false, error: data.message || "Erreur Apollo.io" };
+      logger.error(`[Apollo] Erreur HTTP ${response.status}`, { body: JSON.stringify(data).slice(0, 300) });
+      return { success: false, error: `Apollo ${response.status}: ${data.message || data.error || JSON.stringify(data).slice(0, 100)}` };
     }
 
     const leads: EnrichedLead[] = (data.people || []).map((person: any) => ({
@@ -315,17 +316,12 @@ export async function findQualifiedLeads(
     }
 
     // Filtrer selon les critères
-    // Pour les leads scrapés (source google-scraper), on accepte un email non vérifié
-    const isScraperMode = !process.env.APOLLO_API_KEY && process.env.SERPER_API_KEY;
+    // Les leads scrapés n'ont pas encore d'email vérifié — l'enrichissement se fait après
+    const hasScrapedLeads = leads.some((l) => (l.enrichmentSources || []).includes("google-scraper"));
     leads = leads.filter((lead) => {
-      if (requireEmail) {
-        if (isScraperMode) {
-          // En mode scraper, on demande juste qu'il y ait un email
-          if (!lead.email) return false;
-        } else {
-          // En mode API (Apollo), on demande un email vérifié
-          if (!lead.emailVerified) return false;
-        }
+      if (requireEmail && !hasScrapedLeads) {
+        // Seulement en mode Apollo pur : exiger un email vérifié
+        if (!lead.emailVerified) return false;
       }
       if (search.requirePhone && !lead.phone) return false;
       if (search.minConnections && (lead.linkedInConnections || 0) < search.minConnections) {
@@ -334,7 +330,7 @@ export async function findQualifiedLeads(
       return true;
     });
 
-    logger.info(`[Scraper] Après filtrage`, { leads: leads.length, mode: isScraperMode ? "scraper" : "api", requireEmail });
+    logger.info(`[findQualifiedLeads] Après filtrage`, { leads: leads.length, hasScrapedLeads, requireEmail });
 
     // Vérification d'emails en cascade (Top 1%) ou basique
     if (requireEmail && enrichmentMode === "complete") {
