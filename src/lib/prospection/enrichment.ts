@@ -273,8 +273,9 @@ export async function findQualifiedLeads(
     let leads: EnrichedLead[] = [];
 
     // Recherche via Apollo (si clé API disponible)
-    logger.info(`[Apollo] Clé présente: ${!!process.env.APOLLO_API_KEY}, provider: ${provider}`);
-    if ((provider === "apollo" || provider === "both") && process.env.APOLLO_API_KEY) {
+    const apolloEnabled = process.env.APOLLO_PLAN === "paid" && process.env.APOLLO_API_KEY;
+    logger.info(`[Apollo] Clé présente: ${!!process.env.APOLLO_API_KEY}, plan payant: ${!!apolloEnabled}`);
+    if ((provider === "apollo" || provider === "both") && apolloEnabled) {
       const apolloResult = await searchLeadsApollo({
         personTitles: search.jobTitles,
         industries: search.industries,
