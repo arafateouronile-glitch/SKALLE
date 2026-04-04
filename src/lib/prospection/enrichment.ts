@@ -80,7 +80,7 @@ export async function searchLeadsApollo(
         organization_num_employees_ranges: params.companySizes,
         page: params.page || 1,
         per_page: params.perPage || 25,
-        person_email_status: ["verified"], // Seulement emails vérifiés
+        // Pas de filtre sur email_status : on récupère tous les leads, Apollo enrichit les emails ensuite
       }),
     });
 
@@ -272,6 +272,7 @@ export async function findQualifiedLeads(
     let leads: EnrichedLead[] = [];
 
     // Recherche via Apollo (si clé API disponible)
+    logger.info(`[Apollo] Clé présente: ${!!process.env.APOLLO_API_KEY}, provider: ${provider}`);
     if ((provider === "apollo" || provider === "both") && process.env.APOLLO_API_KEY) {
       const apolloResult = await searchLeadsApollo({
         personTitles: search.jobTitles,
@@ -279,8 +280,10 @@ export async function findQualifiedLeads(
         locations: search.locations,
         companySizes: search.companySizes,
         keywords: search.keywords,
-        perPage: Math.min(limit, 100), // Apollo max 100 per page
+        perPage: Math.min(limit, 100),
       });
+
+      logger.info(`[Apollo] Résultat`, { success: apolloResult.success, leads: apolloResult.leads?.length ?? 0, error: apolloResult.error });
 
       if (apolloResult.success && apolloResult.leads) {
         leads = [...leads, ...apolloResult.leads];
