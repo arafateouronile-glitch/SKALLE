@@ -200,17 +200,31 @@ function extractCompany(title: string, snippet: string): string | null {
   return null;
 }
 
+// Mots-clés qui indiquent un titre de poste, pas une entreprise
+const JOB_TITLE_KEYWORDS = [
+  "manager", "director", "directeur", "responsable", "gérant", "président",
+  "ceo", "cfo", "cto", "coo", "vp ", "head of", "chef ", "lead ", "senior",
+  "associate", "analyst", "analyste", "consultant", "conseiller", "ingénieur",
+  "engineer", "developer", "développeur", "coordinateur", "chargé", "officer",
+  "fp&a", "daf", "drh", "dsi", "dg ", "pdg",
+];
+
+function looksLikeJobTitle(str: string): boolean {
+  const lower = str.toLowerCase();
+  return JOB_TITLE_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 /**
  * Fallback: extrait un nom d'entreprise depuis n'importe quel indice
  */
 function extractCompanyFallback(title: string, snippet: string): string | null {
   const titleCleaned = title.replace(/\s*[\|–-]\s*LinkedIn\s*$/i, "").trim();
 
-  // Prendre la dernière partie significative du titre
+  // Prendre la dernière partie significative du titre — mais rejeter si ça ressemble à un titre
   const parts = titleCleaned.split(/\s+[-–—|·]\s+/);
   if (parts.length >= 2) {
     const lastPart = parts[parts.length - 1].trim();
-    if (lastPart.length > 1 && lastPart.length < 80) {
+    if (lastPart.length > 1 && lastPart.length < 80 && !looksLikeJobTitle(lastPart)) {
       return lastPart;
     }
   }
@@ -219,16 +233,8 @@ function extractCompanyFallback(title: string, snippet: string): string | null {
   const snippetMatch = snippet.match(
     /(?:chez|at|@|pour|with|consultant(?:e)?\s+(?:pour|chez)?)\s+([A-ZÀ-Ü][^\n.·,]{2,40})/i
   );
-  if (snippetMatch?.[1]) {
+  if (snippetMatch?.[1] && !looksLikeJobTitle(snippetMatch[1])) {
     return snippetMatch[1].trim();
-  }
-
-  // Chercher un nom propre dans le snippet (mot commençant par majuscule)
-  const orgMatch = snippet.match(
-    /(?:^|\.\s+)([A-ZÀ-Ü][a-zà-ü]+(?:\s+[A-ZÀ-Ü][a-zà-ü]+)+)\s/
-  );
-  if (orgMatch?.[1] && orgMatch[1].length > 3 && orgMatch[1].length < 50) {
-    return orgMatch[1];
   }
 
   return null;

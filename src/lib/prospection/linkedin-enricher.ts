@@ -266,12 +266,13 @@ export async function enrichFromLinkedIn(
 }
 
 /**
- * Enrichit une liste de leads depuis leurs profils LinkedIn (batches de 3)
+ * Enrichit une liste de leads depuis leurs profils LinkedIn (batches de 5)
+ * Skip les leads qui ont déjà jobTitle + company + location (déjà bien enrichis)
  */
 export async function enrichLeadsFromLinkedIn<
   T extends { linkedInUrl?: string; name: string; company: string; jobTitle?: string; industry?: string; location?: string }
 >(leads: T[]): Promise<T[]> {
-  const BATCH_SIZE = 3;
+  const BATCH_SIZE = 5;
   const result: T[] = [];
 
   for (let i = 0; i < leads.length; i += BATCH_SIZE) {
@@ -279,6 +280,8 @@ export async function enrichLeadsFromLinkedIn<
     const enriched = await Promise.all(
       batch.map(async (lead) => {
         if (!lead.linkedInUrl) return lead;
+        // Skip si on a déjà les données essentielles
+        if (lead.jobTitle && lead.company && lead.company !== "Non spécifié" && lead.location) return lead;
 
         const profile = await enrichFromLinkedIn(lead.linkedInUrl, lead.name, lead.company);
         if (!profile) return lead;

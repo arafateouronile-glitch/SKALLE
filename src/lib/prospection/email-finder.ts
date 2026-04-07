@@ -268,7 +268,7 @@ async function findEmailViaGoogle(name: string, company: string): Promise<EmailF
 async function scrapePageForEmails(url: string): Promise<string[]> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 3000);
 
     const response = await fetch(url, {
       signal: controller.signal,
@@ -412,7 +412,7 @@ export async function findEmail(
 export async function enrichLeadsWithEmails<T extends { name: string; company: string; email?: string }>(
   leads: T[]
 ): Promise<T[]> {
-  const BATCH_SIZE = 3;
+  const BATCH_SIZE = 5;
   const result: T[] = [];
 
   for (let i = 0; i < leads.length; i += BATCH_SIZE) {
