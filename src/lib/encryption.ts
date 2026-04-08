@@ -82,7 +82,15 @@ export function isEncrypted(value: string): boolean {
  */
 export function decryptIfNeeded(value: string): string {
   if (isEncrypted(value)) {
-    return decrypt(value);
+    try {
+      return decrypt(value);
+    } catch (err) {
+      throw new Error(
+        "Impossible de déchiffrer le mot de passe SMTP. " +
+        "Vérifiez que ENCRYPTION_KEY est identique entre l'environnement où le SMTP a été configuré et celui où il est utilisé. " +
+        `(cause: ${err instanceof Error ? err.message : String(err)})`
+      );
+    }
   }
   // Valeur en clair (données legacy avant migration)
   return value;
