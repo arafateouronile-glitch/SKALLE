@@ -197,6 +197,17 @@ export async function startSequence(
       return { success: false, error: "Séquence non trouvée" };
     }
 
+    // Réinitialiser les steps FAILED qui n'ont jamais été envoyés avec succès
+    // (permet de relancer une séquence dont le premier step a échoué)
+    await prisma.sequenceStep.updateMany({
+      where: {
+        sequenceId,
+        status: "FAILED",
+        sentAt: null, // jamais envoyé avec succès
+      },
+      data: { status: "PENDING", error: null },
+    });
+
     // Activer la séquence et planifier l'envoi via Inngest
     await prisma.outreachSequence.update({
       where: { id: sequenceId },

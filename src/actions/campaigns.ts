@@ -520,6 +520,17 @@ export async function launchCampaign(
       return { success: false, error: "Aucun provider email configuré. Configurez un SMTP ou ajoutez RESEND_API_KEY / SENDGRID_API_KEY." };
     }
 
+    // Réinitialiser les steps 1 FAILED non envoyés (permet de relancer une campagne)
+    await prisma.sequenceStep.updateMany({
+      where: {
+        sequence: { campaignId },
+        stepNumber: 1,
+        status: "FAILED",
+        sentAt: null,
+      },
+      data: { status: "PENDING", error: null },
+    });
+
     // Activer les séquences et passer en SENDING
     await prisma.outreachSequence.updateMany({
       where: { campaignId },
