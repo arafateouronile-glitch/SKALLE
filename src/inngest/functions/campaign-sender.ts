@@ -88,13 +88,14 @@ export const launchCampaignFn = inngest.createFunction(
     // Charger la config SMTP : campagne-specifique ou default du workspace
     const smtpConfig = await step.run("load-smtp", async () => {
       const config = await resolveSmtpConfig(campaign);
-      if (!config || !config.isVerified) {
+      const hasEmailFallback = !!(process.env.RESEND_API_KEY || process.env.SENDGRID_API_KEY);
+      if ((!config || !config.isVerified) && !hasEmailFallback) {
         throw new Error("SMTP non configure ou non verifie");
       }
-      return config;
+      return config && config.isVerified ? config : null;
     });
 
-    const delay = calculateSendDelay(smtpConfig.perMinuteLimit);
+    const delay = calculateSendDelay(smtpConfig?.perMinuteLimit ?? 15);
     let sent = 0;
     let failed = 0;
 
@@ -157,23 +158,40 @@ export const launchCampaignFn = inngest.createFunction(
       const sendResult = await step.run(
         `send-email-${sequence.prospect.id}`,
         async () => {
-          const transporter = createSmtpTransporter({
-            host: smtpConfig.host,
-            port: smtpConfig.port,
-            secure: smtpConfig.secure,
-            username: smtpConfig.username,
-            password: decryptIfNeeded(smtpConfig.password),
-          });
+          const html = injectEmailExtras(firstStep.content, firstStep.id, sequence.prospect.id);
+          let result: { success: boolean; error?: string; messageId?: string };
 
-          const result = await sendEmailViaSMTP(transporter, {
-            from: smtpConfig.fromEmail,
-            fromName: smtpConfig.fromName,
-            to: sequence.prospect.email!,
-            subject: firstStep.subject || "",
-            html: injectEmailExtras(firstStep.content, firstStep.id, sequence.prospect.id),
-          });
-
-          transporter.close();
+          if (smtpConfig) {
+            const transporter = createSmtpTransporter({
+              host: smtpConfig.host,
+              port: smtpConfig.port,
+              secure: smtpConfig.secure,
+              username: smtpConfig.username,
+              password: decryptIfNeeded(smtpConfig.password),
+            });
+            result = await sendEmailViaSMTP(transporter, {
+              from: smtpConfig.fromEmail,
+              fromName: smtpConfig.fromName,
+              to: sequence.prospect.email!,
+              subject: firstStep.subject || "",
+              html,
+            });
+            transporter.close();
+          } else if (process.env.RESEND_API_KEY) {
+            const fromEmail = process.env.FROM_EMAIL || "Skalle <noreply@skalle.io>";
+            const res = await fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ from: fromEmail, to: sequence.prospect.email!, subject: firstStep.subject || "", html }),
+            });
+            const data = await res.json();
+            result = res.ok ? { success: true, messageId: data.id } : { success: false, error: data.message || "Erreur Resend" };
+          } else {
+            result = { success: false, error: "Aucun provider email configuré" };
+          }
 
           // Stocker le Message-ID pour le tracking de replies
           await prisma.sequenceStep.update({

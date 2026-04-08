@@ -398,7 +398,7 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
                               <div
                                 key={s.id || s.stepNumber}
                                 className={`w-6 h-6 rounded-full ${stepColor} flex items-center justify-center text-xs text-gray-900 font-medium`}
-                                title={`Étape ${s.stepNumber}: ${s.status}`}
+                                title={s.error ? `Étape ${s.stepNumber}: ${s.error}` : `Étape ${s.stepNumber}: ${s.status}`}
                               >
                                 {s.stepNumber}
                               </div>

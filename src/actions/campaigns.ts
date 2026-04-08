@@ -515,11 +515,12 @@ export async function launchCampaign(
           where: { workspaceId: campaign.workspaceId, isDefault: true },
         });
 
-    if (!smtp || !smtp.isVerified) {
-      return { success: false, error: "SMTP non configuré ou non vérifié" };
+    const hasEmailFallback = !!(process.env.RESEND_API_KEY || process.env.SENDGRID_API_KEY);
+    if ((!smtp || !smtp.isVerified) && !hasEmailFallback) {
+      return { success: false, error: "Aucun provider email configuré. Configurez un SMTP ou ajoutez RESEND_API_KEY / SENDGRID_API_KEY." };
     }
 
-    // Activer les séquences
+    // Activer les séquences et passer en SENDING
     await prisma.outreachSequence.updateMany({
       where: { campaignId },
       data: { isActive: true },
@@ -531,11 +532,25 @@ export async function launchCampaign(
     });
 
     // Déclencher l'envoi via Inngest
-    const { inngest } = await import("@/inngest/client");
-    await inngest.send({
-      name: "campaign/launch",
-      data: { campaignId },
-    });
+    try {
+      const { inngest } = await import("@/inngest/client");
+      await inngest.send({
+        name: "campaign/launch",
+        data: { campaignId },
+      });
+    } catch (inngestError) {
+      // Inngest indisponible → remettre en PAUSED pour permettre un retry
+      await prisma.emailCampaign.update({
+        where: { id: campaignId },
+        data: { status: "PAUSED" },
+      });
+      await prisma.outreachSequence.updateMany({
+        where: { campaignId },
+        data: { isActive: false },
+      });
+      console.error("Inngest send error:", inngestError);
+      return { success: false, error: "Serveur Inngest non disponible. Lancez `npm run dev:all`." };
+    }
 
     return { success: true };
   } catch (error) {

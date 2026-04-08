@@ -568,7 +568,7 @@ export async function sendStep(
             updatedStep?.subject || step.subject || "",
             updatedStep?.content || step.content,
             snippet, // Preview text pour Gmail
-            undefined, // workspaceId
+            sequence.workspaceId, // workspaceId pour SMTP config
             stepId, // pixel de tracking
             prospect.id, // lien unsubscribe
             campaignAttachments
@@ -1187,10 +1187,11 @@ export async function getLinkedInQueue(
         channel: "LINKEDIN",
         status: "PENDING",
         sequence: {
-          workspaceId,
-          isActive: true,
-          workspace: { userId: session.user!.id! },
-        } as any,
+          is: {
+            workspaceId,
+            isActive: true,
+          },
+        },
       },
       include: {
         sequence: {

@@ -1,6 +1,71 @@
 import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
-import { sendStep } from "@/actions/sequences";
+import {
+  createSmtpTransporter,
+  sendEmailViaSMTP,
+} from "@/lib/email/smtp-transport";
+import { decryptIfNeeded } from "@/lib/encryption";
+
+function injectTrackingExtras(html: string, stepId: string, prospectId: string): string {
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  const pixel = `<img src="${baseUrl}/api/track/open/${stepId}" width="1" height="1" alt="" style="display:none" />`;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { generateUnsubscribeToken } = require("../../lib/unsubscribe-token");
+  const unsubToken = generateUnsubscribeToken(prospectId);
+  const unsubUrl = `${baseUrl}/api/unsubscribe/${unsubToken}`;
+  const unsubLink = `\n<div style="text-align:center;margin-top:24px;font-size:11px;color:#9ca3af;"><a href="${unsubUrl}" style="color:#9ca3af;text-decoration:underline;">Se désinscrire</a></div>`;
+  const extras = pixel + unsubLink;
+  if (html.includes("</body>")) return html.replace("</body>", `${extras}</body>`);
+  return html + extras;
+}
+
+async function sendEmailForStep(params: {
+  to: string;
+  subject: string;
+  html: string;
+  workspaceId: string;
+  campaignId?: string | null;
+}): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  // Résoudre SMTP : campagne → workspace default
+  const smtpConfig = params.campaignId
+    ? await prisma.smtpConfig.findFirst({
+        where: { campaigns: { some: { id: params.campaignId } } },
+      }) ?? await prisma.smtpConfig.findFirst({ where: { workspaceId: params.workspaceId, isDefault: true } })
+    : await prisma.smtpConfig.findFirst({ where: { workspaceId: params.workspaceId, isDefault: true } });
+
+  if (smtpConfig && smtpConfig.isVerified) {
+    const transporter = createSmtpTransporter({
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      secure: smtpConfig.secure,
+      username: smtpConfig.username,
+      password: decryptIfNeeded(smtpConfig.password),
+    });
+    const result = await sendEmailViaSMTP(transporter, {
+      from: smtpConfig.fromEmail,
+      fromName: smtpConfig.fromName,
+      to: params.to,
+      subject: params.subject,
+      html: params.html,
+    });
+    transporter.close();
+    return result;
+  }
+
+  // Fallback Resend
+  if (process.env.RESEND_API_KEY) {
+    const fromEmail = process.env.FROM_EMAIL || "Skalle <noreply@skalle.io>";
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: fromEmail, to: params.to, subject: params.subject, html: params.html }),
+    });
+    const data = await res.json();
+    return res.ok ? { success: true, messageId: data.id } : { success: false, error: data.message || "Erreur Resend" };
+  }
+
+  return { success: false, error: "Aucun provider email configuré" };
+}
 
 /**
  * 🚀 Sequence Sender - Worker Inngest
@@ -34,54 +99,67 @@ export const sendSequenceStep = inngest.createFunction(
   async ({ event, step }) => {
     const { stepId, sequenceId, delayDays } = event.data;
 
-    // Vérifier que la séquence est toujours active
-    const sequence = await step.run("check-sequence", async () => {
+    // Charger le step, la séquence et le prospect
+    const context = await step.run("check-sequence", async () => {
       const seq = await prisma.outreachSequence.findUnique({
         where: { id: sequenceId },
         include: {
           prospect: true,
-          steps: {
-            where: { id: stepId },
-          },
+          steps: { where: { id: stepId } },
         },
       });
 
-      if (!seq) {
-        throw new Error("Séquence non trouvée");
-      }
-
-      if (!seq.isActive) {
-        throw new Error("Séquence mise en pause");
-      }
+      if (!seq) throw new Error("Séquence non trouvée");
+      if (!seq.isActive) throw new Error("Séquence mise en pause");
 
       const currentStep = seq.steps[0];
       if (!currentStep || currentStep.status !== "PENDING") {
         throw new Error("Étape déjà envoyée ou annulée");
       }
 
-      return { sequence: seq, currentStep: seq.steps[0] };
+      return { seq, currentStep };
     });
 
-    const currentStep = sequence.currentStep;
+    const currentStep = context.currentStep;
+    const prospect = context.seq.prospect;
 
-    // Envoyer l'étape
+    // Envoyer selon le canal
     const result = await step.run(`send-step-${stepId}`, async () => {
-      return await sendStep(stepId);
-    });
+      if (currentStep.channel !== "EMAIL" || !prospect.email) {
+        // LinkedIn/Phone/SMS : envoi manuel, on laisse en PENDING
+        return { success: true, manual: true };
+      }
 
-    if (!result.success) {
-      // En cas d'échec, marquer comme FAILED
-      await step.run("mark-failed", async () => {
-        await prisma.sequenceStep.update({
-          where: { id: stepId },
-          data: {
-            status: "FAILED",
-            error: result.error || "Erreur d'envoi",
-          },
-        });
+      // Marquer comme SENT avant l'envoi
+      await prisma.sequenceStep.update({
+        where: { id: stepId },
+        data: { status: "SENT", sentAt: new Date() },
       });
 
-      throw new Error(result.error || "Erreur d'envoi");
+      const html = injectTrackingExtras(currentStep.content, stepId, prospect.id);
+      const sendResult = await sendEmailForStep({
+        to: prospect.email,
+        subject: currentStep.subject || "",
+        html,
+        workspaceId: context.seq.workspaceId,
+        campaignId: context.seq.campaignId,
+      });
+
+      await prisma.sequenceStep.update({
+        where: { id: stepId },
+        data: {
+          status: sendResult.success ? "DELIVERED" : "FAILED",
+          deliveredAt: sendResult.success ? new Date() : undefined,
+          messageId: sendResult.messageId || undefined,
+          error: sendResult.error || undefined,
+        },
+      });
+
+      return sendResult;
+    });
+
+    if (!result.success && !(result as any).manual) {
+      throw new Error((result as any).error || "Erreur d'envoi");
     }
 
     // Si succès, planifier la prochaine étape
