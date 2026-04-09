@@ -28,6 +28,7 @@ export interface PersonalizeParams {
   stepTemplate: StepTemplate;
   mode: "ai" | "template";
   sender: { name: string; email: string; company: string };
+  ourOffer?: string;
 }
 
 export interface PersonalizedResult {
@@ -52,7 +53,7 @@ export function hasAIPersonalization(): boolean {
 export async function personalizeEmail(
   params: PersonalizeParams
 ): Promise<PersonalizedResult> {
-  const { prospect, stepTemplate, mode, sender } = params;
+  const { prospect, stepTemplate, mode, sender, ourOffer } = params;
 
   // Mode AI : tenter la personnalisation OpenAI
   if (mode === "ai" && hasAIPersonalization()) {
@@ -76,7 +77,7 @@ export async function personalizeEmail(
           timezone: "Europe/Paris",
         },
         sequenceStep: stepTemplate.stepNumber,
-        ourOffer: "nos services",
+        ourOffer: ourOffer || "nos services",
         ourCompany: sender.company,
       });
 

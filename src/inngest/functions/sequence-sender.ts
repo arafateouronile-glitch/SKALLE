@@ -25,6 +25,7 @@ async function sendEmailForStep(params: {
   html: string;
   workspaceId: string;
   campaignId?: string | null;
+  attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
 }): Promise<{ success: boolean; error?: string; messageId?: string }> {
   // Résoudre SMTP : campagne → workspace default
   const smtpConfig = params.campaignId
@@ -47,6 +48,7 @@ async function sendEmailForStep(params: {
       to: params.to,
       subject: params.subject,
       html: params.html,
+      attachments: params.attachments,
     });
     transporter.close();
     return result;
@@ -55,10 +57,20 @@ async function sendEmailForStep(params: {
   // Fallback Resend
   if (process.env.RESEND_API_KEY) {
     const fromEmail = process.env.FROM_EMAIL || "Skalle <noreply@skalle.io>";
+    const resendAttachments = params.attachments?.map((a) => ({
+      filename: a.filename,
+      content: a.content.toString("base64"),
+    }));
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: fromEmail, to: params.to, subject: params.subject, html: params.html }),
+      body: JSON.stringify({
+        from: fromEmail,
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+        ...(resendAttachments?.length ? { attachments: resendAttachments } : {}),
+      }),
     });
     const data = await res.json();
     return res.ok ? { success: true, messageId: data.id } : { success: false, error: data.message || "Erreur Resend" };
@@ -99,13 +111,14 @@ export const sendSequenceStep = inngest.createFunction(
   async ({ event, step }) => {
     const { stepId, sequenceId, delayDays } = event.data;
 
-    // Charger le step, la séquence et le prospect
+    // Charger le step, la séquence, le prospect, la campagne et le workspace
     const context = await step.run("check-sequence", async () => {
       const seq = await prisma.outreachSequence.findUnique({
         where: { id: sequenceId },
         include: {
           prospect: true,
           steps: { where: { id: stepId } },
+          campaign: { select: { personalizationMode: true } },
         },
       });
 
@@ -117,7 +130,12 @@ export const sendSequenceStep = inngest.createFunction(
         throw new Error("Étape déjà envoyée ou annulée");
       }
 
-      return { seq, currentStep };
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: seq.workspaceId },
+        select: { name: true, brandVoice: true },
+      });
+
+      return { seq, currentStep, workspace };
     });
 
     const currentStep = context.currentStep;
@@ -130,19 +148,77 @@ export const sendSequenceStep = inngest.createFunction(
         return { success: true, manual: true };
       }
 
+      // Personnalisation du contenu (AI ou template avec substitution de variables)
+      const personalizationMode = (context.seq.campaign?.personalizationMode as "ai" | "template") ?? "template";
+      const brandVoice = (context.workspace?.brandVoice as Record<string, unknown>) ?? {};
+      const ourCompany = context.workspace?.name || "notre entreprise";
+      const ourOffer = (brandVoice.offer as string) || (brandVoice.description as string) || "notre solution";
+
+      let personalizedSubject = currentStep.subject || "";
+      let personalizedContent = currentStep.content;
+
+      try {
+        const { personalizeEmail } = await import("@/lib/email/personalize-email");
+        const personalized = await personalizeEmail({
+          prospect: {
+            id: prospect.id,
+            name: prospect.name,
+            email: prospect.email,
+            company: prospect.company || "",
+            jobTitle: prospect.jobTitle,
+            industry: prospect.industry,
+            location: prospect.location,
+            linkedInUrl: prospect.linkedInUrl,
+          },
+          stepTemplate: {
+            stepNumber: currentStep.stepNumber,
+            subject: currentStep.subject || "",
+            content: currentStep.content,
+            delayDays: currentStep.delayDays,
+          },
+          mode: personalizationMode,
+          sender: {
+            name: ourCompany,
+            email: "",
+            company: ourCompany,
+          },
+          ourOffer,
+        });
+        personalizedSubject = personalized.subject || personalizedSubject;
+        personalizedContent = personalized.content || personalizedContent;
+      } catch (err) {
+        console.warn("[sequence-sender] Personnalisation échouée, envoi du template brut:", err);
+      }
+
+      // Pièces jointes de la campagne (rechargées ici pour éviter les problèmes de sérialisation Buffer)
+      let attachments: Array<{ filename: string; contentType: string; content: Buffer }> | undefined;
+      if (context.seq.campaignId) {
+        const dbAttachments = await prisma.campaignAttachment.findMany({
+          where: { campaignId: context.seq.campaignId },
+        });
+        if (dbAttachments.length > 0) {
+          attachments = dbAttachments.map((a) => ({
+            filename: a.filename,
+            contentType: a.contentType,
+            content: a.data as Buffer,
+          }));
+        }
+      }
+
       // Marquer comme SENT avant l'envoi
       await prisma.sequenceStep.update({
         where: { id: stepId },
         data: { status: "SENT", sentAt: new Date() },
       });
 
-      const html = injectTrackingExtras(currentStep.content, stepId, prospect.id);
+      const html = injectTrackingExtras(personalizedContent, stepId, prospect.id);
       const sendResult = await sendEmailForStep({
         to: prospect.email,
-        subject: currentStep.subject || "",
+        subject: personalizedSubject,
         html,
         workspaceId: context.seq.workspaceId,
         campaignId: context.seq.campaignId,
+        attachments: attachments?.length ? attachments : undefined,
       });
 
       await prisma.sequenceStep.update({
