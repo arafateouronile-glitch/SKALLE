@@ -59,6 +59,14 @@ interface ProspectData {
   enrichmentData?: any;
 }
 
+interface PersonalizationHook {
+  source: "linkedin" | "company_news" | "industry_news" | "none";
+  headline?: string;       // Titre LinkedIn (poste actuel)
+  recentActivity?: string; // Activité récente LinkedIn
+  companyNews?: string;    // Dernière actu de l'entreprise
+  industryNews?: string;   // Dernière actu du secteur
+}
+
 interface ResearchResult {
   recentActivity: string[];
   companyNews: string[];
@@ -67,6 +75,7 @@ interface ResearchResult {
   interests: string[];
   socialProof: string[];
   timezone?: string;
+  personalizationHook: PersonalizationHook;
 }
 
 interface EmailPersonalizationInput {
@@ -91,6 +100,110 @@ interface PersonalizedEmail {
 // 🔍 RESEARCH PROSPECT - Recherche approfondie du prospect
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔗 LINKEDIN SCRAPE (sans dépendance LangGraph)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function scrapeLinkedInContext(
+  prospect: ProspectData
+): Promise<{ headline: string; recentActivity?: string } | null> {
+  if (!prospect.linkedInUrl) return null;
+
+  // Stratégie 1 : scraping direct du profil public
+  try {
+    const res = await fetch(prospect.linkedInUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const descMatch = html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/);
+      const titleMatch = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/);
+      const description = descMatch?.[1] ?? "";
+      const title = titleMatch?.[1] ?? "";
+      const headline = description.split(" | ")[0] || title.replace(" | LinkedIn", "").trim();
+      if (headline && headline !== "LinkedIn") {
+        return { headline: headline.slice(0, 200) };
+      }
+    }
+  } catch {
+    // LinkedIn bloque — stratégie 2
+  }
+
+  // Stratégie 2 : recherche Google via Serper
+  if (!process.env.SERPER_API_KEY) return null;
+
+  try {
+    const usernameMatch = prospect.linkedInUrl.match(/linkedin\.com\/in\/([^/]+)/);
+    const username = usernameMatch?.[1];
+    const query =
+      prospect.name && prospect.company
+        ? `"${prospect.name}" "${prospect.company}" site:linkedin.com/in`
+        : username
+          ? `site:linkedin.com/in/${username}`
+          : null;
+
+    if (!query) return null;
+
+    const serperRes = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": process.env.SERPER_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: 3 }),
+    });
+    const data = await serperRes.json();
+    const top = data.organic?.[0];
+    if (!top) return null;
+
+    const titleParts = (top.title as string ?? "").replace(" | LinkedIn", "").split(" | ");
+    const headline = titleParts[1]?.trim() || top.snippet?.split(".")[0] || "";
+    const recentActivity = data.organic
+      ?.slice(0, 3)
+      .filter((r: { link: string }) => r.link?.includes("linkedin.com"))
+      .map((r: { snippet: string }) => r.snippet?.slice(0, 150))
+      .filter(Boolean)
+      .join(" | ");
+
+    if (headline) {
+      return { headline: headline.slice(0, 200), recentActivity: recentActivity || undefined };
+    }
+  } catch {
+    // best-effort
+  }
+
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🏭 ACTUALITÉS SECTEUR (fallback 3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function scrapeIndustryNews(industry: string): Promise<string | null> {
+  if (!process.env.SERPER_API_KEY) return null;
+  try {
+    const res = await fetch("https://google.serper.dev/news", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": process.env.SERPER_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: `${industry} tendances actualités`, num: 3, gl: "fr" }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const headline = data.news?.[0]?.title as string | undefined;
+    return headline ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function researchProspect(prospect: ProspectData): Promise<ResearchResult> {
   // Recherche approfondie pour personnalisation maximale
   const research: ResearchResult = {
@@ -100,10 +213,21 @@ export async function researchProspect(prospect: ProspectData): Promise<Research
     painPoints: [],
     interests: [],
     socialProof: [],
+    personalizationHook: { source: "none" },
   };
 
   try {
-    // Actualités récentes de l'entreprise via Serper
+    // ── 1. LinkedIn (source privilégiée) ──────────────────────────────────
+    const linkedInCtx = await scrapeLinkedInContext(prospect);
+    if (linkedInCtx) {
+      research.personalizationHook = {
+        source: "linkedin",
+        headline: linkedInCtx.headline,
+        recentActivity: linkedInCtx.recentActivity,
+      };
+    }
+
+    // ── 2. Actualités récentes de l'entreprise via Serper ─────────────────
     if (prospect.company && process.env.SERPER_API_KEY) {
       try {
         const serperRes = await fetch("https://google.serper.dev/news", {
@@ -119,9 +243,28 @@ export async function researchProspect(prospect: ProspectData): Promise<Research
           research.companyNews = (serperData.news || [])
             .slice(0, 3)
             .map((item: { title: string }) => item.title);
+
+          // Fallback 2 : actu entreprise si LinkedIn vide
+          if (research.personalizationHook.source === "none" && research.companyNews[0]) {
+            research.personalizationHook = {
+              source: "company_news",
+              companyNews: research.companyNews[0],
+            };
+          }
         }
       } catch {
         // Best-effort — ne bloque pas la personnalisation
+      }
+    }
+
+    // ── 3. Actualités secteur (fallback final) ────────────────────────────
+    if (research.personalizationHook.source === "none" && prospect.industry) {
+      const industryHeadline = await scrapeIndustryNews(prospect.industry);
+      if (industryHeadline) {
+        research.personalizationHook = {
+          source: "industry_news",
+          industryNews: industryHeadline,
+        };
       }
     }
 
@@ -252,9 +395,15 @@ export async function generatePersonalizedEmail(
     personalizationScore += 20;
     personalizationPoints.push(`Company: ${prospect.company}`);
   }
-  if (research.companyNews.length > 0) {
+  if (research.personalizationHook.source === "linkedin") {
+    personalizationScore += 30;
+    personalizationPoints.push(`LinkedIn: ${research.personalizationHook.headline ?? "profil trouvé"}`);
+  } else if (research.companyNews.length > 0) {
     personalizationScore += 20;
     personalizationPoints.push(`Company news: ${research.companyNews[0]}`);
+  } else if (research.personalizationHook.source === "industry_news") {
+    personalizationScore += 10;
+    personalizationPoints.push(`Industry news: ${research.personalizationHook.industryNews}`);
   }
   if (research.painPoints.length > 0) {
     personalizationScore += 20;
@@ -269,6 +418,35 @@ export async function generatePersonalizedEmail(
   const firstName = prospect.firstName || prospect.name.split(" ")[0];
   const jobTitle = prospect.jobTitle || "dans votre secteur";
   
+  // Construire l'accroche personnalisée pour l'étape 1
+  const hook = research.personalizationHook;
+  let hookSection = "";
+  if (sequenceStep === 1 && hook.source !== "none") {
+    if (hook.source === "linkedin") {
+      hookSection = `
+**ACCROCHE PERSONNALISÉE (OBLIGATOIRE - utilise cette info pour ouvrir l'email):**
+Source: Profil LinkedIn
+${hook.headline ? `- Titre LinkedIn: "${hook.headline}"` : ""}
+${hook.recentActivity ? `- Activité récente: "${hook.recentActivity}"` : ""}
+→ Ouvre l'email avec une référence naturelle à son profil LinkedIn ou à son activité récente.
+`;
+    } else if (hook.source === "company_news") {
+      hookSection = `
+**ACCROCHE PERSONNALISÉE (OBLIGATOIRE - utilise cette info pour ouvrir l'email):**
+Source: Actualités entreprise
+- Actualité récente de ${prospect.company}: "${hook.companyNews}"
+→ Ouvre l'email en faisant référence à cette actualité de façon naturelle et pertinente.
+`;
+    } else if (hook.source === "industry_news") {
+      hookSection = `
+**ACCROCHE PERSONNALISÉE (OBLIGATOIRE - utilise cette info pour ouvrir l'email):**
+Source: Actualités secteur
+- Tendance dans le secteur ${prospect.industry}: "${hook.industryNews}"
+→ Ouvre l'email avec un insight sur cette tendance sectorielle en lien avec leur activité.
+`;
+    }
+  }
+
   // Prompt ultra-personnalisé pour GPT-4
   const prompt = `
 Tu es un expert en cold email B2B avec un taux de réponse de 20%+ (top 1%).
@@ -287,11 +465,11 @@ ${research.interests.length > 0 ? `- Intérêts: ${research.interests.join(", ")
 
 **SÉQUENCE:**
 Étape ${sequenceStep} sur 7 (multi-touch sequence)
-
+${hookSection}
 ${sequenceStep === 1 ? `
 **MESSAGE 1 - VALUE FIRST (Pas de pitch):**
 - MAX 125 mots
-- Commencer par une valeur concrète ou un insight
+- Commencer par l'ACCROCHE PERSONNALISÉE ci-dessus si disponible, sinon par une valeur concrète ou un insight
 - Pas de pitch, pas de lien
 - Question ouverte pour engagement
 - Ton: professionnel mais conversationnel
@@ -579,11 +757,21 @@ function generateFallbackEmail(
 
   const footer = unsubscribeFooter(prospect.email);
 
+  const hook = research.personalizationHook;
+  let openingLine = `J'ai vu que ${prospect.company} ${research.companyNews[0] || "est dans un secteur en pleine évolution"}.`;
+  if (hook.source === "linkedin" && hook.headline) {
+    openingLine = `J'ai vu sur votre profil LinkedIn que vous êtes ${hook.headline}${hook.recentActivity ? ` — et notamment : "${hook.recentActivity.slice(0, 100)}"` : ""}.`;
+  } else if (hook.source === "company_news" && hook.companyNews) {
+    openingLine = `J'ai vu que ${prospect.company} fait l'actualité : "${hook.companyNews}".`;
+  } else if (hook.source === "industry_news" && hook.industryNews) {
+    openingLine = `Le secteur ${prospect.industry || "dans lequel évolue " + prospect.company} connaît un changement fort : "${hook.industryNews}".`;
+  }
+
   if (sequenceStep === 1) {
     return `
 <p>Bonjour ${firstName},</p>
 
-<p>J'ai vu que ${prospect.company} ${research.companyNews[0] || "est dans un secteur en pleine évolution"}.</p>
+<p>${openingLine}</p>
 
 <p>En tant que ${jobTitle}, vous faites probablement face à ${research.painPoints[0] || "des défis de croissance"}.</p>
 

@@ -98,6 +98,7 @@ import {
   type QualifiedSearchCriteria,
 } from "@/actions/leads";
 import { getProspectLists } from "@/actions/prospect-lists";
+import { saveContactsToDb } from "@/actions/contact-db";
 import { ImportToListDialog } from "@/components/prospection/import-to-list-dialog";
 import {
   createSequence,
@@ -285,6 +286,30 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
       if (result.success && result.leads) {
         setLeads(result.leads);
         toast.success(`${result.leads.length} leads trouvés !`);
+
+        // Auto-save dans la base de contacts
+        const contacts = result.leads.map((lead: any) => ({
+          name: lead.name,
+          email: lead.email,
+          emailVerified: lead.emailVerified,
+          emailScore: lead.emailScore,
+          emailSource: lead.enrichmentData?.emailSource as string | undefined,
+          phone: lead.phone,
+          linkedInUrl: lead.linkedInUrl,
+          company: lead.company,
+          jobTitle: lead.jobTitle,
+          location: lead.location,
+          industry: lead.industry,
+          companySize: lead.companySize,
+          source: (lead.enrichmentData?.apolloId ? "apollo" : "google-scraper") as string,
+          apolloId: lead.enrichmentData?.apolloId as string | undefined,
+          tags: [],
+        }));
+        saveContactsToDb(workspaceId, contacts).then((r) => {
+          if (r.success && (r.saved > 0 || r.updated > 0)) {
+            toast.info(`Base contacts : +${r.saved} nouveau${r.saved > 1 ? "x" : ""}, ${r.updated} mis à jour`, { duration: 3000 });
+          }
+        });
       } else {
         toast.error(result.error || "Erreur de recherche");
       }
@@ -348,12 +373,12 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
     setCriteria({ ...criteria, [field]: value });
   };
 
-  const removeFromList = (field: "jobTitles" | "industries" | "locations" | "keywords", i: number) => {
+  const removeFromList = (field: "jobTitles" | "industries" | "locations" | "keywords" | "companySizes" | "seniorityLevels" | "companyNames", i: number) => {
     if (!criteria) return;
     setCriteria({ ...criteria, [field]: criteria[field].filter((_, idx) => idx !== i) });
   };
 
-  const addToList = (field: "jobTitles" | "industries" | "locations" | "keywords", val: string) => {
+  const addToList = (field: "jobTitles" | "industries" | "locations" | "keywords" | "companySizes" | "seniorityLevels" | "companyNames", val: string) => {
     if (!criteria) return;
     setCriteria({ ...criteria, [field]: [...criteria[field], val] });
   };
@@ -483,6 +508,49 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
                   placeholder="+ Ajouter..."
                 />
               )}
+              {criteria.searchMode === "linkedin" && (
+                <>
+                  <CriteriaBadgeList
+                    label="Niveau hiérarchique"
+                    items={criteria.seniorityLevels}
+                    onRemove={(i) => removeFromList("seniorityLevels", i)}
+                    onAdd={(v) => addToList("seniorityLevels", v)}
+                    placeholder="+ ex: c_suite, director..."
+                  />
+                  <CriteriaBadgeList
+                    label="Taille d'entreprise"
+                    items={criteria.companySizes.map((s) => {
+                      const labels: Record<string, string> = {
+                        "1,10": "1-10", "11,20": "11-20", "21,50": "21-50",
+                        "51,100": "51-100", "101,200": "101-200", "201,500": "201-500",
+                        "501,1000": "501-1K", "1001,2000": "1K-2K", "2001,5000": "2K-5K",
+                        "5001,10000": "5K-10K", "10001,": "+10K",
+                      };
+                      return labels[s] || s;
+                    })}
+                    onRemove={(i) => removeFromList("companySizes", i)}
+                    onAdd={(v) => {
+                      // Accepter les labels ou les valeurs directes
+                      const reverseLabels: Record<string, string> = {
+                        "1-10": "1,10", "11-20": "11,20", "21-50": "21,50",
+                        "51-100": "51,100", "101-200": "101,200", "201-500": "201,500",
+                        "501-1k": "501,1000", "1k-2k": "1001,2000", "2k-5k": "2001,5000",
+                        "5k-10k": "5001,10000", "+10k": "10001,",
+                      };
+                      const raw = reverseLabels[v.toLowerCase()] || v;
+                      addToList("companySizes", raw);
+                    }}
+                    placeholder="+ 1-10, PME, ETI..."
+                  />
+                  <CriteriaBadgeList
+                    label="Entreprises spécifiques"
+                    items={criteria.companyNames}
+                    onRemove={(i) => removeFromList("companyNames", i)}
+                    onAdd={(v) => addToList("companyNames", v)}
+                    placeholder="+ Ajouter une entreprise..."
+                  />
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-6 pt-2 border-t border-gray-100">
@@ -545,14 +613,30 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
                   {selectedLeads.size} sélectionné(s)
                 </CardDescription>
               </div>
-              <Button
-                onClick={handleImportClick}
-                disabled={selectedLeads.size === 0}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Importer {selectedLeads.size > 0 && `(${selectedLeads.size})`}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedLeads.size === leads.length) {
+                      setSelectedLeads(new Set());
+                    } else {
+                      setSelectedLeads(new Set(leads.map((_, i) => i.toString())));
+                    }
+                  }}
+                  className="border-gray-200 text-gray-600 text-xs h-8"
+                >
+                  {selectedLeads.size === leads.length ? "Tout désélectionner" : "Tout sélectionner"}
+                </Button>
+                <Button
+                  onClick={handleImportClick}
+                  disabled={selectedLeads.size === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Importer {selectedLeads.size > 0 && `(${selectedLeads.size})`}
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -1567,6 +1651,10 @@ function DeliverabilityTab({ workspaceId }: { workspaceId: string }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // 👥 PROSPECTS TAB - Liste des Prospects (existant)
 // ═══════════════════════════════════════════════════════════════════════════
+// 🗄️ CONTACT DB TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
 
 function ProspectsTab({ workspaceId }: { workspaceId: string }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -2448,6 +2536,7 @@ export default function ProspectionPage() {
             <Settings className="h-4 w-4 mr-2" />
             SMTP
           </TabsTrigger>
+
           <TabsTrigger
             value="deliverability"
             className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white"

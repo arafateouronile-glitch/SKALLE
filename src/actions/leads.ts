@@ -74,6 +74,8 @@ const leadSearchSchema = z.object({
   industries: z.array(z.string()).optional(),
   locations: z.array(z.string()).optional(),
   companySizes: z.array(z.string()).optional(),
+  seniorityLevels: z.array(z.string()).optional(),
+  companyNames: z.array(z.string()).optional(),
   keywords: z.array(z.string()).optional(),
   minConnections: z.number().optional(),
   requireEmail: z.boolean().default(false),
@@ -124,6 +126,8 @@ export async function searchQualifiedLeads(
       industries: parsed.data.industries,
       locations: parsed.data.locations,
       companySizes: parsed.data.companySizes,
+      seniorityLevels: parsed.data.seniorityLevels,
+      companyNames: parsed.data.companyNames,
       keywords: parsed.data.keywords,
       minConnections: parsed.data.minConnections,
       requireEmail: parsed.data.requireEmail,
@@ -443,6 +447,9 @@ export interface QualifiedSearchCriteria {
   industries: string[];
   locations: string[];
   keywords: string[];
+  companySizes: string[];
+  seniorityLevels: string[];
+  companyNames: string[];
   searchMode: "linkedin" | "google_business";
   requireEmail: boolean;
   requirePhone: boolean;
@@ -471,6 +478,9 @@ Réponds UNIQUEMENT avec un JSON valide dans ce format exact:
   "industries": ["secteur1"],
   "locations": ["ville/region1"],
   "keywords": ["mot1", "mot2"],
+  "companySizes": [],
+  "seniorityLevels": [],
+  "companyNames": [],
   "searchMode": "linkedin" ou "google_business",
   "requireEmail": false,
   "requirePhone": false,
@@ -489,6 +499,39 @@ Exemples:
 - "directeurs de restaurants étoilés à Lyon" → google_business (restaurant = établissement)
 - "CMO de startups SaaS" → linkedin (startup SaaS = pas un type d'établissement spécifique)
 - "fondateurs d'agences web" → google_business (agence web = établissement)
+
+Règles pour companySizes (taille d'entreprise — format Apollo "min,max"):
+- "1,10" = 1-10 employés (TPE)
+- "11,20" = 11-20
+- "21,50" = 21-50
+- "51,100" = 51-100
+- "101,200" = 101-200
+- "201,500" = 201-500
+- "501,1000" = 501-1 000
+- "1001,2000" = 1 001-2 000
+- "2001,5000" = 2 001-5 000
+- "5001,10000" = 5 001-10 000
+- "10001," = +10 000 (grande entreprise / CAC40)
+- Si l'utilisateur dit "startup" ou "TPE" → ["1,10","11,20","21,50"]
+- Si "PME" → ["51,100","101,200","201,500"]
+- Si "ETI" → ["501,1000","1001,2000","2001,5000"]
+- Si "grand groupe" ou "grande entreprise" → ["5001,10000","10001,"]
+- [] si non précisé
+
+Règles pour seniorityLevels (niveau hiérarchique Apollo):
+Valeurs acceptées: "owner", "founder", "c_suite", "vp", "head", "director", "manager", "senior", "entry", "intern"
+- "fondateur" / "founder" / "créateur" → ["founder","owner"]
+- "C-level" / "dirigeant" / "PDG" / "DG" / "CEO" / "CFO" / "CTO" → ["c_suite","owner"]
+- "VP" / "vice-président" → ["vp"]
+- "head of" / "responsable" (sans précision) → ["head","director"]
+- "directeur" / "director" → ["director"]
+- "manager" / "responsable" (opérationnel) → ["manager"]
+- "senior" / "expérimenté" → ["senior"]
+- [] si non précisé ou trop vague
+
+Règles pour companyNames: liste d'entreprises spécifiques UNIQUEMENT si l'utilisateur cite des noms précis (ex: "je veux prospecter chez BNP Paribas et Société Générale").
+- "CAC 40" / "grandes entreprises" / "grands groupes" → NE PAS mettre de noms — mettre plutôt companySizes + keywords
+- [] par défaut sauf si noms explicitement cités par l'utilisateur
 
 Autres règles:
 - Pour mode google_business: keywords = type d'activité de l'établissement (ex: "organisme de formation", "agence web"), jobTitles = [] (inutile)
@@ -523,6 +566,9 @@ Autres règles:
         industries: parsed.industries || [],
         locations: parsed.locations || [],
         keywords: parsed.keywords || [],
+        companySizes: parsed.companySizes || [],
+        seniorityLevels: parsed.seniorityLevels || [],
+        companyNames: parsed.companyNames || [],
         searchMode: parsed.searchMode || "linkedin",
         requireEmail: false, // Toujours false : on veut des leads même sans email
         requirePhone: false,

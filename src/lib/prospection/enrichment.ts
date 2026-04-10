@@ -52,9 +52,39 @@ interface ApolloSearchParams {
   industries?: string[];
   locations?: string[];
   companySizes?: string[];
+  seniorityLevels?: string[];
+  companyNames?: string[];
   keywords?: string[];
   page?: number;
   perPage?: number;
+}
+
+// Mapping des régions françaises vers les équivalents qu'Apollo comprend
+function normalizeApolloLocations(locations: string[]): string[] {
+  const map: Record<string, string> = {
+    "île-de-france": "Paris, France",
+    "ile-de-france": "Paris, France",
+    "grand paris": "Paris, France",
+    "rhône": "Lyon, France",
+    "rhone": "Lyon, France",
+    "auvergne-rhône-alpes": "Lyon, France",
+    "provence-alpes-côte d'azur": "Marseille, France",
+    "occitanie": "Toulouse, France",
+    "nouvelle-aquitaine": "Bordeaux, France",
+    "bretagne": "Rennes, France",
+    "hauts-de-france": "Lille, France",
+    "grand est": "Strasbourg, France",
+    "pays de la loire": "Nantes, France",
+    "normandie": "Rouen, France",
+  };
+
+  return locations.map((loc) => map[loc.toLowerCase()] ?? loc).filter(Boolean);
+}
+
+// Garde seulement les titres en anglais (Apollo a une meilleure couverture EN)
+function filterEnglishTitles(titles: string[]): string[] {
+  const frenchMarkers = ["directeur", "responsable", "chargé", "gérant", "contrôleur", "trésorier", "chef", "président"];
+  return titles.filter((t) => !frenchMarkers.some((m) => t.toLowerCase().includes(m)));
 }
 
 export async function searchLeadsApollo(
@@ -64,50 +94,133 @@ export async function searchLeadsApollo(
     return { success: false, error: "APOLLO_API_KEY non configurée" };
   }
 
+  const apiKey = process.env.APOLLO_API_KEY;
+
   try {
-    const response = await fetch("https://api.apollo.io/v1/mixed_people/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-        "X-Api-Key": process.env.APOLLO_API_KEY,
-      },
-      body: JSON.stringify({
-        q_keywords: params.keywords?.join(" "),
-        person_titles: params.personTitles,
-        person_industries: params.industries,
-        person_locations: params.locations,
-        organization_num_employees_ranges: params.companySizes,
-        page: params.page || 1,
-        per_page: params.perPage || 25,
-        // Pas de filtre sur email_status : on récupère tous les leads, Apollo enrichit les emails ensuite
-      }),
+    // Normaliser les localisations (Apollo comprend mieux "France" que "Île-de-France")
+    const normalizedLocations = normalizeApolloLocations(params.locations || []);
+    // Garder uniquement les titres en anglais si possible (Apollo est principalement anglophone)
+    const englishTitles = filterEnglishTitles(params.personTitles || []);
+    const titlesToUse = englishTitles.length > 0 ? englishTitles : params.personTitles;
+
+    // ── Étape 1 : Search (ne consomme pas de crédits, last_name obfusqué) ──
+    // Apollo indexe surtout en anglais → on n'utilise PAS q_keywords (trop de faux-zéros en FR)
+    // Les filtres structurés (titres EN, seniority, location, taille) sont suffisants
+
+    const buildBody = (titles?: string[], locations?: string[]) => ({
+      person_titles: titles?.length ? titles.slice(0, 8) : undefined,
+      person_seniorities: params.seniorityLevels?.length ? params.seniorityLevels : undefined,
+      person_locations: locations?.length ? locations : undefined,
+      organization_num_employees_ranges: params.companySizes?.length ? params.companySizes : undefined,
+      organization_names: params.companyNames?.length ? params.companyNames.slice(0, 5) : undefined,
+      page: params.page || 1,
+      per_page: Math.min(params.perPage || 25, 100),
     });
 
-    const data = await response.json();
+    const trySearch = async (body: object) => {
+      logger.debug(`[Apollo] Search body`, { body: JSON.stringify(body) });
+      const r = await fetch("https://api.apollo.io/api/v1/mixed_people/api_search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-cache", "X-Api-Key": apiKey },
+        body: JSON.stringify(body),
+      });
+      return { response: r, data: await r.json() };
+    };
 
-    if (!response.ok) {
-      logger.error(`[Apollo] Erreur HTTP ${response.status}`, { body: JSON.stringify(data).slice(0, 300) });
-      return { success: false, error: `Apollo ${response.status}: ${data.message || data.error || JSON.stringify(data).slice(0, 100)}` };
+    // Tentative 1 : titres anglais + locations normalisées
+    let { response: searchResponse, data: searchData } = await trySearch(
+      buildBody(titlesToUse, normalizedLocations)
+    );
+
+    // Fallback 1 : si 0 résultats → tous les titres (FR + EN)
+    if (searchResponse.ok && (searchData.total_entries ?? 0) === 0 && params.personTitles?.length) {
+      logger.debug(`[Apollo] 0 résultats, retry avec tous les titres`);
+      ({ response: searchResponse, data: searchData } = await trySearch(
+        buildBody(params.personTitles, normalizedLocations)
+      ));
     }
 
-    const leads: EnrichedLead[] = (data.people || []).map((person: any) => ({
-      name: `${person.first_name || ""} ${person.last_name || ""}`.trim(),
-      email: person.email,
-      emailVerified: person.email_status === "verified",
-      emailScore: person.email_status === "verified" ? 95 : 0,
-      phone: person.phone_numbers?.[0]?.raw_number,
-      phoneVerified: person.phone_status === "verified",
-      linkedInUrl: person.linkedin_url,
-      company: person.organization?.name || "",
-      jobTitle: person.title,
-      location: person.city || person.state || person.country,
-      industry: person.organization?.industry,
-      companySize: person.organization?.estimated_num_employees,
-      revenue: person.organization?.estimated_annual_revenue,
-      linkedInConnections: person.linkedin_connections,
-      enrichmentData: { ...person, emailSource: "apollo" },
-    }));
+    // Fallback 2 : si 0 résultats → location "France" uniquement
+    if (searchResponse.ok && (searchData.total_entries ?? 0) === 0) {
+      logger.debug(`[Apollo] Encore 0 résultats, retry avec location=France`);
+      ({ response: searchResponse, data: searchData } = await trySearch(
+        buildBody(titlesToUse, ["France"])
+      ));
+    }
+
+    if (!searchResponse.ok) {
+      logger.error(`[Apollo] Search HTTP ${searchResponse.status}`, { body: JSON.stringify(searchData).slice(0, 300) });
+      return { success: false, error: `Apollo ${searchResponse.status}: ${searchData.error || JSON.stringify(searchData).slice(0, 100)}` };
+    }
+
+    const rawPeople: any[] = searchData.people || [];
+    logger.info(`[Apollo] Search OK`, { total: searchData.total_entries, returned: rawPeople.length });
+
+    if (rawPeople.length === 0) return { success: true, leads: [] };
+
+    // ── Étape 2 : Enrichissement par Apollo ID (nom complet + email) ──
+    // On enrichit les personnes avec has_email=true en priorité (par batches de 5)
+    const toEnrich = rawPeople.filter((p: any) => p.has_email);
+    const noEmail = rawPeople.filter((p: any) => !p.has_email);
+
+    const enrichedByApollo: Map<string, any> = new Map();
+
+    if (toEnrich.length > 0) {
+      // Tous en parallèle — Apollo supporte les appels concurrents
+      const results = await Promise.allSettled(
+        toEnrich.map(async (p: any) => {
+          const r = await fetch("https://api.apollo.io/api/v1/people/match", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-cache", "X-Api-Key": apiKey },
+            body: JSON.stringify({ id: p.id, reveal_personal_emails: false, reveal_phone_number: false }),
+          });
+          if (!r.ok) return null;
+          const d = await r.json();
+          return d.person ? { ...p, ...d.person } : null;
+        })
+      );
+      for (const res of results) {
+        if (res.status === "fulfilled" && res.value) {
+          enrichedByApollo.set(res.value.id, res.value);
+        }
+      }
+      logger.info(`[Apollo] People match OK`, {
+        requested: toEnrich.length,
+        enriched: enrichedByApollo.size,
+        withEmail: [...enrichedByApollo.values()].filter((p) => p.email).length,
+      });
+    }
+
+    // Fusionner : données enrichies si disponibles, sinon données brutes du search
+    const allPeople = rawPeople.map((p: any) => enrichedByApollo.get(p.id) ?? p);
+
+    const leads: EnrichedLead[] = allPeople.map((person: any) => {
+      const firstName = person.first_name || "";
+      const lastName = person.last_name || ""; // vide si toujours obfusqué
+      const name = `${firstName} ${lastName}`.trim() || firstName || "Inconnu";
+      const email = person.email || undefined;
+      return {
+        name,
+        email,
+        emailVerified: person.email_status === "verified",
+        emailScore: person.email_status === "verified" ? 95 : email ? 65 : 0,
+        phone: person.phone_numbers?.[0]?.raw_number || undefined,
+        phoneVerified: false,
+        linkedInUrl: person.linkedin_url || undefined,
+        company: person.organization?.name || person.employment_history?.[0]?.organization_name || "",
+        jobTitle: person.title || undefined,
+        location: [person.city, person.state, person.country].filter(Boolean).join(", ") || undefined,
+        industry: person.organization?.industry || undefined,
+        companySize: person.organization?.estimated_num_employees?.toString() || undefined,
+        revenue: person.organization?.estimated_annual_revenue || undefined,
+        linkedInConnections: undefined,
+        enrichmentData: {
+          apolloId: person.id,
+          hasEmail: person.has_email,
+          emailSource: email ? "apollo" : undefined,
+        },
+      };
+    });
 
     return { success: true, leads };
   } catch (error) {
@@ -213,6 +326,8 @@ export interface QualifiedLeadSearch {
   industries?: string[];
   locations?: string[];
   companySizes?: string[];
+  seniorityLevels?: string[];
+  companyNames?: string[];
   keywords?: string[];
   minConnections?: number;
   requireEmail?: boolean;
@@ -281,6 +396,8 @@ export async function findQualifiedLeads(
         industries: search.industries,
         locations: search.locations,
         companySizes: search.companySizes,
+        seniorityLevels: search.seniorityLevels,
+        companyNames: search.companyNames,
         keywords: search.keywords,
         perPage: Math.min(limit, 100),
       });
@@ -316,22 +433,15 @@ export async function findQualifiedLeads(
       }
     }
 
-    // Filtrer selon les critères
-    // Les leads scrapés n'ont pas encore d'email vérifié — l'enrichissement se fait après
-    const hasScrapedLeads = leads.some((l) => (l.enrichmentSources || []).includes("google-scraper"));
+    // Filtrer uniquement sur le téléphone et connections (jamais sur l'email avant enrichissement)
+    // L'email sera filtré APRÈS l'enrichissement email-finder
     leads = leads.filter((lead) => {
-      if (requireEmail && !hasScrapedLeads) {
-        // Seulement en mode Apollo pur : exiger un email vérifié
-        if (!lead.emailVerified) return false;
-      }
       if (search.requirePhone && !lead.phone) return false;
-      if (search.minConnections && (lead.linkedInConnections || 0) < search.minConnections) {
-        return false;
-      }
+      if (search.minConnections && (lead.linkedInConnections || 0) < search.minConnections) return false;
       return true;
     });
 
-    logger.info(`[findQualifiedLeads] Après filtrage`, { leads: leads.length, hasScrapedLeads, requireEmail });
+    logger.info(`[findQualifiedLeads] Avant enrichissement`, { leads: leads.length, requireEmail });
 
     // Vérification d'emails en cascade (Top 1%) ou basique
     if (requireEmail && enrichmentMode === "complete") {
@@ -440,19 +550,30 @@ export async function findQualifiedLeads(
     // Limiter les résultats (Top 1% = meilleurs leads en premier)
     leads = leads.slice(0, limit);
 
-    // Enrichissement LinkedIn : jobTitle, company, location, industry, connections
-    const leadsWithLinkedIn = leads.filter((l) => l.linkedInUrl);
-    if (leadsWithLinkedIn.length > 0) {
-      logger.info(`[LinkedInEnricher] Enrichissement pour ${leadsWithLinkedIn.length} leads`);
+    // Enrichissement LinkedIn : seulement pour les leads sans jobTitle ou sans company (non-Apollo)
+    const leadsNeedingLinkedIn = leads.filter((l) => l.linkedInUrl && (!l.jobTitle || !l.company || l.company === "Non spécifié"));
+    if (leadsNeedingLinkedIn.length > 0) {
+      logger.info(`[LinkedInEnricher] Enrichissement pour ${leadsNeedingLinkedIn.length} leads`);
       leads = await enrichLeadsFromLinkedIn(leads);
+    } else {
+      logger.info(`[LinkedInEnricher] Skippé (leads Apollo déjà enrichis)`);
     }
 
-    // Enrichissement email maison : cherche des vrais emails pour les leads sans email
-    const leadsWithoutEmail = leads.filter((l) => !l.email);
-    if (leadsWithoutEmail.length > 0) {
-      logger.info(`[EmailFinder] Enrichissement email pour ${leadsWithoutEmail.length} leads`);
+    // Enrichissement email maison : seulement pour les leads NON-Apollo sans email
+    // (les leads Apollo sans email ont only a first name → recherches Google peu fiables)
+    const leadsNeedingEmail = leads.filter((l) => !l.email && !l.enrichmentData?.apolloId);
+    if (leadsNeedingEmail.length > 0) {
+      logger.info(`[EmailFinder] Enrichissement email pour ${leadsNeedingEmail.length} leads (non-Apollo)`);
       leads = await enrichLeadsWithEmails(leads);
       logger.info(`[EmailFinder] Emails trouvés: ${leads.filter((l) => l.email).length}/${leads.length}`);
+    } else {
+      logger.info(`[EmailFinder] Skippé (tous les leads viennent d'Apollo)`);
+    }
+
+    // Filtre email APRÈS enrichissement (si l'utilisateur l'exige explicitement)
+    if (requireEmail) {
+      leads = leads.filter((l) => !!l.email);
+      logger.info(`[findQualifiedLeads] Après filtre requireEmail`, { leads: leads.length });
     }
 
     return { success: true, leads };

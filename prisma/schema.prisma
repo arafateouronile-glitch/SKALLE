@@ -20,6 +20,7 @@ model User {
   updatedAt        DateTime    @updatedAt
   stripeCustomerId String?
   suspendedAt      DateTime?
+  isAdmin          Boolean   @default(false)
   accounts         Account[]
   sessions         Session[]
   workspaces       Workspace[]
@@ -1102,4 +1103,48 @@ model AdVariant {
   campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BASE DE CONTACTS GLOBALE — admin uniquement, alimentée par tous les workspaces
+// ─────────────────────────────────────────────────────────────────────────────
+model ContactDB {
+  id              String    @id @default(cuid())
+
+  // Identité
+  firstName       String?
+  lastName        String?
+  email           String?   @unique
+  emailVerified   Boolean   @default(false)
+  emailScore      Int?
+  emailSource     String?   // "apollo" | "google-search" | "website-scrape" | "pattern-mx"
+  phone           String?
+
+  // Profil professionnel
+  linkedInUrl     String?   @unique
+  company         String?
+  jobTitle        String?
+  location        String?
+  industry        String?
+  companySize     String?
+  seniority       String?
+
+  // Source & traçabilité
+  source          String    @default("manual") // "apollo" | "google-scraper" | "manual" | "csv"
+  sourceWorkspaceId String? // workspace qui a trouvé ce contact (analytics)
+  apolloId        String?
+  seenCount       Int       @default(1)  // combien de fois ce contact est apparu
+  tags            String[]
+
+  // Dates
+  lastVerifiedAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([company])
+  @@index([industry])
+  @@index([emailVerified])
+  @@index([source])
+  @@index([createdAt])
+  @@index([seenCount])
 }
