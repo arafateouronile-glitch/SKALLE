@@ -6,7 +6,7 @@
  * des snippets Google pour construire des leads qualifiés.
  */
 
-import { searchGoogle } from "@/lib/ai/serper";
+import { searchGoogle, searchGooglePage } from "@/lib/ai/serper";
 import dns from "dns";
 import { promisify } from "util";
 import { logger } from "@/lib/logger";
@@ -304,10 +304,22 @@ export async function scrapeLeads(
     const query = buildLinkedInSearchQuery(params);
     logger.debug(`[Scraper] Query Google`, { query });
 
-    // Serper free plan supporte max 10 résultats par requête
-    const numResults = Math.min(limit, 10);
-    const results = await searchGoogle(query, numResults);
-    logger.debug(`[Scraper] Résultats Google reçus`, { count: results.length, urls: results.map(r => r.link) });
+    // Serper supporte num jusqu'à 100 par requête + pagination via page
+    // On fait plusieurs requêtes pour atteindre la limite demandée
+    const perPage = 10; // 10 par page = 1 crédit Serper
+    const pagesNeeded = Math.ceil(limit / perPage);
+    const allResults: Awaited<ReturnType<typeof searchGoogle>> = [];
+    for (let page = 1; page <= pagesNeeded && allResults.length < limit * 2; page++) {
+      try {
+        const pageResults = await searchGooglePage(query, perPage, page);
+        if (!pageResults.length) break; // Plus de résultats
+        allResults.push(...pageResults);
+      } catch {
+        break; // Arrêter si erreur (quota, etc.)
+      }
+    }
+    const results = allResults;
+    logger.debug(`[Scraper] Résultats Google reçus`, { count: results.length, pages: pagesNeeded });
 
     // Parser chaque résultat
     let skippedNoLinkedIn = 0, skippedNoName = 0;

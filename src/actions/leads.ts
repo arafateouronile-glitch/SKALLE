@@ -572,7 +572,7 @@ Autres règles:
         searchMode: parsed.searchMode || "linkedin",
         requireEmail: false, // Toujours false : on veut des leads même sans email
         requirePhone: false,
-        limit: Math.min(parsed.limit || 50, 100),
+        limit: Math.min(parsed.limit || 50, 500),
         minRating: parsed.minRating ?? undefined,
       },
       summary: parsed.summary || "",
