@@ -16,7 +16,7 @@
  * - Multi-touch sequences (5-7 touches minimum)
  */
 
-import { getOpenAI, getClaude } from "@/lib/ai/langchain";
+import { getClaude } from "@/lib/ai/langchain";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 
@@ -414,7 +414,7 @@ export async function generatePersonalizedEmail(
     personalizationPoints.push(`Social proof: Similar client`);
   }
 
-  // 3. Génération du contenu avec GPT-4
+  // 3. Génération du contenu avec Claude
   const firstName = prospect.firstName || prospect.name.split(" ")[0];
   const jobTitle = prospect.jobTitle || "dans votre secteur";
   
@@ -447,7 +447,7 @@ Source: Actualités secteur
     }
   }
 
-  // Prompt ultra-personnalisé pour GPT-4
+  // Prompt ultra-personnalisé pour Claude
   const prompt = `
 Tu es un expert en cold email B2B avec un taux de réponse de 20%+ (top 1%).
 
@@ -530,8 +530,8 @@ IMPORTANT: Génère un email PRÊT À ENVOYER, pas un template. Le contenu doit 
 `;
 
   try {
-    const openai = getOpenAI();
-    const completion = await openai.invoke(prompt);
+    const claude = getClaude();
+    const completion = await claude.invoke(prompt);
 
     const contentStr =
       typeof completion.content === "string"

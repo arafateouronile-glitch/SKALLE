@@ -43,7 +43,7 @@ export interface PersonalizedResult {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function hasAIPersonalization(): boolean {
-  return !!process.env.OPENAI_API_KEY;
+  return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
