@@ -74,11 +74,19 @@ export default async function CsoWorkspaceLayout({
     return <UpgradeToCso />;
   }
 
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { credits: true, plan: true },
+  });
+
+  const credits = user?.credits ?? 0;
+  const plan = user?.plan ?? "FREE";
+
   return (
-    <div data-theme="cso" className="min-h-screen bg-[linear-gradient(135deg,oklch(0.98_0.01_270)_0%,oklch(0.99_0.005_260)_50%,oklch(0.96_0.02_280)_100%)] text-gray-900">
-      <SalesSidebar />
-      <div className="lg:pl-[17rem]">
-        <Header user={session.user} workspace="cso" />
+    <div data-theme="cso" className="min-h-screen bg-slate-50 text-gray-900">
+      <SalesSidebar user={session.user} credits={credits} plan={plan} />
+      <div className="lg:pl-[15rem]">
+        <Header user={session.user} workspace="cso" credits={credits} plan={plan} />
         <main className="p-6 animate-stagger">{children}</main>
       </div>
       <Toaster />

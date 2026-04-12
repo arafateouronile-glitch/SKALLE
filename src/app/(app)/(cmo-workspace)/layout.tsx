@@ -92,9 +92,9 @@ export default async function CmoWorkspaceLayout({
 
   return (
     <CreditsProvider credits={credits} plan={plan}>
-      <div data-theme="cmo" className="min-h-screen bg-[linear-gradient(135deg,oklch(0.98_0.005_165)_0%,oklch(0.99_0.002_155)_50%,oklch(0.96_0.02_165)_100%)] text-gray-900">
-        <Sidebar credits={credits} plan={plan} />
-        <div className="lg:pl-[17rem]">
+      <div data-theme="cmo" className="min-h-screen bg-slate-50 text-gray-900">
+        <Sidebar user={session.user} credits={credits} plan={plan} />
+        <div className="lg:pl-[15rem]">
           <Header user={session.user} workspace="cmo" credits={credits} plan={plan} />
           <main className="p-6 animate-stagger">{children}</main>
         </div>

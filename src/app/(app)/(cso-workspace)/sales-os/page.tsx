@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Users,
   Zap,
@@ -11,18 +9,14 @@ import {
   Brain,
   Target,
   MessageCircle,
-  TrendingUp,
   UserPlus,
   Mail,
   CheckCircle2,
   Clock,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DATA FETCHING
-// ═══════════════════════════════════════════════════════════════════════════
 
 async function getSalesDashboardData(userId: string) {
   const workspace = await prisma.workspace.findFirst({
@@ -40,7 +34,6 @@ async function getSalesDashboardData(userId: string) {
     select: { credits: true, plan: true, name: true },
   });
 
-  // Prospect counts by status
   const prospectsByStatus = await prisma.prospect.groupBy({
     by: ["status"],
     where: { workspaceId: workspace.id },
@@ -50,19 +43,16 @@ async function getSalesDashboardData(userId: string) {
   const statusCount = (status: string) =>
     prospectsByStatus.find((p) => p.status === status)?._count ?? 0;
 
-  // New this week
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
   const newThisWeek = await prisma.prospect.count({
     where: { workspaceId: workspace.id, createdAt: { gte: weekAgo } },
   });
 
-  // Active sequences count
   const activeSequences = await prisma.outreachSequence.count({
     where: { workspaceId: workspace.id, isActive: true },
   });
 
-  // Today's Agent Decisions — filtrés sur les types Sales
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -94,38 +84,18 @@ async function getSalesDashboardData(userId: string) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ACTION TYPE CONFIG
-// ═══════════════════════════════════════════════════════════════════════════
-
-const actionTypeConfig: Record<
-  string,
-  { label: string; color: string; icon: React.ElementType }
-> = {
-  PROSPECT_DM: {
-    label: "Message prospect",
-    color: "bg-violet-100 text-violet-700",
-    icon: MessageCircle,
-  },
-  DISCOVERY_SCAN: {
-    label: "Scan concurrent",
-    color: "bg-orange-100 text-orange-700",
-    icon: Target,
-  },
+const actionTypeConfig: Record<string, { label: string; icon: React.ElementType }> = {
+  PROSPECT_DM: { label: "Message prospect", icon: MessageCircle },
+  DISCOVERY_SCAN: { label: "Scan concurrent", icon: Target },
 };
 
-const decisionStatusConfig: Record<string, { label: string; color: string }> =
-  {
-    PENDING: { label: "En attente", color: "bg-amber-100 text-amber-700" },
-    APPROVED: { label: "Approuvé", color: "bg-emerald-100 text-emerald-700" },
-    EXECUTED: { label: "Exécuté", color: "bg-blue-100 text-blue-700" },
-    REJECTED: { label: "Rejeté", color: "bg-red-100 text-red-700" },
-    FAILED: { label: "Échoué", color: "bg-red-100 text-red-700" },
-  };
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PAGE
-// ═══════════════════════════════════════════════════════════════════════════
+const decisionStatusConfig: Record<string, { label: string; dot: string }> = {
+  PENDING: { label: "En attente", dot: "bg-slate-400" },
+  APPROVED: { label: "Approuvé", dot: "bg-emerald-500" },
+  EXECUTED: { label: "Exécuté", dot: "bg-violet-500" },
+  REJECTED: { label: "Rejeté", dot: "bg-slate-500" },
+  FAILED: { label: "Échoué", dot: "bg-slate-500" },
+};
 
 export default async function SalesDashboardPage() {
   const session = await auth();
@@ -135,381 +105,246 @@ export default async function SalesDashboardPage() {
   if (!data) redirect("/login");
 
   const { user, kpis, todaySalesDecisions, isAutopilotActive } = data;
-  const firstName =
-    user?.name?.split(" ")[0] ??
-    session.user.name?.split(" ")[0] ??
-    "là";
+  const firstName = user?.name?.split(" ")[0] ?? session.user.name?.split(" ")[0] ?? "là";
 
-  const conversionRate =
-    kpis.total > 0 ? Math.round((kpis.converted / kpis.total) * 100) : 0;
-
-  const replyRate =
-    kpis.contacted > 0
-      ? Math.round((kpis.replied / kpis.contacted) * 100)
-      : 0;
-
-  const kpiCards = [
-    {
-      title: "Prospects total",
-      value: kpis.total,
-      sub: `+${kpis.newThisWeek} cette semaine`,
-      icon: Users,
-      gradient: "from-violet-500 to-purple-600",
-      href: "/sales-os/prospection",
-    },
-    {
-      title: "Contactés",
-      value: kpis.contacted,
-      sub: "En cours d'outreach",
-      icon: Mail,
-      gradient: "from-blue-500 to-cyan-500",
-      href: "/sales-os/prospection",
-    },
-    {
-      title: "Taux de réponse",
-      value: `${replyRate}%`,
-      sub: `${kpis.replied} réponse(s)`,
-      icon: MessageCircle,
-      gradient: "from-emerald-500 to-teal-500",
-      href: "/sales-os/prospection",
-    },
-    {
-      title: "Convertis",
-      value: kpis.converted,
-      sub: `${conversionRate}% taux de conversion`,
-      icon: CheckCircle2,
-      gradient: "from-amber-400 to-orange-500",
-      href: "/sales-os/prospection",
-    },
-  ];
-
-  const quickActions = [
-    {
-      title: "Trouver des leads",
-      description: "LinkedIn & Google Business",
-      icon: UserPlus,
-      href: "/sales-os/prospection",
-      color: "border-violet-200/60 text-violet-700 hover:bg-violet-50/60",
-      iconBg: "bg-violet-100 text-violet-600",
-    },
-    {
-      title: "Social Prospector",
-      description: "Instagram & Facebook",
-      icon: MessageCircle,
-      href: "/sales-os/social-prospector",
-      color: "border-blue-200/60 text-blue-700 hover:bg-blue-50/60",
-      iconBg: "bg-blue-100 text-blue-600",
-    },
-    {
-      title: "Séquences actives",
-      description: `${kpis.activeSequences} séquence(s) en cours`,
-      icon: Zap,
-      href: "/sales-os/prospection?tab=sequences",
-      color: "border-emerald-200/60 text-emerald-700 hover:bg-emerald-50/60",
-      iconBg: "bg-emerald-100 text-emerald-600",
-    },
-    {
-      title: "Analyser un prospect",
-      description: "Enrichissement & découverte",
-      icon: Target,
-      href: "/sales-os/prospection?tab=leads",
-      color: "border-orange-200/60 text-orange-700 hover:bg-orange-50/60",
-      iconBg: "bg-orange-100 text-orange-600",
-    },
-  ];
+  const conversionRate = kpis.total > 0 ? Math.round((kpis.converted / kpis.total) * 100) : 0;
+  const replyRate = kpis.contacted > 0 ? Math.round((kpis.replied / kpis.contacted) * 100) : 0;
 
   const pipelineStages = [
-    {
-      label: "Nouveaux leads",
-      value: Math.max(
-        0,
-        kpis.total - kpis.contacted - kpis.replied - kpis.converted
-      ),
-      color: "bg-gray-300",
-      textColor: "text-gray-700",
-    },
-    {
-      label: "Contactés",
-      value: kpis.contacted,
-      color: "bg-blue-400",
-      textColor: "text-blue-700",
-    },
-    {
-      label: "En discussion",
-      value: kpis.replied,
-      color: "bg-violet-400",
-      textColor: "text-violet-700",
-    },
-    {
-      label: "Convertis",
-      value: kpis.converted,
-      color: "bg-emerald-400",
-      textColor: "text-emerald-700",
-    },
+    { label: "Nouveaux leads", value: Math.max(0, kpis.total - kpis.contacted - kpis.replied - kpis.converted), pct: 0 },
+    { label: "Contactés", value: kpis.contacted, pct: 0 },
+    { label: "En discussion", value: kpis.replied, pct: 0 },
+    { label: "Convertis", value: kpis.converted, pct: 0 },
+  ].map((s) => ({ ...s, pct: kpis.total > 0 ? Math.round((s.value / kpis.total) * 100) : 0 }));
+
+  const quickActions = [
+    { title: "Trouver des leads", description: "LinkedIn & Google Business", icon: UserPlus, href: "/sales-os/prospection" },
+    { title: "Social Prospector", description: "Instagram & Facebook", icon: MessageCircle, href: "/sales-os/social-prospector" },
+    { title: "Séquences", description: `${kpis.activeSequences} active${kpis.activeSequences !== 1 ? "s" : ""}`, icon: Zap, href: "/sales-os/prospection?tab=sequences" },
+    { title: "Analyser prospect", description: "Enrichissement & découverte", icon: Target, href: "/sales-os/prospection?tab=leads" },
   ];
 
   return (
-    <div className="space-y-8">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 pb-8">
+
+      {/* ── HEADER ── */}
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Bonjour, {firstName} 👋
-          </h1>
-          <p className="text-gray-500 mt-1">
-            {isAutopilotActive
-              ? "Votre agent Sales est actif — vérifiez ses recommandations"
-              : "Voici votre tableau de bord commercial"}
+          <h1 className="text-2xl font-bold text-gray-900">Bonjour, {firstName}</h1>
+          <p className="text-[13px] text-gray-500 mt-0.5">
+            {isAutopilotActive ? "Votre agent Sales est actif" : "Tableau de bord commercial"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1 text-xs font-medium rounded-full bg-violet-50 text-violet-600 border border-violet-200/60">
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="inline-flex items-center rounded-lg bg-violet-50 border border-violet-200 px-3 py-1.5 text-[12px] font-medium text-violet-700">
             Plan {user?.plan ?? "FREE"}
           </span>
           {isAutopilotActive && (
-            <span className="px-3 py-1 text-xs font-medium rounded-full bg-violet-50 text-violet-600 border border-violet-200/60 flex items-center gap-1">
-              <Brain className="h-3 w-3" />
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-50 border border-violet-200 px-3 py-1.5 text-[12px] font-medium text-violet-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse" />
               Sales Autopilot ON
             </span>
           )}
         </div>
       </div>
 
-      {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiCards.map((card) => (
-          <Link key={card.title} href={card.href}>
-            <Card className="bg-white/60 backdrop-blur-sm shadow-sm border border-gray-200/60 hover:shadow-md hover:border-gray-300/60 transition-all cursor-pointer group">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div
-                    className={`p-2.5 rounded-xl bg-gradient-to-br ${card.gradient}`}
-                  >
-                    <card.icon className="h-5 w-5 text-white" />
-                  </div>
-                  <TrendingUp className="h-4 w-4 text-gray-300 group-hover:text-violet-500 transition-colors" />
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{card.value}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{card.title}</p>
-                <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
-              </CardContent>
-            </Card>
+      {/* ── PIPELINE HERO ── */}
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-[15px] font-semibold text-gray-900">Pipeline commercial</h2>
+            <p className="text-[12px] text-gray-500 mt-0.5">{kpis.total} prospects au total</p>
+          </div>
+          <Link href="/sales-os/prospection" className="text-[12px] text-violet-600 hover:text-violet-700 flex items-center gap-1 font-medium">
+            Gérer <ArrowRight className="h-3 w-3" />
           </Link>
-        ))}
+        </div>
+        <div className="p-6 space-y-3">
+          {pipelineStages.map((stage, i) => {
+            const isLast = i === pipelineStages.length - 1;
+            return (
+              <div key={stage.label} className="flex items-center gap-4">
+                <div className="w-28 shrink-0">
+                  <p className="text-[12px] text-gray-600 font-medium truncate">{stage.label}</p>
+                </div>
+                <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className={`h-2.5 rounded-full transition-all duration-700 ${isLast ? "bg-emerald-500" : "bg-violet-500"}`}
+                    style={{ width: `${stage.pct || (stage.value > 0 ? 2 : 0)}%` }}
+                  />
+                </div>
+                <span className={`text-[13px] font-bold w-10 text-right tabular-nums ${isLast ? "text-emerald-600" : "text-gray-700"}`}>
+                  {stage.value}
+                </span>
+                <span className="text-[11px] text-gray-400 w-8 text-right">{stage.pct}%</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 border-t border-gray-100">
+          {[
+            { label: "Total prospects", value: kpis.total, icon: Users, sub: `+${kpis.newThisWeek} cette semaine` },
+            { label: "Contactés", value: kpis.contacted, icon: Mail, sub: "En outreach" },
+            { label: "Taux de réponse", value: `${replyRate}%`, icon: MessageCircle, sub: `${kpis.replied} réponse(s)` },
+            { label: "Convertis", value: kpis.converted, icon: CheckCircle2, sub: `${conversionRate}% taux` },
+          ].map((kpi, i) => (
+            <div key={kpi.label} className={`px-5 py-4 ${i < 3 ? "border-r border-gray-100" : ""}`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <kpi.icon className="h-3.5 w-3.5 text-violet-400" />
+                <span className="text-[11px] text-gray-500 font-medium">{kpi.label}</span>
+              </div>
+              <p className="text-xl font-bold text-gray-900 tabular-nums">{kpi.value}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{kpi.sub}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* ── Main grid: Brief Sales + Pipeline ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-        {/* Brief Sales — 3/5 */}
-        <div className="xl:col-span-3">
-          <Card className="border border-gray-200/60 bg-white/60 backdrop-blur-sm shadow-sm">
-            <div className="p-6 border-b border-gray-100">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600">
-                  <Brain className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold text-gray-900">
-                    Brief Sales du jour
-                  </h2>
-                  <p className="text-xs text-gray-500">
-                    Recommandations de l&apos;agent pour les actions outreach
-                  </p>
-                </div>
-              </div>
+      {/* ── BRIEF SALES + STATS ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
+
+        {/* Brief Sales */}
+        <div className="xl:col-span-3 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0">
+              <Brain className="h-4 w-4 text-violet-600" />
             </div>
-            <div className="p-4 space-y-3">
-              {todaySalesDecisions.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <Zap className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm font-medium">
-                    Aucune recommandation Sales aujourd&apos;hui
-                  </p>
-                  <p className="text-xs mt-1">
-                    {isAutopilotActive
-                      ? "L'agent analysera vos données ce soir"
-                      : "Activez l'Autopilot pour des recommandations quotidiennes"}
-                  </p>
-                </div>
-              ) : (
-                todaySalesDecisions.map((decision) => {
-                  const cfg = actionTypeConfig[decision.actionType] ?? {
-                    label: decision.actionType,
-                    color: "bg-gray-100 text-gray-700",
-                    icon: Zap,
-                  };
-                  const statusCfg = decisionStatusConfig[decision.status] ?? {
-                    label: decision.status,
-                    color: "bg-gray-100 text-gray-600",
-                  };
-                  return (
-                    <div
-                      key={decision.id}
-                      className="flex items-start gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-100"
-                    >
-                      <div className={`p-1.5 rounded-lg mt-0.5 ${cfg.color}`}>
-                        <cfg.icon className="h-3.5 w-3.5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span
-                            className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.color}`}
-                          >
-                            {cfg.label}
-                          </span>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${statusCfg.color}`}
-                          >
-                            {statusCfg.label}
-                          </span>
-                          <span className="text-xs text-gray-400 ml-auto flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            P{decision.priority}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-600 line-clamp-2">
-                          {decision.reasoning}
-                        </p>
-                        {decision.impact && (
-                          <p className="text-xs text-violet-600 mt-1 font-medium">
-                            → {decision.impact}
-                          </p>
-                        )}
-                      </div>
+            <div>
+              <h2 className="text-[14px] font-semibold text-gray-900">Brief Sales du jour</h2>
+              <p className="text-[11px] text-gray-500">Recommandations de l&apos;agent outreach</p>
+            </div>
+          </div>
+          <div className="p-4 space-y-2">
+            {todaySalesDecisions.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">
+                <Zap className="h-8 w-8 mx-auto mb-3 opacity-20" />
+                <p className="text-[13px] font-medium text-gray-500">Aucune recommandation aujourd&apos;hui</p>
+                <p className="text-[12px] mt-1 text-gray-400">
+                  {isAutopilotActive ? "L'agent analysera vos données ce soir" : "Activez l'Autopilot pour des recommandations"}
+                </p>
+              </div>
+            ) : (
+              todaySalesDecisions.map((decision) => {
+                const cfg = actionTypeConfig[decision.actionType] ?? { label: decision.actionType, icon: Zap };
+                const statusCfg = decisionStatusConfig[decision.status] ?? { label: decision.status, dot: "bg-slate-400" };
+                return (
+                  <div key={decision.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
+                    <div className="h-7 w-7 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <cfg.icon className="h-3.5 w-3.5 text-violet-600" />
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </Card>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-[11px] font-semibold text-gray-700">{cfg.label}</span>
+                        <span className="flex items-center gap-1 text-[11px] text-gray-400">
+                          <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
+                          {statusCfg.label}
+                        </span>
+                        <span className="ml-auto text-[11px] text-gray-400 flex items-center gap-1">
+                          <Clock className="h-3 w-3" />P{decision.priority}
+                        </span>
+                      </div>
+                      <p className="text-[12px] text-gray-600 line-clamp-2">{decision.reasoning}</p>
+                      {decision.impact && (
+                        <p className="text-[11px] text-violet-600 mt-1 font-medium">→ {decision.impact}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* Pipeline — 2/5 */}
-        <div className="xl:col-span-2">
-          <Card className="border border-gray-200/60 bg-white/60 backdrop-blur-sm shadow-sm h-full">
-            <div className="p-6 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-gray-900">
-                  Pipeline
-                </h2>
-                <Link
-                  href="/sales-os/prospection"
-                  className="text-xs text-violet-600 hover:text-violet-700 flex items-center gap-1"
-                >
-                  Voir tout <ArrowRight className="h-3 w-3" />
-                </Link>
+        {/* Stats sidebar */}
+        <div className="xl:col-span-2 space-y-4">
+          {/* Performance */}
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <TrendingUp className="h-4 w-4 text-violet-500" />
+              <h3 className="text-[13px] font-semibold text-gray-900">Performance</h3>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                <span className="text-[12px] text-gray-500">Nouveaux (semaine)</span>
+                <span className="text-[13px] font-bold text-gray-900 tabular-nums">+{kpis.newThisWeek}</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                <span className="text-[12px] text-gray-500">Taux de réponse</span>
+                <span className="text-[13px] font-bold text-gray-900 tabular-nums">{replyRate}%</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                <span className="text-[12px] text-gray-500">Conversion</span>
+                <span className="text-[13px] font-bold text-emerald-600 tabular-nums">{conversionRate}%</span>
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <span className="text-[12px] text-gray-500">Séquences actives</span>
+                <span className="text-[13px] font-bold text-violet-600 tabular-nums">{kpis.activeSequences}</span>
               </div>
             </div>
-            <div className="p-4 space-y-3">
-              {pipelineStages.map((stage) => (
-                <div key={stage.label} className="flex items-center gap-3">
-                  <div className="w-28 shrink-0">
-                    <p className="text-xs text-gray-500 truncate">
-                      {stage.label}
-                    </p>
-                  </div>
-                  <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                    <div
-                      className={`h-2 rounded-full ${stage.color} transition-all`}
-                      style={{
-                        width:
-                          kpis.total > 0
-                            ? `${Math.round(
-                                (stage.value / kpis.total) * 100
-                              )}%`
-                            : "0%",
-                      }}
-                    />
-                  </div>
-                  <span
-                    className={`text-sm font-semibold w-8 text-right ${stage.textColor}`}
-                  >
-                    {stage.value}
-                  </span>
-                </div>
-              ))}
+          </div>
 
-              {/* Footer stats */}
-              <div className="pt-3 border-t border-gray-100 space-y-2">
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>Crédits disponibles</span>
-                  <span className="font-semibold text-gray-700">
-                    {user?.credits ?? 0}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge className="text-xs bg-violet-50 text-violet-700 border-violet-200">
-                    {kpis.activeSequences} séquence
-                    {kpis.activeSequences !== 1 ? "s" : ""} active
-                    {kpis.activeSequences !== 1 ? "s" : ""}
-                  </Badge>
-                </div>
-              </div>
+          {/* Crédits */}
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-semibold text-gray-900">Crédits disponibles</span>
+              <span className="text-[13px] font-bold text-violet-600">{user?.credits ?? 0}</span>
             </div>
-          </Card>
+            <p className="text-[11px] text-gray-400">Plan {user?.plan ?? "FREE"}</p>
+            <Link href="/sales-os/settings" className="mt-3 flex items-center gap-1 text-[12px] text-violet-600 hover:text-violet-700 font-medium">
+              Gérer le plan <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
         </div>
       </div>
 
-      {/* ── Quick Actions ── */}
+      {/* ── QUICK ACTIONS ── */}
       <div>
-        <h2 className="text-base font-semibold text-gray-700 mb-3">
-          Actions rapides
-        </h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="mb-3 flex items-center gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Actions rapides</span>
+          <div className="h-px flex-1 bg-gray-100" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {quickActions.map((action) => (
             <Link key={action.title} href={action.href}>
-              <Card
-                className={`bg-white/60 backdrop-blur-sm shadow-sm border transition-all cursor-pointer group ${action.color}`}
-              >
-                <CardContent className="p-4 flex flex-col gap-3">
-                  <div className={`p-2.5 rounded-lg w-fit ${action.iconBg}`}>
-                    <action.icon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900">
-                      {action.title}
-                    </h3>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {action.description}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-gray-300 group-hover:translate-x-1 group-hover:text-gray-600 transition-all mt-auto self-end" />
-                </CardContent>
-              </Card>
+              <div className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-violet-300 hover:shadow-md hover:-translate-y-0.5">
+                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 border border-violet-100">
+                  <action.icon className="h-4 w-4 text-violet-600" />
+                </div>
+                <h3 className="text-[13px] font-semibold text-gray-900">{action.title}</h3>
+                <p className="mt-0.5 text-[12px] text-gray-500">{action.description}</p>
+                <ArrowRight className="mt-3 h-3.5 w-3.5 text-gray-300 transition-all duration-200 group-hover:translate-x-1 group-hover:text-violet-500" />
+              </div>
             </Link>
           ))}
         </div>
       </div>
 
-      {/* ── Autopilot CTA ── */}
+      {/* ── AUTOPILOT CTA ── */}
       {!isAutopilotActive && (
-        <Card className="border border-violet-200/60 bg-gradient-to-r from-violet-50 to-purple-50 shadow-sm">
-          <CardContent className="p-6 flex items-center justify-between gap-6">
+        <div className="relative overflow-hidden rounded-2xl bg-slate-900 border border-slate-800 p-6">
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-600/10 to-transparent pointer-events-none" />
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600">
-                <Brain className="h-6 w-6 text-white" />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 border border-violet-500/30">
+                <Brain className="h-5 w-5 text-violet-400" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">
-                  Activez le Sales Autopilot
-                </h3>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  Votre agent IA identifiera chaque matin les prospects à
-                  contacter et les séquences à lancer.
+                <h3 className="font-semibold text-white">Activez le Sales Autopilot</h3>
+                <p className="mt-0.5 max-w-md text-[13px] text-slate-400">
+                  Votre agent IA identifiera chaque matin les prospects à contacter et les séquences à lancer.
                 </p>
               </div>
             </div>
-            <Button
-              asChild
-              className="bg-violet-600 hover:bg-violet-700 shrink-0"
-            >
+            <Button asChild className="shrink-0 rounded-xl bg-violet-600 px-5 font-medium text-white shadow-sm hover:bg-violet-700 border-0">
               <Link href="/sales-os/settings">
-                <Sparkles className="h-4 w-4 mr-2" />
+                <Sparkles className="mr-2 h-4 w-4" />
                 Activer l&apos;Autopilot
               </Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,18 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bell, LogOut, Settings, User, Menu, Search } from "lucide-react";
+import { Bell, Menu, Search } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./sidebar";
 import { SalesSidebar } from "./sales-sidebar";
@@ -32,103 +22,50 @@ interface HeaderProps {
 
 export function Header({ user, workspace = "cmo", credits = 0, plan = "FREE" }: HeaderProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const nameParts = (user.name ?? "").split(" ").filter(Boolean);
-  const initials =
-    (nameParts.length > 0 ? nameParts.map((n) => n[0]).join("").toUpperCase() : "") ||
-    user.email?.[0]?.toUpperCase() ||
-    "U";
-
   const isCso = workspace === "cso";
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200/60 bg-white/70 px-4 shadow-sm backdrop-blur-xl sm:gap-x-6 sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center gap-x-3 border-b border-gray-200/70 bg-white/80 px-4 backdrop-blur-xl sm:px-6">
         {/* Mobile menu */}
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="lg:hidden text-gray-500">
-              <Menu className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="lg:hidden h-8 w-8 text-gray-500">
+              <Menu className="h-4 w-4" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-72 p-0 bg-white/90 backdrop-blur-xl border-gray-200/60">
+          <SheetContent side="left" className="w-[15rem] p-0 bg-[#0f1117] border-white/[0.06]">
             {isCso ? (
-              <SalesSidebar className="flex w-full h-full flex-col pt-4 pb-4 pl-4" />
+              <SalesSidebar user={user} credits={credits} plan={plan} className="flex w-full h-full flex-col" />
             ) : (
-              <Sidebar credits={credits} plan={plan} className="flex w-full h-full flex-col pt-4 pb-4 pl-4" />
+              <Sidebar user={user} credits={credits} plan={plan} className="flex w-full h-full flex-col" />
             )}
           </SheetContent>
         </Sheet>
 
-        <div className="h-6 w-px bg-gray-200 lg:hidden" />
+        {/* Command Palette trigger */}
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          className={cn(
+            "flex flex-1 max-w-sm items-center gap-2 rounded-lg border bg-gray-50/80 px-3 py-1.5 text-left text-[13px] text-gray-400 transition-all hover:bg-gray-100/80 focus:outline-none focus:ring-1",
+            isCso
+              ? "border-gray-200/80 focus:border-violet-400/50 focus:ring-violet-400/20"
+              : "border-gray-200/80 focus:border-emerald-400/50 focus:ring-emerald-400/20"
+          )}
+        >
+          <Search className={cn("h-3.5 w-3.5 shrink-0", isCso ? "text-violet-400" : "text-emerald-500")} />
+          <span className="flex-1 truncate">Demandez n&apos;importe quoi à l&apos;Agent Skalle...</span>
+          <kbd className="hidden sm:inline-flex h-4 items-center rounded border border-gray-200 px-1 font-mono text-[9px] text-gray-400">
+            ⌘K
+          </kbd>
+        </button>
 
-        <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-          {/* Command Palette trigger — visible "Demandez n'importe quoi à l'Agent Skalle" */}
-          <button
-            type="button"
-            onClick={() => setPaletteOpen(true)}
-            className={cn(
-              "flex flex-1 max-w-md items-center gap-3 rounded-xl border border-gray-200/60 bg-white/80 px-4 py-2.5 text-left text-sm text-gray-500 placeholder:text-gray-400 transition-all hover:opacity-90 focus:outline-none focus:ring-1",
-              isCso
-                ? "focus:border-violet-500/50 focus:ring-violet-500/20"
-                : "focus:border-emerald-500/50 focus:ring-emerald-500/20"
-            )}
-          >
-            <Search className={cn("h-4 w-4 shrink-0", isCso ? "text-violet-500" : "text-emerald-500")} />
-            <span className="flex-1 truncate">
-              Demandez n&apos;importe quoi à l&apos;Agent Skalle...
-            </span>
-            <kbd className="hidden sm:inline-flex h-5 items-center rounded border border-gray-200 px-1.5 font-mono text-[10px] text-gray-400">
-              ⌘K
-            </kbd>
-          </button>
-
-          <div className="flex flex-1 justify-end items-center gap-x-4 lg:gap-x-6">
-            <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700">
-              <Bell className="h-5 w-5" />
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                  <Avatar className={cn("h-9 w-9 border-2", isCso ? "border-violet-500/30" : "border-emerald-500/30")}>
-                    <AvatarImage src={user.image || undefined} alt={user.name || ""} />
-                    <AvatarFallback className={cn("font-semibold text-white", isCso ? "bg-gradient-to-br from-violet-500 to-purple-600" : "bg-gradient-to-br from-emerald-500 to-teal-500")}>
-                      {initials}
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                className="w-56 bg-white/90 shadow-lg backdrop-blur-xl border-gray-200/60"
-                align="end"
-                forceMount
-              >
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-gray-200/60" />
-                <DropdownMenuItem className="text-gray-700 focus:bg-gray-100 focus:text-gray-900 cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  Profil
-                </DropdownMenuItem>
-                <DropdownMenuItem className="text-gray-700 focus:bg-gray-100 focus:text-gray-900 cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Paramètres
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-gray-200/60" />
-                <DropdownMenuItem
-                  className="text-red-500 focus:bg-red-50 focus:text-red-600 cursor-pointer"
-                  onClick={() => signOut({ callbackUrl: "/" })}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Déconnexion
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+        {/* Right actions */}
+        <div className="ml-auto flex items-center gap-x-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-700">
+            <Bell className="h-4 w-4" />
+          </Button>
         </div>
       </header>
 

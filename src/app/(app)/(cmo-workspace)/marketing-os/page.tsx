@@ -13,14 +13,11 @@ import {
   Factory,
   Bot,
   TrendingUp,
+  Activity,
 } from "lucide-react";
 import Link from "next/link";
 import { MorningBrief } from "@/components/modules/agent-brain/morning-brief";
 import { PerformanceChart } from "@/components/modules/agent-brain/performance-chart";
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DATA FETCHING
-// ═══════════════════════════════════════════════════════════════════════════
 
 async function getCommandCenterData(userId: string) {
   const workspace = await prisma.workspace.findFirst({
@@ -104,10 +101,6 @@ async function getCommandCenterData(userId: string) {
   return { workspace, user, todayDecisions, kpiPerf, hasAlerts };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PAGE
-// ═══════════════════════════════════════════════════════════════════════════
-
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -119,144 +112,81 @@ export default async function DashboardPage() {
   const isAutopilotActive = workspace.autopilotConfig?.isActive ?? false;
   const firstName = user?.name?.split(" ")[0] ?? session.user.name?.split(" ")[0] ?? "là";
 
-  const kpiCards = [
-    {
-      title: "Contenus",
-      subtitle: "articles créés",
-      value: workspace._count.posts,
-      icon: FileText,
-      iconGradient: "from-sky-500 to-blue-600",
-      iconBg: "bg-sky-50",
-      accent: "text-sky-600",
-      trend: "text-sky-500",
-      href: "/marketing-os/seo-factory",
-    },
-    {
-      title: "Audits SEO",
-      subtitle: "sites analysés",
-      value: workspace._count.audits,
-      icon: BarChart3,
-      iconGradient: "from-emerald-500 to-teal-600",
-      iconBg: "bg-emerald-50",
-      accent: "text-emerald-600",
-      trend: "text-emerald-500",
-      href: "/marketing-os/seo-factory",
-    },
-    {
-      title: "Décisions IA",
-      subtitle: "actions autonomes",
-      value: workspace._count.agentDecisions,
-      icon: Brain,
-      iconGradient: "from-violet-500 to-purple-600",
-      iconBg: "bg-violet-50",
-      accent: "text-violet-600",
-      trend: "text-violet-500",
-      href: "#brief",
-    },
-    {
-      title: "Crédits",
-      subtitle: "disponibles",
-      value: user?.credits ?? 0,
-      icon: Zap,
-      iconGradient: "from-amber-400 to-orange-500",
-      iconBg: "bg-amber-50",
-      accent: "text-amber-600",
-      trend: "text-amber-500",
-      href: "/marketing-os/settings",
-    },
+  const kpis = [
+    { label: "Contenus", value: workspace._count.posts, icon: FileText, href: "/marketing-os/seo-factory" },
+    { label: "Audits SEO", value: workspace._count.audits, icon: BarChart3, href: "/marketing-os/seo-factory" },
+    { label: "Décisions IA", value: workspace._count.agentDecisions, icon: Brain, href: "#brief" },
+    { label: "Crédits", value: user?.credits ?? 0, icon: Zap, href: "/marketing-os/settings" },
   ];
 
   const quickActions = [
-    {
-      title: "Content Factory",
-      description: "30 posts sociaux en un clic",
-      icon: Factory,
-      href: "/marketing-os/social/factory",
-      iconGradient: "from-purple-500 to-violet-600",
-      hoverBorder: "hover:border-purple-200",
-      hoverBg: "hover:bg-purple-50/50",
-    },
-    {
-      title: "Audit SEO",
-      description: "Analysez et corrigez vos lacunes",
-      icon: BarChart3,
-      href: "/marketing-os/seo-factory",
-      iconGradient: "from-blue-500 to-cyan-500",
-      hoverBorder: "hover:border-blue-200",
-      hoverBg: "hover:bg-blue-50/50",
-    },
-    {
-      title: "Analyser concurrents",
-      description: "Spy pubs & stratégies",
-      icon: Target,
-      href: "/marketing-os/discovery",
-      iconGradient: "from-orange-500 to-red-500",
-      hoverBorder: "hover:border-orange-200",
-      hoverBg: "hover:bg-orange-50/50",
-    },
-    {
-      title: "Agents IA",
-      description: "Automatisez vos tâches marketing",
-      icon: Bot,
-      href: "/marketing-os/autopilot",
-      iconGradient: "from-emerald-500 to-teal-500",
-      hoverBorder: "hover:border-emerald-200",
-      hoverBg: "hover:bg-emerald-50/50",
-    },
+    { title: "Content Factory", description: "30 posts sociaux en un clic", icon: Factory, href: "/marketing-os/social/factory" },
+    { title: "Audit SEO", description: "Analysez vos lacunes", icon: BarChart3, href: "/marketing-os/seo-factory" },
+    { title: "Concurrents", description: "Spy pubs & stratégies", icon: Target, href: "/marketing-os/discovery" },
+    { title: "Agents IA", description: "Automatisez le marketing", icon: Bot, href: "/marketing-os/autopilot" },
   ];
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-6 pb-8">
 
-      {/* ── HEADER compact ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-            Bonjour, {firstName} 👋
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            {isAutopilotActive
-              ? "Votre agent IA est actif — vérifiez son Morning Brief ci-dessous"
-              : "Voici votre tableau de bord marketing"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm">
-            Plan {user?.plan ?? "FREE"}
-          </span>
-          {isAutopilotActive && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-600">
-              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-500" />
-              Autopilot ON
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── KPI CARDS ── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 animate-stagger">
-        {kpiCards.map((card) => (
-          <Link key={card.title} href={card.href}>
-            <div className="group relative cursor-pointer overflow-hidden rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md hover:border-gray-200 hover:-translate-y-0.5">
-              <div className="flex items-start justify-between mb-4">
-                <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${card.iconGradient} shadow-sm`}
-                >
-                  <card.icon className="h-5 w-5 text-white" />
-                </div>
-                <TrendingUp className={`h-4 w-4 ${card.trend} opacity-0 group-hover:opacity-100 transition-opacity`} />
-              </div>
-              <p className="text-2xl font-bold tabular-nums text-gray-900">{card.value}</p>
-              <p className="mt-0.5 text-xs font-semibold text-gray-500">{card.title}</p>
-              <p className="mt-0.5 text-xs text-gray-400">{card.subtitle}</p>
+      {/* ── HERO BANNER ── */}
+      <div className="rounded-2xl bg-slate-900 overflow-hidden">
+        <div className="px-6 py-5 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          {/* Greeting */}
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 shrink-0 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+              <Activity className="h-5 w-5 text-emerald-400" />
             </div>
-          </Link>
-        ))}
+            <div>
+              <h1 className="text-xl font-bold text-white">Bonjour, {firstName}</h1>
+              <p className="text-[13px] text-slate-400 mt-0.5">
+                {isAutopilotActive
+                  ? "Votre agent IA est actif — Morning Brief ci-dessous"
+                  : "Tableau de bord Marketing OS"}
+              </p>
+            </div>
+          </div>
+
+          {/* Status badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.07] border border-white/10 px-3 py-1.5 text-[12px] font-medium text-slate-300">
+              Plan {user?.plan ?? "FREE"}
+            </span>
+            {isAutopilotActive ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 text-[12px] font-medium text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Autopilot actif
+              </span>
+            ) : (
+              <Link href="/marketing-os/settings">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/10 px-3 py-1.5 text-[12px] font-medium text-slate-400 hover:bg-white/10 transition-colors">
+                  <Sparkles className="h-3 w-3" />
+                  Activer l&apos;Autopilot
+                </span>
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 border-t border-white/[0.07]">
+          {kpis.map((kpi, i) => (
+            <Link key={kpi.label} href={kpi.href}>
+              <div className={`px-6 py-4 hover:bg-white/[0.04] transition-colors cursor-pointer ${i < kpis.length - 1 ? "border-r border-white/[0.07]" : ""}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <kpi.icon className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="text-[11px] text-slate-500 font-medium">{kpi.label}</span>
+                </div>
+                <p className="text-2xl font-bold text-white tabular-nums">{kpi.value.toLocaleString("fr-FR")}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* ── MAIN GRID: BRIEF + CHART ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-        <div className="xl:col-span-3" id="brief">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5" id="brief">
+        <div className="xl:col-span-3">
           <MorningBrief
             workspaceId={workspace.id}
             decisions={(Array.isArray(todayDecisions) ? todayDecisions : []).map((d) => ({
@@ -267,11 +197,7 @@ export default async function DashboardPage() {
               impact: d.impact,
               status: d.status,
               linkedPost: d.linkedPost
-                ? {
-                    id: d.linkedPost.id,
-                    type: d.linkedPost.type,
-                    title: d.linkedPost.title,
-                  }
+                ? { id: d.linkedPost.id, type: d.linkedPost.type, title: d.linkedPost.title }
                 : null,
             }))}
             isAutopilotActive={isAutopilotActive}
@@ -293,7 +219,7 @@ export default async function DashboardPage() {
       {/* ── QUICK ACTIONS ── */}
       <div>
         <div className="mb-3 flex items-center gap-3">
-          <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
             Actions rapides
           </span>
           <div className="h-px flex-1 bg-gray-100" />
@@ -301,17 +227,13 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {quickActions.map((action) => (
             <Link key={action.title} href={action.href}>
-              <div
-                className={`group cursor-pointer rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${action.hoverBorder} ${action.hoverBg}`}
-              >
-                <div
-                  className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${action.iconGradient} shadow-sm`}
-                >
-                  <action.icon className="h-4 w-4 text-white" />
+              <div className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-emerald-300 hover:shadow-md hover:-translate-y-0.5">
+                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100">
+                  <action.icon className="h-4 w-4 text-emerald-600" />
                 </div>
-                <h3 className="text-sm font-semibold text-gray-900">{action.title}</h3>
-                <p className="mt-0.5 text-xs text-gray-500">{action.description}</p>
-                <ArrowRight className="mt-3 h-4 w-4 text-gray-300 transition-all duration-200 group-hover:translate-x-1 group-hover:text-gray-500" />
+                <h3 className="text-[13px] font-semibold text-gray-900">{action.title}</h3>
+                <p className="mt-0.5 text-[12px] text-gray-500">{action.description}</p>
+                <ArrowRight className="mt-3 h-3.5 w-3.5 text-gray-300 transition-all duration-200 group-hover:translate-x-1 group-hover:text-emerald-500" />
               </div>
             </Link>
           ))}
@@ -320,23 +242,23 @@ export default async function DashboardPage() {
 
       {/* ── AUTOPILOT CTA ── */}
       {!isAutopilotActive && (
-        <div className="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50 via-indigo-50 to-white p-6 shadow-sm">
-          <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative overflow-hidden rounded-2xl bg-slate-900 border border-slate-800 p-6">
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-600/10 to-transparent pointer-events-none" />
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-md shadow-violet-500/20">
-                <Brain className="h-6 w-6 text-white" />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/30">
+                <Brain className="h-5 w-5 text-emerald-400" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">Activez le Cerveau Central</h3>
-                <p className="mt-0.5 max-w-md text-sm text-gray-500">
-                  Votre agent IA analysera vos données chaque matin et proposera des décisions
-                  marketing prêtes à valider.
+                <h3 className="font-semibold text-white">Activez le Cerveau Central</h3>
+                <p className="mt-0.5 max-w-md text-[13px] text-slate-400">
+                  Votre agent IA analysera vos données chaque matin et proposera des décisions prêtes à valider.
                 </p>
               </div>
             </div>
             <Button
               asChild
-              className="shrink-0 rounded-xl bg-violet-600 px-5 font-medium text-white shadow-sm hover:bg-violet-700"
+              className="shrink-0 rounded-xl bg-emerald-600 px-5 font-medium text-white shadow-sm hover:bg-emerald-700 border-0"
             >
               <Link href="/marketing-os/settings">
                 <Sparkles className="mr-2 h-4 w-4" />
