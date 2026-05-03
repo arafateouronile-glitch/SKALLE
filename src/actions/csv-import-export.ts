@@ -108,21 +108,30 @@ const COLUMN_MAPPINGS: Record<string, string> = {
   fullname: "name",
   phone: "phone",
   mobile: "phone",
+  "work direct phone": "phone",
+  "mobile phone": "phone",
+  "corporate phone": "phone",
+  "home phone": "phone",
   company: "company",
+  "company name": "company",
+  "company name for emails": "company",
   organization: "company",
   employer: "company",
   "job title": "jobTitle",
   title: "jobTitle",
   position: "jobTitle",
   role: "jobTitle",
+  seniority: "jobTitle",
   location: "location",
-  city: "location",
-  country: "location",
+  city: "locationCity",
+  state: "locationState",
+  country: "locationCountry",
   industry: "industry",
   "linkedin url": "linkedInUrl",
   "linkedin profile": "linkedInUrl",
   "profile url": "linkedInUrl",
   "linkedin member profile url": "linkedInUrl",
+  "person linkedin url": "linkedInUrl",
   url: "linkedInUrl",
 };
 
@@ -191,19 +200,19 @@ export async function importProspectsCSV(
       const lead: any = {};
       let firstName = "";
       let lastName = "";
+      let locationCity = "";
+      let locationState = "";
+      let locationCountry = "";
 
       for (const [csvHeader, fieldName] of Object.entries(columnMap)) {
         const value = row[csvHeader]?.trim();
         if (!value) continue;
 
-        if (fieldName === "firstName") {
-          firstName = value;
-          continue;
-        }
-        if (fieldName === "lastName") {
-          lastName = value;
-          continue;
-        }
+        if (fieldName === "firstName") { firstName = value; continue; }
+        if (fieldName === "lastName") { lastName = value; continue; }
+        if (fieldName === "locationCity") { locationCity = value; continue; }
+        if (fieldName === "locationState") { locationState = value; continue; }
+        if (fieldName === "locationCountry") { locationCountry = value; continue; }
 
         lead[fieldName] = value;
       }
@@ -211,6 +220,12 @@ export async function importProspectsCSV(
       // Combiner first name + last name si necessaire
       if (firstName || lastName) {
         lead.name = `${firstName} ${lastName}`.trim() || lead.name;
+      }
+
+      // Combiner city / state / country en une seule localisation
+      if (locationCity || locationState || locationCountry) {
+        const parts = [locationCity, locationState, locationCountry].filter(Boolean);
+        lead.location = parts.join(", ");
       }
 
       // Valider le nom minimum
@@ -267,8 +282,10 @@ export async function previewCSV(
     const headers = parsed.meta.fields || [];
     const mappings: Record<string, string | null> = {};
 
+    const LOCATION_PARTS = new Set(["locationCity", "locationState", "locationCountry"]);
     for (const header of headers) {
-      mappings[header] = mapColumn(header);
+      const mapped = mapColumn(header);
+      mappings[header] = mapped && LOCATION_PARTS.has(mapped) ? "location" : mapped;
     }
 
     // Compter le total de lignes (re-parse sans preview)
