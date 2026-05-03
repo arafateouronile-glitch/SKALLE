@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Plus, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
-import { importLeads } from "@/actions/leads";
+import { importLeadsJSON } from "@/actions/leads";
 import {
   createProspectList,
   getProspectLists,
@@ -109,9 +109,9 @@ export function ImportToListDialog({
 
     setIsImporting(true);
     try {
-      const result = await importLeads(
+      const result = await importLeadsJSON(
         workspaceId,
-        leads,
+        JSON.stringify(leads),
         selectedListId
       );
 

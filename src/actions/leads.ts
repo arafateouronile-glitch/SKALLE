@@ -270,6 +270,22 @@ export async function importLeads(
   }
 }
 
+// Variante qui reçoit les leads sérialisés en JSON string pour éviter
+// la limite de sérialisation des Server Actions (Maximum array nesting exceeded)
+export async function importLeadsJSON(
+  workspaceId: string,
+  leadsJson: string,
+  listId?: string
+): Promise<{ success: boolean; imported?: number; duplicates?: number; errors?: number; error?: string }> {
+  try {
+    const leads = JSON.parse(leadsJson);
+    if (!Array.isArray(leads)) return { success: false, error: "Format invalide" };
+    return importLeads(workspaceId, leads, listId);
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔍 ENRICH LEAD - Enrichir un lead existant
 // ═══════════════════════════════════════════════════════════════════════════
