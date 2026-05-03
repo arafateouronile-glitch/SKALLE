@@ -935,11 +935,13 @@ function SequencesTab({ workspaceId }: { workspaceId: string }) {
   const loadSequences = async () => {
     setIsLoading(true);
     try {
-      const result = await getSequences(workspaceId);
+      const res = await fetch(`/api/sequences?workspaceId=${workspaceId}`);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const result = await res.json();
       if (result.success && result.data) {
         setSequences(result.data);
       }
-    } catch (error) {
+    } catch {
       toast.error("Erreur lors du chargement");
     } finally {
       setIsLoading(false);
