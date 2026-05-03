@@ -153,9 +153,20 @@ export async function getSequences(
         },
         steps: {
           orderBy: { stepNumber: "asc" },
+          select: {
+            id: true,
+            stepNumber: true,
+            channel: true,
+            subject: true,
+            status: true,
+            delayDays: true,
+            sentAt: true,
+            // content exclu — trop lourd pour la sérialisation flight sur grands volumes
+          },
         },
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
 
     return { success: true, data: sequences };

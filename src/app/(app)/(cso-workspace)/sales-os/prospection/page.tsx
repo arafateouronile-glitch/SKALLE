@@ -1170,9 +1170,11 @@ function SequencesTab({ workspaceId }: { workspaceId: string }) {
                           Objet: {step.subject}
                         </div>
                       )}
-                      <div className="text-sm text-gray-700 mb-2">
-                        {step.content.slice(0, 100)}...
-                      </div>
+                      {step.content && (
+                        <div className="text-sm text-gray-700 mb-2">
+                          {step.content.slice(0, 100)}...
+                        </div>
+                      )}
                       <div className="text-xs text-gray-400">
                         Délai: {step.delayDays} jours
                       </div>
