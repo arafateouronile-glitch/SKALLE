@@ -283,12 +283,13 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
     setIsSearching(true);
     try {
       const result = await searchQualifiedLeads(workspaceId, criteria);
-      if (result.success && result.leads) {
-        setLeads(result.leads);
-        toast.success(`${result.leads.length} leads trouvés !`);
+      if (result.success && result.leadsJson) {
+        const parsedLeads = JSON.parse(result.leadsJson);
+        setLeads(parsedLeads);
+        toast.success(`${parsedLeads.length} leads trouvés !`);
 
         // Auto-save dans la base de contacts
-        const contacts = result.leads.map((lead: any) => ({
+        const contacts = parsedLeads.map((lead: any) => ({
           name: lead.name,
           email: lead.email,
           emailVerified: lead.emailVerified,

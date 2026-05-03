@@ -116,6 +116,19 @@ export async function importInteractionsAction(
   }
 }
 
+// Variante JSON pour contourner la limite de sérialisation flight
+export async function importInteractionsJSON(
+  workspaceId: string,
+  interactionsJson: string
+) {
+  try {
+    const interactions: RawInteraction[] = JSON.parse(interactionsJson);
+    return importInteractionsAction(workspaceId, interactions);
+  } catch (error) {
+    return { success: false as const, error: String(error) };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🤖 GÉNÉRATION DE DM
 // ═══════════════════════════════════════════════════════════════════════════

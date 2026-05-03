@@ -91,7 +91,7 @@ const leadSearchSchema = z.object({
 export async function searchQualifiedLeads(
   workspaceId: string,
   search: z.input<typeof leadSearchSchema>
-): Promise<{ success: boolean; leads?: any[]; error?: string }> {
+): Promise<{ success: boolean; leadsJson?: string; error?: string }> {
   try {
     const session = await requireAuth();
 
@@ -149,7 +149,8 @@ export async function searchQualifiedLeads(
       return { success: false, error: result.error || "Erreur de recherche" };
     }
 
-    return { success: true, leads: result.leads };
+    // Retourner les leads en JSON string pour contourner la limite flight React
+    return { success: true, leadsJson: JSON.stringify(result.leads) };
   } catch (error) {
     console.error("Search qualified leads error:", error);
     return { success: false, error: String(error) };
@@ -681,6 +682,7 @@ export async function getSearchCriteria(
     const criteria = await prisma.leadSearchCriteria.findMany({
       where: { workspaceId },
       orderBy: { createdAt: "desc" },
+      take: 50,
     });
 
     return { success: true, data: criteria };

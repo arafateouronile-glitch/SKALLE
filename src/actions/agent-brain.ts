@@ -40,7 +40,15 @@ export async function getTodayBrief(workspaceId: string) {
       createdAt: { gte: todayStart },
     },
     orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
-    include: {
+    take: 50,
+    select: {
+      id: true,
+      actionType: true,
+      reasoning: true,
+      priority: true,
+      impact: true,
+      status: true,
+      createdAt: true,
       linkedPost: {
         select: { id: true, type: true, title: true, status: true },
       },

@@ -53,6 +53,7 @@ export async function getProspectLists(
         workspace: { userId: session.user!.id! },
       },
       orderBy: { createdAt: "desc" },
+      take: 100,
       include: {
         _count: { select: { prospects: true } },
       },

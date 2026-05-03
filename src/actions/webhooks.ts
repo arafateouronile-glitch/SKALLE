@@ -45,6 +45,7 @@ export async function listWebhookEndpointsAction(): Promise<{
   const list = await prisma.webhookEndpoint.findMany({
     where: { workspaceId },
     orderBy: { createdAt: "desc" },
+    take: 100,
   });
 
   return {
