@@ -135,6 +135,20 @@ export async function saveContactsToDb(
   }
 }
 
+// Variante JSON pour contourner la limite de sérialisation flight des Server Actions
+export async function saveContactsToDbJSON(
+  workspaceId: string,
+  contactsJson: string
+): Promise<{ success: boolean; saved: number; updated: number; skipped: number; error?: string }> {
+  try {
+    const contacts = JSON.parse(contactsJson);
+    if (!Array.isArray(contacts)) return { success: false, saved: 0, updated: 0, skipped: 0, error: "Format invalide" };
+    return saveContactsToDb(workspaceId, contacts);
+  } catch (error) {
+    return { success: false, saved: 0, updated: 0, skipped: 0, error: String(error) };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // READ — admin uniquement
 // ─────────────────────────────────────────────────────────────────────────────

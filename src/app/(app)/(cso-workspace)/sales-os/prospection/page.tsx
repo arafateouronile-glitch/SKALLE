@@ -98,7 +98,7 @@ import {
   type QualifiedSearchCriteria,
 } from "@/actions/leads";
 import { getProspectLists } from "@/actions/prospect-lists";
-import { saveContactsToDb } from "@/actions/contact-db";
+import { saveContactsToDbJSON } from "@/actions/contact-db";
 import { ImportToListDialog } from "@/components/prospection/import-to-list-dialog";
 import {
   createSequence,
@@ -305,7 +305,7 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
           apolloId: lead.enrichmentData?.apolloId as string | undefined,
           tags: [],
         }));
-        saveContactsToDb(workspaceId, contacts).then((r) => {
+        saveContactsToDbJSON(workspaceId, JSON.stringify(contacts)).then((r) => {
           if (r.success && (r.saved > 0 || r.updated > 0)) {
             toast.info(`Base contacts : +${r.saved} nouveau${r.saved > 1 ? "x" : ""}, ${r.updated} mis à jour`, { duration: 3000 });
           }
