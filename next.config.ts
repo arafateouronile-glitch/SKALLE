@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
   // Stripe (et autres paquets Node CJS) doit être résolu côté serveur sans bundling Turbopack
   serverExternalPackages: ["stripe"],
 
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
+
   async headers() {
     return [
       {
