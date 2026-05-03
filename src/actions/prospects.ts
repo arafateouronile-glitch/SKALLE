@@ -130,6 +130,19 @@ export async function getProspects(workspaceId: string, listId?: string) {
   return prisma.prospect.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    take: 500,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      emailVerified: true,
+      company: true,
+      jobTitle: true,
+      linkedInUrl: true,
+      status: true,
+      messages: true,
+      // enrichmentData / emailMessages / metadata JSON exclus — trop lourds pour la sérialisation flight
+    },
   });
 }
 
