@@ -21,7 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Loader2, Upload, FileSpreadsheet, Plus, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { importProspectsCSV, previewCSV } from "@/actions/csv-import-export";
+import { previewCSV } from "@/actions/csv-import-export";
 import {
   createProspectList,
   getProspectLists,
@@ -129,11 +129,16 @@ export function CSVImportDialog({
     setStep("importing");
 
     try {
-      const result = await importProspectsCSV(
-        workspaceId,
-        csvContent,
-        selectedListId || undefined
-      );
+      const res = await fetch("/api/csv-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceId,
+          csvContent,
+          listId: selectedListId || null,
+        }),
+      });
+      const result = await res.json();
 
       if (result.success) {
         const parts = [];
