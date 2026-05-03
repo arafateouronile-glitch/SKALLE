@@ -67,38 +67,63 @@ export async function exportProspectsCSV(
 const COLUMN_MAPPINGS: Record<string, string> = {
   // Francais
   nom: "name",
-  prenom: "name",
+  "nom complet": "name",
+  prenom: "firstName",
+  "prénom": "firstName",
+  "nom de famille": "lastName",
   email: "email",
   "e-mail": "email",
+  "adresse email": "email",
+  "adresse e-mail": "email",
   telephone: "phone",
+  "téléphone": "phone",
   tel: "phone",
+  portable: "phone",
   entreprise: "company",
+  "société": "company",
   societe: "company",
+  organisation: "company",
   poste: "jobTitle",
   titre: "jobTitle",
   fonction: "jobTitle",
+  "intitulé du poste": "jobTitle",
   localisation: "location",
   ville: "location",
+  pays: "location",
+  région: "location",
   industrie: "industry",
   secteur: "industry",
+  domaine: "industry",
   linkedin: "linkedInUrl",
   "url linkedin": "linkedInUrl",
+  "lien linkedin": "linkedInUrl",
   // Anglais
   name: "name",
-  "first name": "name",
+  "first name": "firstName",
+  firstname: "firstName",
   "last name": "lastName",
+  lastname: "lastName",
+  surname: "lastName",
   "full name": "name",
+  fullname: "name",
   phone: "phone",
+  mobile: "phone",
   company: "company",
+  organization: "company",
+  employer: "company",
   "job title": "jobTitle",
   title: "jobTitle",
   position: "jobTitle",
+  role: "jobTitle",
   location: "location",
   city: "location",
+  country: "location",
   industry: "industry",
   "linkedin url": "linkedInUrl",
   "linkedin profile": "linkedInUrl",
   "profile url": "linkedInUrl",
+  "linkedin member profile url": "linkedInUrl",
+  url: "linkedInUrl",
 };
 
 function mapColumn(header: string): string | null {
@@ -164,34 +189,35 @@ export async function importProspectsCSV(
 
     for (const row of parsed.data as Record<string, string>[]) {
       const lead: any = {};
-      let hasFirstName = false;
+      let firstName = "";
       let lastName = "";
 
       for (const [csvHeader, fieldName] of Object.entries(columnMap)) {
         const value = row[csvHeader]?.trim();
         if (!value) continue;
 
+        if (fieldName === "firstName") {
+          firstName = value;
+          continue;
+        }
         if (fieldName === "lastName") {
           lastName = value;
           continue;
-        }
-
-        if (fieldName === "name" && csvHeader.toLowerCase().includes("first")) {
-          hasFirstName = true;
         }
 
         lead[fieldName] = value;
       }
 
       // Combiner first name + last name si necessaire
-      if (hasFirstName && lastName) {
-        lead.name = `${lead.name} ${lastName}`.trim();
+      if (firstName || lastName) {
+        lead.name = `${firstName} ${lastName}`.trim() || lead.name;
       }
 
-      // Valider les champs obligatoires
-      if (!lead.name || !lead.company) {
-        continue; // Skip les lignes sans nom ou entreprise
-      }
+      // Valider le nom minimum
+      if (!lead.name) continue;
+
+      // company requis par le schema — on met "" si absent plutot que de skipper
+      if (!lead.company) lead.company = "";
 
       leads.push(lead);
     }

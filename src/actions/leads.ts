@@ -194,15 +194,15 @@ export async function importLeads(
     for (const lead of leads) {
       try {
         // Vérifier si le lead existe deja (par email ou LinkedIn)
-        const existing = await prisma.prospect.findFirst({
-          where: {
-            workspaceId,
-            OR: [
-              ...(lead.email ? [{ email: lead.email }] : []),
-              ...(lead.linkedInUrl && lead.linkedInUrl.length > 0 ? [{ linkedInUrl: lead.linkedInUrl }] : []),
-            ],
-          },
-        });
+        const orConditions = [
+          ...(lead.email ? [{ email: lead.email }] : []),
+          ...(lead.linkedInUrl && lead.linkedInUrl.length > 0 ? [{ linkedInUrl: lead.linkedInUrl }] : []),
+        ];
+        const existing = orConditions.length > 0
+          ? await prisma.prospect.findFirst({
+              where: { workspaceId, OR: orConditions },
+            })
+          : null;
 
         if (existing) {
           // Mettre a jour le lead existant (merge)

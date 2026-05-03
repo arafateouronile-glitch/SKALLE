@@ -92,7 +92,7 @@ export default async function CmoWorkspaceLayout({
 
   return (
     <CreditsProvider credits={credits} plan={plan}>
-      <div data-theme="cmo" className="min-h-screen bg-slate-50 text-gray-900">
+      <div data-theme="cmo" className="min-h-screen" style={{ background: "oklch(0.14 0.018 260)", color: "oklch(0.97 0.005 260)" }}>
         <Sidebar user={session.user} credits={credits} plan={plan} />
         <div className="lg:pl-[15rem]">
           <Header user={session.user} workspace="cmo" credits={credits} plan={plan} />
