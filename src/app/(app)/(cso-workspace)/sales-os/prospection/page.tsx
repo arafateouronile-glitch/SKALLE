@@ -80,6 +80,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
+import { EmailWarmupDashboard } from "@/components/prospection/email-warmup-dashboard";
 import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
 import { CampaignDashboard } from "@/components/campaigns/campaign-dashboard";
 import { CSVImportDialog } from "@/components/prospection/csv-import-dialog";
@@ -2600,7 +2601,10 @@ export default function ProspectionPage() {
         </TabsContent>
 
         <TabsContent value="deliverability">
-          <DeliverabilityTab workspaceId={workspaceId} />
+          <div className="space-y-6">
+            <EmailWarmupDashboard workspaceId={workspaceId} />
+            <DeliverabilityTab workspaceId={workspaceId} />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

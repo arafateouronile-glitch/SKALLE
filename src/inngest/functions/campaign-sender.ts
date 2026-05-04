@@ -10,6 +10,10 @@ import {
   checkWarmupAllowance,
   incrementWarmupCounter,
 } from "./warmup-scheduler";
+import {
+  checkSmtpWarmupAllowance,
+  incrementSmtpWarmupCounter,
+} from "@/actions/warmup";
 
 function injectEmailExtras(html: string, stepId: string, prospectId: string): string {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
@@ -104,8 +108,17 @@ export const launchCampaignFn = inngest.createFunction(
       return checkWarmupAllowance(campaign.workspaceId);
     });
 
-    if (warmup.warmupActive && !warmup.canSend) {
-      // Limite journalière warm-up atteinte : pause automatique
+    // Check per-mailbox SMTP warmup
+    const smtpWarmup = await step.run("check-smtp-warmup", async () => {
+      if (!smtpConfig) return { canSend: true, remainingToday: null, warmupActive: false };
+      return checkSmtpWarmupAllowance(smtpConfig.id);
+    });
+
+    const isBlocked =
+      (warmup.warmupActive && !warmup.canSend) ||
+      (smtpWarmup.warmupActive && !smtpWarmup.canSend);
+
+    if (isBlocked) {
       await step.run("pause-campaign-warmup", async () => {
         await prisma.emailCampaign.update({
           where: { id: campaignId },
@@ -121,7 +134,13 @@ export const launchCampaignFn = inngest.createFunction(
       };
     }
 
-    const warmupRemainingSlots = warmup.remainingToday;
+    // Effective remaining slots: tightest of workspace & mailbox limits
+    const smtpRemaining = smtpWarmup.remainingToday;
+    const wsRemaining = warmup.remainingToday;
+    const warmupRemainingSlots =
+      smtpRemaining !== null && wsRemaining !== null
+        ? Math.min(smtpRemaining, wsRemaining)
+        : smtpRemaining ?? wsRemaining;
 
     // Envoyer les premiers emails un par un avec rate limiting
     for (const sequence of campaign.sequences) {
@@ -210,8 +229,8 @@ export const launchCampaignFn = inngest.createFunction(
               where: { id: sequence.prospect.id },
               data: { status: "CONTACTED" },
             });
-            // Incrémenter le compteur warm-up
             await incrementWarmupCounter(campaign.workspaceId);
+            if (smtpConfig) await incrementSmtpWarmupCounter(smtpConfig.id);
           }
 
           return result;

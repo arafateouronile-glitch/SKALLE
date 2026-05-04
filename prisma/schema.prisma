@@ -588,6 +588,14 @@ model SmtpConfig {
   imapSecure     Boolean         @default(true)
   isDefault      Boolean         @default(false)
   label          String          @default("Principal")
+  // Warm-up per mailbox
+  warmupEnabled     Boolean   @default(false)
+  warmupCompleted   Boolean   @default(false)
+  warmupDay         Int       @default(0)
+  warmupSentToday   Int       @default(0)
+  warmupStartedAt   DateTime?
+  warmupLastResetAt DateTime?
+  warmupTargetVol   Int       @default(100)
   campaigns      EmailCampaign[]
   workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 

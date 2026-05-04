@@ -13,6 +13,7 @@
 import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
 import { getOptimalWarmupPlan } from "@/lib/prospection/deliverability-optimization";
+import { dailyLimitForDay, WARMUP_DURATION } from "@/lib/email/warmup";
 
 // Durée standard du warm-up : 30 jours
 const WARMUP_DURATION_DAYS = 30;
@@ -89,10 +90,65 @@ export const warmupDailyScheduler = inngest.createFunction(
       });
     }
 
+    // ── Per-mailbox SmtpConfig warmup ────────────────────────────────────────
+    const smtpConfigs = await step.run("load-smtp-warmup-configs", async () => {
+      return prisma.smtpConfig.findMany({
+        where: { warmupEnabled: true, warmupCompleted: false },
+        select: {
+          id: true,
+          warmupDay: true,
+          warmupTargetVol: true,
+          warmupLastResetAt: true,
+        },
+      });
+    });
+
+    let smtpUpdated = 0;
+    let smtpCompleted = 0;
+
+    for (const sc of smtpConfigs) {
+      await step.run(`process-smtp-warmup-${sc.id}`, async () => {
+        const now = new Date();
+        const lastReset = sc.warmupLastResetAt ? new Date(sc.warmupLastResetAt) : now;
+        const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
+
+        // Only advance if at least 20 hours have passed (prevents double-counting)
+        if (hoursSinceReset < 20) return;
+
+        const nextDay = sc.warmupDay + 1;
+
+        if (nextDay > WARMUP_DURATION) {
+          await prisma.smtpConfig.update({
+            where: { id: sc.id },
+            data: {
+              warmupEnabled: false,
+              warmupCompleted: true,
+              warmupSentToday: 0,
+              warmupLastResetAt: now,
+            },
+          });
+          smtpCompleted++;
+        } else {
+          await prisma.smtpConfig.update({
+            where: { id: sc.id },
+            data: {
+              warmupDay: nextDay,
+              warmupSentToday: 0,
+              warmupLastResetAt: now,
+            },
+          });
+          smtpUpdated++;
+        }
+      });
+    }
+
     return {
       processed: configs.length,
       updated,
       completed,
+      smtpProcessed: smtpConfigs.length,
+      smtpUpdated,
+      smtpCompleted,
       runAt: new Date().toISOString(),
     };
   }
