@@ -249,50 +249,86 @@ export default function AutopilotPage() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500 bg-clip-text text-transparent flex items-center gap-3">
-            <Zap className="h-8 w-8 text-yellow-500" />
-            Autopilot Control Center
-          </h1>
-          <p className="text-gray-500 mt-1">
-            Votre équipe marketing IA qui travaille 24/7
-          </p>
-        </div>
-
-        {/* Master Toggle */}
-        <div className="flex items-center gap-4">
-          {!canEnable && (
-            <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">
-              <Lock className="h-3 w-3 mr-1" />
-              Plan Business requis
-            </Badge>
-          )}
-          <div className="flex items-center gap-3 bg-white/50 backdrop-blur-sm rounded-xl px-6 py-3 border border-gray-200">
-            <span className="text-sm text-gray-500">Autopilot</span>
-            <button
-              onClick={handleToggle}
-              disabled={isSaving}
-              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                config?.isActive
-                  ? "bg-gradient-to-r from-green-500 to-emerald-500"
-                  : "bg-gray-400"
-              }`}
-            >
+      {/* Hero Header */}
+      <div
+        className="relative overflow-hidden rounded-2xl p-8"
+        style={{
+          background: "linear-gradient(180deg, oklch(0.185 0.02 260 / 0.85), oklch(0.165 0.02 260 / 0.85))",
+          border: "1px solid oklch(0.98 0.01 260 / 0.07)",
+          backdropFilter: "blur(14px)",
+        }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: "linear-gradient(oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px), linear-gradient(90deg, oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        />
+        <div
+          className="absolute pointer-events-none"
+          style={{ top: -100, right: -100, width: 280, height: 280, borderRadius: "50%", background: `radial-gradient(circle, ${config?.isActive ? "oklch(0.74 0.17 158 / 0.15)" : "oklch(0.70 0.18 295 / 0.10)"}, transparent 60%)`, filter: "blur(30px)" }}
+        />
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-mono uppercase mb-3" style={{ letterSpacing: "0.18em", color: "oklch(0.55 0.02 260)" }}>
               <span
-                className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-lg transition-transform ${
-                  config?.isActive ? "translate-x-7" : "translate-x-1"
-                }`}
+                className="inline-block rounded-full"
+                style={{
+                  width: 6, height: 6,
+                  background: config?.isActive ? "oklch(0.74 0.17 158)" : "oklch(0.55 0.02 260)",
+                  animation: config?.isActive ? "pulse-dot 1.8s ease-out infinite" : "none",
+                }}
               />
-            </button>
-            <span
-              className={`text-sm font-medium ${
-                config?.isActive ? "text-green-400" : "text-gray-400"
-              }`}
+              Marketing OS · Autopilot
+            </div>
+            <h1 className="font-bold leading-tight mb-2" style={{ fontSize: 38, letterSpacing: "-0.022em", fontFamily: "var(--font-space-grotesk), system-ui" }}>
+              <span style={{ background: "linear-gradient(135deg, oklch(0.85 0.15 158), oklch(0.78 0.16 75))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                Autopilot
+              </span>{" "}
+              <span style={{ color: "oklch(0.97 0.005 260)" }}>Control Center</span>
+            </h1>
+            <p style={{ color: "oklch(0.63 0.018 260)", fontSize: 14 }}>
+              Votre équipe marketing IA qui travaille 24/7
+            </p>
+          </div>
+
+          {/* Master Toggle */}
+          <div className="flex items-center gap-4 shrink-0">
+            {!canEnable && (
+              <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">
+                <Lock className="h-3 w-3 mr-1" />
+                Plan Business requis
+              </Badge>
+            )}
+            <div
+              className="flex items-center gap-3 rounded-xl px-5 py-3"
+              style={{ background: "oklch(0.18 0.02 260 / 0.55)", border: "1px solid oklch(0.98 0.01 260 / 0.07)" }}
             >
-              {config?.isActive ? "ON" : "OFF"}
-            </span>
+              <span className="text-sm" style={{ color: "oklch(0.63 0.018 260)" }}>Autopilot</span>
+              <button
+                onClick={handleToggle}
+                disabled={isSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  config?.isActive
+                    ? "bg-gradient-to-r from-green-500 to-emerald-500"
+                    : "bg-gray-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full shadow-lg transition-transform ${
+                    config?.isActive ? "translate-x-7" : "translate-x-1"
+                  }`}
+                  style={{ background: "oklch(0.97 0.005 260)" }}
+                />
+              </button>
+              <span
+                className="text-sm font-bold font-mono"
+                style={{ color: config?.isActive ? "oklch(0.74 0.17 158)" : "oklch(0.55 0.02 260)" }}
+              >
+                {config?.isActive ? "ON" : "OFF"}
+              </span>
+            </div>
           </div>
         </div>
       </div>

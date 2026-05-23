@@ -435,6 +435,174 @@
   box-shadow: 0 8px 25px oklch(0.55 0.17 160 / 0.4);
 }
 
+/* ─── CMO Animations globales ────────────────────────────────────────────────
+   Partagées entre le dashboard et les headers des pages CMO.
+   ─────────────────────────────────────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.74 0.17 158 / 0.6); }
+  70%       { box-shadow: 0 0 0 8px oklch(0.74 0.17 158 / 0); }
+}
+
+/* ─── CMO Dark Theme ─────────────────────────────────────────────────────────
+   Le layout [data-theme="cmo"] applique déjà le fond sombre. Ces règles font
+   adopter le thème dark aux composants shadcn/ui et classes Tailwind hardcodées
+   présentes dans les pages CMO — sans modifier chaque fichier page.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* 1. CSS variables shadcn/ui */
+[data-theme="cmo"] {
+  --background:         oklch(0.14 0.018 260);
+  --foreground:         oklch(0.97 0.005 260);
+  --card:               oklch(0.185 0.02 260);
+  --card-foreground:    oklch(0.97 0.005 260);
+  --popover:            oklch(0.185 0.02 260);
+  --popover-foreground: oklch(0.97 0.005 260);
+  --primary:            oklch(0.74 0.17 158);
+  --primary-foreground: oklch(0.12 0.018 260);
+  --secondary:          oklch(0.22 0.02 260);
+  --secondary-foreground: oklch(0.97 0.005 260);
+  --muted:              oklch(0.22 0.02 260);
+  --muted-foreground:   oklch(0.62 0.02 260);
+  --accent:             oklch(0.22 0.02 260);
+  --accent-foreground:  oklch(0.97 0.005 260);
+  --destructive:        oklch(0.68 0.22 22);
+  --border:             oklch(0.98 0.01 260 / 0.07);
+  --input:              oklch(0.98 0.01 260 / 0.10);
+  --ring:               oklch(0.74 0.17 158);
+}
+
+/* 2. Backgrounds blancs/gris → versions dark */
+[data-theme="cmo"] .bg-white {
+  background-color: oklch(0.185 0.02 260);
+}
+[data-theme="cmo"] .bg-white\/50 {
+  background-color: oklch(0.20 0.02 260 / 0.60);
+}
+[data-theme="cmo"] .bg-white\/60 {
+  background-color: oklch(0.185 0.02 260 / 0.85);
+  backdrop-filter: blur(14px);
+}
+[data-theme="cmo"] .bg-white\/70 {
+  background-color: oklch(0.185 0.02 260 / 0.90);
+  backdrop-filter: blur(14px);
+}
+[data-theme="cmo"] .bg-white\/80 {
+  background-color: oklch(0.19 0.02 260 / 0.92);
+  backdrop-filter: blur(14px);
+}
+[data-theme="cmo"] .bg-white\/90 {
+  background-color: oklch(0.19 0.02 260 / 0.95);
+  backdrop-filter: blur(14px);
+}
+[data-theme="cmo"] .bg-gray-50 {
+  background-color: oklch(0.195 0.02 260);
+}
+[data-theme="cmo"] .bg-gray-100 {
+  background-color: oklch(0.22 0.02 260);
+}
+[data-theme="cmo"] .bg-gray-200 {
+  background-color: oklch(0.26 0.02 260);
+}
+
+/* 3. Couleurs de texte gris → spectre clair */
+[data-theme="cmo"] .text-gray-900 { color: oklch(0.97 0.005 260); }
+[data-theme="cmo"] .text-gray-800 { color: oklch(0.90 0.008 260); }
+[data-theme="cmo"] .text-gray-700 { color: oklch(0.83 0.01 260);  }
+[data-theme="cmo"] .text-gray-600 { color: oklch(0.73 0.015 260); }
+[data-theme="cmo"] .text-gray-500 { color: oklch(0.63 0.018 260); }
+[data-theme="cmo"] .text-gray-400 { color: oklch(0.55 0.018 260); }
+[data-theme="cmo"] .text-gray-300 { color: oklch(0.45 0.015 260); }
+
+/* 4. Bordures grises → subtiles (couvre aussi les variantes /60, /80 etc.) */
+[data-theme="cmo"] .border-gray-100,
+[data-theme="cmo"] .border-gray-100\/60,
+[data-theme="cmo"] .border-gray-100\/80 {
+  border-color: oklch(0.98 0.01 260 / 0.05);
+}
+[data-theme="cmo"] .border-gray-200,
+[data-theme="cmo"] .border-gray-200\/60,
+[data-theme="cmo"] .border-gray-200\/80 {
+  border-color: oklch(0.98 0.01 260 / 0.08);
+}
+[data-theme="cmo"] .border-gray-300 { border-color: oklch(0.98 0.01 260 / 0.12); }
+[data-theme="cmo"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: oklch(0.98 0.01 260 / 0.05);
+}
+
+/* 5. Emerald — ajusté pour fond sombre */
+[data-theme="cmo"] .bg-emerald-50  { background-color: oklch(0.74 0.17 158 / 0.12); }
+[data-theme="cmo"] .bg-emerald-100 { background-color: oklch(0.74 0.17 158 / 0.18); }
+[data-theme="cmo"] .text-emerald-600 { color: oklch(0.80 0.17 158); }
+[data-theme="cmo"] .text-emerald-700 { color: oklch(0.76 0.17 158); }
+[data-theme="cmo"] .border-emerald-100 { border-color: oklch(0.74 0.17 158 / 0.18); }
+[data-theme="cmo"] .border-emerald-200 { border-color: oklch(0.74 0.17 158 / 0.30); }
+
+/* 6. Violet / Indigo */
+[data-theme="cmo"] .bg-violet-50  { background-color: oklch(0.70 0.18 295 / 0.12); }
+[data-theme="cmo"] .bg-violet-100 { background-color: oklch(0.70 0.18 295 / 0.18); }
+[data-theme="cmo"] .text-violet-500 { color: oklch(0.76 0.18 295); }
+[data-theme="cmo"] .text-violet-600 { color: oklch(0.75 0.18 295); }
+[data-theme="cmo"] .text-violet-700 { color: oklch(0.72 0.18 295); }
+[data-theme="cmo"] .border-violet-100 { border-color: oklch(0.70 0.18 295 / 0.18); }
+[data-theme="cmo"] .border-violet-200 { border-color: oklch(0.70 0.18 295 / 0.30); }
+
+/* 7. Blue */
+[data-theme="cmo"] .bg-blue-50   { background-color: oklch(0.68 0.18 240 / 0.12); }
+[data-theme="cmo"] .bg-blue-400  { background-color: oklch(0.65 0.18 240); }
+[data-theme="cmo"] .text-blue-600 { color: oklch(0.74 0.18 240); }
+[data-theme="cmo"] .border-blue-200 { border-color: oklch(0.68 0.18 240 / 0.30); }
+
+/* 8. Amber */
+[data-theme="cmo"] .bg-amber-50  { background-color: oklch(0.78 0.16 75 / 0.12); }
+[data-theme="cmo"] .text-amber-600 { color: oklch(0.84 0.16 75); }
+[data-theme="cmo"] .border-amber-200 { border-color: oklch(0.78 0.16 75 / 0.30); }
+
+/* 9. Red / Danger */
+[data-theme="cmo"] .bg-red-50  { background-color: oklch(0.68 0.22 22 / 0.12); }
+[data-theme="cmo"] .text-red-600 { color: oklch(0.74 0.22 22); }
+[data-theme="cmo"] .border-red-200 { border-color: oklch(0.68 0.22 22 / 0.30); }
+
+/* 10. Orange */
+[data-theme="cmo"] .bg-orange-50 { background-color: oklch(0.75 0.18 50 / 0.12); }
+[data-theme="cmo"] .text-orange-700 { color: oklch(0.80 0.18 50); }
+[data-theme="cmo"] .border-orange-200 { border-color: oklch(0.75 0.18 50 / 0.30); }
+
+/* 11. Pink */
+[data-theme="cmo"] .bg-pink-50  { background-color: oklch(0.72 0.18 335 / 0.12); }
+[data-theme="cmo"] .text-pink-700 { color: oklch(0.76 0.18 335); }
+[data-theme="cmo"] .border-pink-200 { border-color: oklch(0.72 0.18 335 / 0.30); }
+
+/* 12. Tabs backdrop (shadcn TabsList avec bg-white explicite) */
+[data-theme="cmo"] [role="tablist"].bg-white\/70,
+[data-theme="cmo"] [role="tablist"].bg-white\/60 {
+  background-color: oklch(0.185 0.02 260 / 0.80);
+  border-color: oklch(0.98 0.01 260 / 0.07);
+}
+
+/* 13. Inputs, selects, textareas — override du ring au focus */
+[data-theme="cmo"] input:focus-visible,
+[data-theme="cmo"] select:focus-visible,
+[data-theme="cmo"] textarea:focus-visible {
+  outline-color: oklch(0.74 0.17 158 / 0.50);
+}
+[data-theme="cmo"] .focus\:border-emerald-500:focus {
+  border-color: oklch(0.74 0.17 158);
+}
+
+/* 14. Page header hero override — variante SEO Factory, etc. */
+[data-theme="cmo"] .from-emerald-50\/80 {
+  --tw-gradient-from: oklch(0.74 0.17 158 / 0.06);
+}
+[data-theme="cmo"] .to-teal-50\/60 {
+  --tw-gradient-to: oklch(0.72 0.15 170 / 0.04);
+}
+[data-theme="cmo"] .from-emerald-100 {
+  --tw-gradient-from: oklch(0.74 0.17 158 / 0.15);
+}
+[data-theme="cmo"] .to-teal-100 {
+  --tw-gradient-to: oklch(0.72 0.15 170 / 0.15);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

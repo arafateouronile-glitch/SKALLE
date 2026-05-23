@@ -813,35 +813,58 @@ export default function SEOFactoryPage() {
         </div>
       )}
       {/* ─── Header ─── */}
-      <div className="relative overflow-hidden rounded-2xl bg-white/70 backdrop-blur-sm border border-gray-200/60 shadow-sm p-8">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/80 via-transparent to-teal-50/60 pointer-events-none" />
+      <div
+        className="relative overflow-hidden rounded-2xl p-8"
+        style={{
+          background: "linear-gradient(180deg, oklch(0.185 0.02 260 / 0.85), oklch(0.165 0.02 260 / 0.85))",
+          border: "1px solid oklch(0.98 0.01 260 / 0.07)",
+          backdropFilter: "blur(14px)",
+        }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: "linear-gradient(oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px), linear-gradient(90deg, oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        />
+        <div
+          className="absolute pointer-events-none"
+          style={{ top: -120, right: -100, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, oklch(0.74 0.17 158 / 0.12), transparent 60%)", filter: "blur(30px)" }}
+        />
         <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight">
-              <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+            <div className="flex items-center gap-2 text-[11px] font-mono uppercase mb-3" style={{ letterSpacing: "0.18em", color: "oklch(0.55 0.02 260)" }}>
+              <span className="inline-block rounded-full" style={{ width: 6, height: 6, background: "oklch(0.74 0.17 158)", animation: "pulse-dot 1.8s ease-out infinite" }} />
+              Marketing OS · SEO
+            </div>
+            <h1 className="font-extrabold leading-tight mb-2" style={{ fontSize: 40, letterSpacing: "-0.022em", fontFamily: "var(--font-space-grotesk), system-ui" }}>
+              <span style={{ background: "linear-gradient(135deg, oklch(0.85 0.15 158), oklch(0.70 0.16 175))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 SEO Factory
               </span>
             </h1>
-            <p className="text-gray-500 mt-2 text-lg max-w-xl">
-              Auditez vos pages, analysez la concurrence et generez des articles
-              optimises en masse avec l&apos;IA.
+            <p style={{ color: "oklch(0.63 0.018 260)", fontSize: 15, maxWidth: 480 }}>
+              Auditez vos pages, analysez la concurrence et générez des articles
+              optimisés en masse avec l&apos;IA.
             </p>
           </div>
 
           {/* Stats counters */}
-          <div className="flex items-center gap-6">
-            <div className="text-center px-5 py-3 rounded-xl bg-white/80 border border-gray-200/60 shadow-sm">
-              <div className="text-3xl font-bold text-gray-900">{totalArticles}</div>
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-0.5">Articles</div>
-            </div>
-            <div className="text-center px-5 py-3 rounded-xl bg-white/80 border border-gray-200/60 shadow-sm">
-              <div className="text-3xl font-bold text-emerald-600">{publishedCount}</div>
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-0.5">Publies</div>
-            </div>
-            <div className="text-center px-5 py-3 rounded-xl bg-white/80 border border-gray-200/60 shadow-sm">
-              <div className="text-3xl font-bold text-teal-600">{avgSeoScore || "--"}</div>
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-0.5">Score SEO</div>
-            </div>
+          <div className="flex items-center gap-4 shrink-0">
+            {[
+              { label: "Articles", value: totalArticles, accent: "oklch(0.97 0.005 260)" },
+              { label: "Publiés", value: publishedCount, accent: "oklch(0.74 0.17 158)" },
+              { label: "Score SEO", value: avgSeoScore || "--", accent: "oklch(0.74 0.17 158)" },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className="text-center px-4 py-3 rounded-xl"
+                style={{ background: "oklch(0.18 0.02 260 / 0.55)", border: "1px solid oklch(0.98 0.01 260 / 0.07)" }}
+              >
+                <div className="font-bold tabular-nums" style={{ fontSize: 28, color: s.accent, fontFamily: "var(--font-space-grotesk), system-ui", letterSpacing: "-0.02em" }}>{s.value}</div>
+                <div className="text-[10px] font-mono uppercase mt-0.5" style={{ letterSpacing: "0.14em", color: "oklch(0.55 0.02 260)" }}>{s.label}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

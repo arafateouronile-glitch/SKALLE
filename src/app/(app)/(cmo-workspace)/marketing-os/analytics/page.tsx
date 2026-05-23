@@ -254,16 +254,59 @@ export default async function AnalyticsPage() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-          <BarChart3 className="h-8 w-8 text-emerald-600" />
-          Analytics
-        </h1>
-        <p className="text-gray-500 mt-1 text-sm">
-          Performances réelles de votre workspace — {counts.posts} contenus ·{" "}
-          {counts.audits} audits · {counts.keywords} mots-clés
-        </p>
+      {/* Hero Header */}
+      <div
+        className="relative overflow-hidden rounded-2xl p-8"
+        style={{
+          background: "linear-gradient(180deg, oklch(0.185 0.02 260 / 0.85), oklch(0.165 0.02 260 / 0.85))",
+          border: "1px solid oklch(0.98 0.01 260 / 0.07)",
+          backdropFilter: "blur(14px)",
+        }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: "linear-gradient(oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px), linear-gradient(90deg, oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        />
+        <div
+          className="absolute pointer-events-none"
+          style={{ top: -120, right: -120, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, oklch(0.74 0.17 158 / 0.10), transparent 60%)", filter: "blur(30px)" }}
+        />
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-mono uppercase mb-3" style={{ letterSpacing: "0.18em", color: "oklch(0.55 0.02 260)" }}>
+              <span className="inline-block rounded-full" style={{ width: 6, height: 6, background: "oklch(0.74 0.17 158)", animation: "pulse-dot 1.8s ease-out infinite" }} />
+              Marketing OS · Analytics
+            </div>
+            <h1 className="font-semibold leading-tight mb-2" style={{ fontSize: 36, letterSpacing: "-0.022em", color: "oklch(0.97 0.005 260)", fontFamily: "var(--font-space-grotesk), system-ui" }}>
+              Analytics &{" "}
+              <span style={{ background: "linear-gradient(135deg, oklch(0.85 0.15 158), oklch(0.70 0.16 175))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                Performance
+              </span>
+            </h1>
+            <p style={{ color: "oklch(0.63 0.018 260)", fontSize: 14 }}>
+              {counts.posts} contenus · {counts.audits} audits · {counts.keywords} mots-clés
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {[
+              { label: "Contenus", value: counts.posts, accent: "oklch(0.74 0.17 158)" },
+              { label: "Décisions IA", value: counts.agentDecisions, accent: "oklch(0.70 0.18 295)" },
+              { label: "Mots-clés", value: counts.keywords, accent: "oklch(0.78 0.16 75)" },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className="text-center px-4 py-3 rounded-xl"
+                style={{ background: "oklch(0.18 0.02 260 / 0.55)", border: "1px solid oklch(0.98 0.01 260 / 0.07)" }}
+              >
+                <p className="font-bold tabular-nums" style={{ fontSize: 26, color: s.accent, fontFamily: "var(--font-space-grotesk), system-ui", letterSpacing: "-0.02em" }}>{s.value}</p>
+                <p className="text-[10px] font-mono uppercase mt-0.5" style={{ letterSpacing: "0.14em", color: "oklch(0.55 0.02 260)" }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* KPI Cards */}
