@@ -145,10 +145,21 @@ function Sparkline({ data, accent = "emerald", height = 36 }: { data: number[]; 
 
 function PerformanceChart({ postsByDay }: { postsByDay: Record<string, { total: number; published: number }> }) {
   const days = Object.keys(postsByDay).sort().slice(-30);
+
+  const W = 400, H = 120;
+
+  // Need at least 2 points to draw a meaningful path
+  if (days.length < 2) {
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full opacity-20" style={{ height: 120 }}>
+        <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke={C.emerald} strokeWidth="1.5" strokeDasharray="6 4" />
+      </svg>
+    );
+  }
+
   const revenueData = days.map((_, i) => 40 + Math.sin(i * 0.4) * 20 + i * 2.5);
   const spendData   = days.map((_, i) => 18 + Math.cos(i * 0.3) * 8  + i * 0.8);
 
-  const W = 400, H = 120;
   const maxV = Math.max(...revenueData, ...spendData, 1);
   const pt = (arr: number[]) => arr.map((v, i) => {
     const x = (i / Math.max(arr.length - 1, 1)) * W;
@@ -159,7 +170,9 @@ function PerformanceChart({ postsByDay }: { postsByDay: Record<string, { total: 
   const spdPts = pt(spendData);
   const revPath = revPts.map((p, i) => (i === 0 ? `M${p}` : `L${p}`)).join(" ");
   const spdPath = spdPts.map((p, i) => (i === 0 ? `M${p}` : `L${p}`)).join(" ");
-  const revFill = `${revPath} L${W},${H} L0,${H} Z`;
+  const firstRev = revPts[0];
+  const lastRev  = revPts[revPts.length - 1];
+  const revFill  = `${revPath} L${lastRev.split(",")[0]},${H} L${firstRev.split(",")[0]},${H} Z`;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 120 }}>
