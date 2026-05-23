@@ -135,6 +135,47 @@ function calcViralScore(
 // APIFY
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Lance un actor Apify en mode asynchrone — retourne le runId immédiatement (<1s) */
+export async function startApifyRun(actorId: string, input: unknown): Promise<string> {
+  const token = process.env.APIFY_API_TOKEN;
+  if (!token) throw new Error("APIFY_API_TOKEN manquant");
+
+  const res = await fetch(`${APIFY_API_BASE}/acts/${actorId}/runs?token=${token}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Apify start failed (${res.status}): ${await res.text()}`);
+  const json = await res.json() as { data: { id: string } };
+  return json.data.id;
+}
+
+/** Récupère le statut d'un run Apify */
+export async function getApifyRunStatus(runId: string): Promise<"RUNNING" | "SUCCEEDED" | "FAILED" | "ABORTED"> {
+  const token = process.env.APIFY_API_TOKEN;
+  if (!token) throw new Error("APIFY_API_TOKEN manquant");
+
+  const res = await fetch(`${APIFY_API_BASE}/actor-runs/${runId}?token=${token}`, {
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) throw new Error(`Apify status failed (${res.status})`);
+  const json = await res.json() as { data: { status: string } };
+  return json.data.status as ReturnType<typeof getApifyRunStatus> extends Promise<infer U> ? U : never;
+}
+
+/** Récupère les items du dataset d'un run terminé */
+export async function fetchApifyRunItems<T>(runId: string): Promise<T[]> {
+  const token = process.env.APIFY_API_TOKEN;
+  if (!token) throw new Error("APIFY_API_TOKEN manquant");
+
+  const res = await fetch(`${APIFY_API_BASE}/actor-runs/${runId}/dataset/items?token=${token}&clean=true`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Apify fetch items failed (${res.status})`);
+  return res.json() as Promise<T[]>;
+}
+
 export async function runApifyActor<T>(actorId: string, input: unknown): Promise<T[]> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN manquant");
@@ -276,6 +317,79 @@ function normalizeCountry(raw?: string): string | null {
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Sauvegarde les items LinkedIn d'un run Apify terminé */
+export async function collectLinkedInRun(runId: string, queries: string[]): Promise<number> {
+  const items = await fetchApifyRunItems<ApifyLinkedInPost>(runId);
+  let saved = 0;
+  for (const item of items) {
+    const content = item.text ?? item.description ?? "";
+    const url = item.postUrl ?? item.url ?? "";
+    if (!content || !url) continue;
+    const likes = item.likesCount ?? 0;
+    const comments = item.commentsCount ?? 0;
+    const shares = item.sharesCount ?? 0;
+    const views = item.numViews;
+    const country = normalizeCountry(item.authorLocation ?? item.location);
+    const niche = queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
+    try {
+      await prisma.viralPost.upsert({
+        where: { postUrl: url },
+        update: { likes, comments, shares, views, viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views), ...(country && { country }) },
+        create: {
+          platform: "LINKEDIN", content,
+          authorName: item.authorFullName ?? item.authorName ?? "Anonyme",
+          authorHandle: item.authorUsername, authorAvatar: item.profilePicture,
+          likes, comments, shares, views,
+          viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
+          postUrl: url,
+          postedAt: item.postedAt ?? item.postedDate ? new Date((item.postedAt ?? item.postedDate)!) : null,
+          hookType: detectHookType(content), niche, country: country ?? null,
+        },
+      });
+      saved++;
+    } catch { /* duplicate */ }
+  }
+  return saved;
+}
+
+/** Sauvegarde les items Twitter d'un run Apify terminé */
+export async function collectTwitterRun(runId: string, queries: string[]): Promise<number> {
+  const items = await fetchApifyRunItems<ApifyTwitterPost>(runId);
+  let saved = 0;
+  for (const item of items) {
+    const content = item.full_text ?? item.text ?? "";
+    const url = item.url ?? "";
+    if (!content || !url) continue;
+    const likes = item.favorite_count ?? 0;
+    const shares = item.retweet_count ?? 0;
+    const comments = item.reply_count ?? 0;
+    const views = item.views?.count;
+    const user = item.user ?? (item.author as typeof item.user);
+    const rawLocation = user?.location ?? (item.author as { location?: string })?.location;
+    const country = normalizeCountry(rawLocation);
+    const niche = item.searchTerm ?? queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
+    try {
+      await prisma.viralPost.upsert({
+        where: { postUrl: url },
+        update: { likes, comments, shares, views, viralScore: calcViralScore("TWITTER", likes, comments, shares, views), ...(country && { country }) },
+        create: {
+          platform: "TWITTER", content,
+          authorName: user?.name ?? "Anonyme",
+          authorHandle: (user as { screen_name?: string })?.screen_name ?? (user as { userName?: string })?.userName,
+          authorAvatar: (user as { profile_image_url_https?: string })?.profile_image_url_https ?? (user as { profilePicture?: string })?.profilePicture,
+          likes, comments, shares, views,
+          viralScore: calcViralScore("TWITTER", likes, comments, shares, views),
+          postUrl: url,
+          postedAt: item.created_at ?? item.createdAt ? new Date((item.created_at ?? item.createdAt)!) : null,
+          hookType: detectHookType(content), niche, country: country ?? null,
+        },
+      });
+      saved++;
+    } catch { /* duplicate */ }
+  }
+  return saved;
+}
 
 export async function scrapeViralPosts(options: ScrapeOptions): Promise<ScrapeResult> {
   const { queries, maxPostsPerPlatform = 50 } = options;
