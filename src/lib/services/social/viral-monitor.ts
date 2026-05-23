@@ -135,7 +135,7 @@ function calcViralScore(
 // APIFY
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function runApifyActor<T>(actorId: string, input: unknown): Promise<T[]> {
+export async function runApifyActor<T>(actorId: string, input: unknown): Promise<T[]> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN manquant");
 

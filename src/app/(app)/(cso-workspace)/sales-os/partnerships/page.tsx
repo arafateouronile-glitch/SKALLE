@@ -32,6 +32,7 @@ import {
   TrendingUp,
   Instagram,
   Youtube,
+  Linkedin,
   ExternalLink,
   Handshake,
   Zap,
@@ -44,7 +45,7 @@ import { cn } from "@/lib/utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-type SocialPlatform = "INSTAGRAM" | "TIKTOK" | "YOUTUBE";
+type SocialPlatform = "INSTAGRAM" | "TIKTOK" | "YOUTUBE" | "LINKEDIN";
 type RadarMode = "social" | "seo";
 
 interface SocialPartner {
@@ -206,6 +207,7 @@ function PlatformIcon({ platform, size = 16 }: { platform: SocialPlatform; size?
   const s = `h-${size === 14 ? 3.5 : 4} w-${size === 14 ? 3.5 : 4}`;
   if (platform === "YOUTUBE") return <Youtube className={cn(s, "text-red-400")} />;
   if (platform === "INSTAGRAM") return <Instagram className={cn(s, "text-pink-400")} />;
+  if (platform === "LINKEDIN") return <Linkedin className={cn(s, "text-blue-400")} />;
   return <Zap className={cn(s, "text-white")} />; // TikTok
 }
 
@@ -627,8 +629,9 @@ export default function PartnershipsPage() {
                       </SelectTrigger>
                       <SelectContent className="bg-[#1a1d2e] border-white/15 text-white">
                         <SelectItem value="INSTAGRAM">Instagram</SelectItem>
-                        <SelectItem value="TIKTOK">TikTok</SelectItem>
+                        <SelectItem value="LINKEDIN">LinkedIn</SelectItem>
                         <SelectItem value="YOUTUBE">YouTube</SelectItem>
+                        <SelectItem value="TIKTOK">TikTok</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

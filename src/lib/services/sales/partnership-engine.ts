@@ -1,8 +1,8 @@
 /**
  * 🤝 Partnership Engine — Channel Sales Module
  *
- * Moteur A : Social Influencer Radar (Instagram / TikTok / YouTube)
- *   → Mock Apify/Modash API + pitch IA personnalisé
+ * Moteur A : Social Influencer Radar (Instagram / LinkedIn / YouTube)
+ *   → Apify (Instagram, LinkedIn) + YouTube Data API v3 + pitch IA personnalisé
  *
  * Moteur B : SEO Blog Affiliate Radar (via Serper.dev)
  *   → Google SERP top-10 sur un mot-clé + email IA personnalisé
@@ -15,10 +15,15 @@ import { getClaude, getStringParser } from "@/lib/ai/langchain";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import prisma from "@/lib/prisma";
 import { SourceType, type Prisma } from "@prisma/client";
+import {
+  scrapeInstagramInfluencers,
+  scrapeYouTubeInfluencers,
+  scrapeLinkedInInfluencers,
+} from "./influencer-scrapers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type SocialPlatform = "INSTAGRAM" | "TIKTOK" | "YOUTUBE";
+export type SocialPlatform = "INSTAGRAM" | "TIKTOK" | "YOUTUBE" | "LINKEDIN";
 
 export interface SocialPartner {
   username: string;
@@ -133,7 +138,22 @@ export async function findSocialPartners(
   maxFollowers: number,
   platform: SocialPlatform
 ): Promise<SocialPartner[]> {
-  return mockInfluencerDatabase(niche, minFollowers, maxFollowers, platform);
+  let real: SocialPartner[] = [];
+
+  if (platform === "INSTAGRAM") {
+    real = await scrapeInstagramInfluencers(niche, minFollowers, maxFollowers, 15);
+  } else if (platform === "YOUTUBE") {
+    real = await scrapeYouTubeInfluencers(niche, minFollowers, maxFollowers, 15);
+  } else if (platform === "LINKEDIN") {
+    real = await scrapeLinkedInInfluencers(niche, minFollowers, maxFollowers, 15);
+  }
+
+  // Fallback vers mock si aucun résultat ou token manquant
+  if (real.length === 0) {
+    return mockInfluencerDatabase(niche, minFollowers, maxFollowers, platform);
+  }
+
+  return real;
 }
 
 export async function generateInfluencerPitch(
