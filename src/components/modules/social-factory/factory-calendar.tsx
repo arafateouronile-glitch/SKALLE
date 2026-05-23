@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,6 +16,8 @@ import {
   Twitter,
   Instagram,
   Video,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import {
   format,
@@ -69,6 +71,14 @@ export function FactoryCalendar({ posts: initialPosts, month, year, workspaceId 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [posts, setPosts] = useState(initialPosts);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [linkedInStatus, setLinkedInStatus] = useState<{ connected: boolean; name?: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/integrations/linkedin/status")
+      .then((r) => r.ok ? r.json() : { connected: false })
+      .then((s: { connected: boolean; name?: string }) => setLinkedInStatus(s))
+      .catch(() => setLinkedInStatus({ connected: false }));
+  }, []);
 
   const handlePublish = async (postId: string) => {
     setPublishingId(postId);
@@ -108,6 +118,28 @@ export function FactoryCalendar({ posts: initialPosts, month, year, workspaceId 
     <div className="flex gap-6">
       {/* Calendar Grid */}
       <div className="flex-1">
+        {/* LinkedIn status banner */}
+        {linkedInStatus !== null && (
+          <div className={`flex items-center gap-2 rounded-lg px-3 py-2 mb-4 text-[12px] font-medium border ${
+            linkedInStatus.connected
+              ? "bg-blue-50 border-blue-200 text-blue-700"
+              : "bg-amber-50 border-amber-200 text-amber-700"
+          }`}>
+            <Linkedin className="h-3.5 w-3.5 flex-shrink-0" />
+            {linkedInStatus.connected ? (
+              <>
+                <CheckCircle2 className="h-3 w-3 text-blue-500" />
+                LinkedIn connecté — {linkedInStatus.name ?? "compte"} · Publication automatique active
+              </>
+            ) : (
+              <>
+                <XCircle className="h-3 w-3 text-amber-500" />
+                LinkedIn non connecté — <a href="/marketing-os/settings?tab=integrations" className="underline">Connecter mon compte</a> pour activer la publication automatique
+              </>
+            )}
+          </div>
+        )}
+
         {/* Month navigation */}
         <div className="flex items-center justify-between mb-4">
           <Button variant="ghost" size="sm" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>

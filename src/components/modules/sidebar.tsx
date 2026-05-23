@@ -27,6 +27,7 @@ import {
   Cpu,
   AlertCircle,
   Flame,
+  BarChart2,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -80,6 +81,7 @@ const sections: NavSection[] = [
       { name: "SEO Factory", href: "/marketing-os/seo-factory", icon: FileText },
       { name: "Content Factory", href: "/marketing-os/social/factory", icon: Factory },
       { name: "Veille Virale", href: "/marketing-os/social/veille", icon: Flame },
+      { name: "Social Analytics", href: "/marketing-os/social/analytics", icon: BarChart2 },
       { name: "Calendrier", href: "/marketing-os/content", icon: CalendarDays },
       { name: "Images IA", href: "/marketing-os/images", icon: Image },
     ],

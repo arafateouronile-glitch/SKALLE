@@ -190,7 +190,10 @@ model Post {
   abTestScore      Int?
   abTestVariant    String?
   abTestWinner     Boolean?
+  slides           Json?
+  isCarousel       Boolean         @default(false)
   agentDecisions   AgentDecision[]
+  postInsights     PostInsight[]
   batchJob         BatchJob?       @relation(fields: [batchJobId], references: [id])
   contentPlan      ContentPlan?    @relation(fields: [contentPlanId], references: [id])
   workspace        Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -1209,6 +1212,26 @@ model ViralPost {
   @@index([scrapedAt])
   @@index([niche])
   @@index([country])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POST INSIGHTS — Analytics LinkedIn per post (synced via API)
+// ═══════════════════════════════════════════════════════════════════════════
+
+model PostInsight {
+  id             String   @id @default(cuid())
+  postId         String
+  fetchedAt      DateTime @default(now())
+  likes          Int      @default(0)
+  comments       Int      @default(0)
+  shares         Int      @default(0)
+  impressions    Int      @default(0)
+  engagementRate Float?
+  followerCount  Int?
+  post           Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([fetchedAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

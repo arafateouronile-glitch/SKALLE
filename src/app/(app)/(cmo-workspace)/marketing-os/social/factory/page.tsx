@@ -4,8 +4,9 @@ import { useState, useCallback, useEffect } from "react";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Factory, LayoutGrid, Calendar as CalendarIcon, Sparkles, Repeat2, Megaphone } from "lucide-react";
+import { Factory, LayoutGrid, Calendar as CalendarIcon, Sparkles, Repeat2, Megaphone, Layers } from "lucide-react";
 import { StrategyForm } from "@/components/modules/social-factory/strategy-form";
+import { CarouselEditor } from "@/components/modules/social-factory/carousel-editor";
 import { GenerationProgress } from "@/components/modules/social-factory/generation-progress";
 import { ProposalWall } from "@/components/modules/social-factory/proposal-wall";
 import { FactoryCalendar } from "@/components/modules/social-factory/factory-calendar";
@@ -167,6 +168,10 @@ export default function ContentFactoryPage() {
             <Megaphone className="h-4 w-4" />
             Campagnes
           </TabsTrigger>
+          <TabsTrigger value="carousel" className="gap-2">
+            <Layers className="h-4 w-4" />
+            Carrousel
+          </TabsTrigger>
         </TabsList>
 
         {/* Tab 1: Strategy */}
@@ -214,6 +219,22 @@ export default function ContentFactoryPage() {
         {/* Tab 5: Campagnes */}
         <TabsContent value="campaign">
           <CampaignTab />
+        </TabsContent>
+
+        {/* Tab 6: Carrousel LinkedIn */}
+        <TabsContent value="carousel">
+          <div className="max-w-3xl mx-auto">
+            <div className="mb-5">
+              <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <Layers className="h-5 w-5 text-violet-500" />
+                Créer un carrousel LinkedIn
+              </h2>
+              <p className="text-[13px] text-gray-500 mt-0.5">
+                Le format le plus viral de LinkedIn en 2025 — génère un PDF multi-slides et publie directement.
+              </p>
+            </div>
+            <CarouselEditor />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

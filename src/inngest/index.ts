@@ -38,6 +38,7 @@ import { syncGscDataDaily } from "./functions/gsc-sync";
 import { warmupDailyScheduler } from "./functions/warmup-scheduler";
 import { scheduledPostPublisher } from "./functions/scheduled-publisher";
 import { runSuperscaleAd } from "./functions/superscale-ads";
+import { syncPostAnalyticsCron, syncPostAnalyticsManual } from "./functions/sync-post-analytics";
 
 // Export all Inngest functions
 export const functions = [
@@ -82,4 +83,7 @@ export const functions = [
   // Viral Monitor — Veille posts viraux LinkedIn & Twitter
   scrapeViralPostsCron,
   scrapeViralPostsManual,
+  // Social Analytics — Sync LinkedIn post metrics
+  syncPostAnalyticsCron,
+  syncPostAnalyticsManual,
 ];

@@ -13,6 +13,7 @@ import { useState } from "react";
 import type { PostType } from "@prisma/client";
 import { ViralScoreWidget } from "@/components/modules/social-veille/viral-score-widget";
 import { AbTestDialog } from "./ab-test-dialog";
+import { LinkedInPreview } from "./linkedin-preview";
 import { FlaskConical } from "lucide-react";
 
 const NETWORK_LABELS: Record<string, string> = {
@@ -41,6 +42,7 @@ interface PostPreviewDialogProps {
     excerpt: string | null;
     status: string;
     scheduledAt: string | null;
+    isCarousel?: boolean;
   } | null;
 }
 
@@ -91,23 +93,41 @@ export function PostPreviewDialog({ open, onClose, post }: PostPreviewDialogProp
             />
           )}
 
-          <div className="relative">
-            <div className="bg-gray-50 rounded-lg p-4 whitespace-pre-wrap text-sm leading-relaxed">
-              {post.content}
+          {post.type === "LINKEDIN" ? (
+            <div className="space-y-2">
+              <LinkedInPreview
+                content={post.content}
+                imageUrl={post.imageUrl}
+                isCarousel={post.isCarousel}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full h-7 text-[11px] text-gray-500 border border-gray-200"
+                onClick={handleCopy}
+              >
+                {copied ? <><Check className="h-3.5 w-3.5 mr-1 text-emerald-600" />Copié</> : <><Copy className="h-3.5 w-3.5 mr-1" />Copier le texte</>}
+              </Button>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="absolute top-2 right-2"
-              onClick={handleCopy}
-            >
-              {copied ? (
-                <Check className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
+          ) : (
+            <div className="relative">
+              <div className="bg-gray-50 rounded-lg p-4 whitespace-pre-wrap text-sm leading-relaxed">
+                {post.content}
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="absolute top-2 right-2"
+                onClick={handleCopy}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          )}
 
           {post.excerpt && post.type === "INSTAGRAM" && (
             <div>

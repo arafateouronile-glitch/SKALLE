@@ -82,6 +82,132 @@ export async function publishLinkedInPost(
 }
 
 /**
+ * Upload un PDF comme document LinkedIn (pour les carrousels).
+ * Retourne l'assetUrn à passer à publishLinkedInDocumentPost.
+ */
+export async function uploadLinkedInDocument(
+  workspaceId: string,
+  pdfBuffer: ArrayBuffer,
+  filename = "carousel.pdf"
+): Promise<{ success: boolean; assetUrn?: string; error?: string }> {
+  const token = await getLinkedInToken(workspaceId);
+  if (!token) return { success: false, error: "LinkedIn non connecté" };
+
+  try {
+    // 1. Enregistrer l'upload document
+    const registerRes = await fetch(`${LINKEDIN_API}/assets?action=registerUpload`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token.accessToken}`,
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+      },
+      body: JSON.stringify({
+        registerUploadRequest: {
+          recipes: ["urn:li:digitalmediaRecipe:feedshare-document"],
+          owner: token.personUrn,
+          serviceRelationships: [
+            { relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" },
+          ],
+        },
+      }),
+    });
+
+    if (!registerRes.ok) {
+      const err = await registerRes.text();
+      return { success: false, error: `Register upload failed: ${err}` };
+    }
+
+    const registerData = await registerRes.json() as {
+      value: {
+        asset: string;
+        uploadMechanism: {
+          "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest": { uploadUrl: string };
+        };
+      };
+    };
+
+    const uploadUrl =
+      registerData.value.uploadMechanism[
+        "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
+      ].uploadUrl;
+    const assetUrn = registerData.value.asset;
+
+    // 2. Uploader le PDF
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token.accessToken}`,
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+      body: pdfBuffer,
+    });
+
+    if (!uploadRes.ok) return { success: false, error: "PDF upload failed" };
+    return { success: true, assetUrn };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
+/**
+ * Publie un post document (carrousel PDF) sur LinkedIn.
+ */
+export async function publishLinkedInDocumentPost(
+  workspaceId: string,
+  caption: string,
+  assetUrn: string,
+  documentTitle: string
+): Promise<{ success: boolean; postId?: string; postUrl?: string; error?: string }> {
+  const token = await getLinkedInToken(workspaceId);
+  if (!token) return { success: false, error: "LinkedIn non connecté" };
+
+  const body = {
+    author: token.personUrn,
+    lifecycleState: "PUBLISHED",
+    specificContent: {
+      "com.linkedin.ugc.ShareContent": {
+        shareCommentary: { text: caption },
+        shareMediaCategory: "DOCUMENT",
+        media: [
+          {
+            status: "READY",
+            media: assetUrn,
+            title: { text: documentTitle },
+          },
+        ],
+      },
+    },
+    visibility: {
+      "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
+    },
+  };
+
+  const res = await fetch(`${LINKEDIN_API}/ugcPosts`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token.accessToken}`,
+      "Content-Type": "application/json",
+      "X-Restli-Protocol-Version": "2.0.0",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    return { success: false, error: `LinkedIn API ${res.status}: ${err}` };
+  }
+
+  const postId = res.headers.get("x-restli-id") ?? undefined;
+  const postUrl = postId
+    ? `https://www.linkedin.com/feed/update/${postId}/`
+    : undefined;
+
+  return { success: true, postId, postUrl };
+}
+
+/**
  * Retourne le statut de connexion LinkedIn pour un workspace.
  */
 export async function getLinkedInStatus(workspaceId: string): Promise<{
