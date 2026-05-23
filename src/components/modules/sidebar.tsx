@@ -19,7 +19,6 @@ import {
   Target,
   Factory,
   CalendarDays,
-  ArrowRight,
   Plug,
   Webhook,
   Code2,
@@ -27,6 +26,7 @@ import {
   ChevronRight,
   Cpu,
   AlertCircle,
+  Flame,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -79,6 +79,7 @@ const sections: NavSection[] = [
       { name: "Superscale Ads", href: "/marketing-os/superscale-ads", icon: Zap },
       { name: "SEO Factory", href: "/marketing-os/seo-factory", icon: FileText },
       { name: "Content Factory", href: "/marketing-os/social/factory", icon: Factory },
+      { name: "Veille Virale", href: "/marketing-os/social/veille", icon: Flame },
       { name: "Calendrier", href: "/marketing-os/content", icon: CalendarDays },
       { name: "Images IA", href: "/marketing-os/images", icon: Image },
     ],

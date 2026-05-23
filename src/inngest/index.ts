@@ -33,6 +33,7 @@ import {
   rescoreProspectOnEvent,
 } from "./functions/score-prospects";
 import { scanCompetitorAlerts } from "./functions/competitor-alerts";
+import { scrapeViralPostsCron, scrapeViralPostsManual } from "./functions/viral-monitor";
 import { syncGscDataDaily } from "./functions/gsc-sync";
 import { warmupDailyScheduler } from "./functions/warmup-scheduler";
 import { scheduledPostPublisher } from "./functions/scheduled-publisher";
@@ -78,4 +79,7 @@ export const functions = [
   scheduledPostPublisher,
   // Superscale Ad Agent — Pipeline créatif end-to-end
   runSuperscaleAd,
+  // Viral Monitor — Veille posts viraux LinkedIn & Twitter
+  scrapeViralPostsCron,
+  scrapeViralPostsManual,
 ];

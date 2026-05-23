@@ -108,6 +108,7 @@ model Workspace {
   webhookEndpoints          WebhookEndpoint[]
   mcpServerConfigs          MCPServerConfig[]
   adCampaigns               AdCampaign[]
+  viralPosts                ViralPost[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -1111,6 +1112,57 @@ model AdVariant {
   campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VIRAL MONITOR — Veille posts viraux LinkedIn & Twitter
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum ViralPlatform {
+  LINKEDIN
+  TWITTER
+}
+
+enum HookType {
+  QUESTION
+  STAT
+  STORY
+  CONTRARIAN
+  LIST
+  HOW_TO
+  CONFESSION
+  PREDICTION
+  OTHER
+}
+
+model ViralPost {
+  id            String         @id @default(cuid())
+  platform      ViralPlatform
+  content       String         @db.Text
+  authorName    String
+  authorHandle  String?
+  authorAvatar  String?
+  likes         Int            @default(0)
+  comments      Int            @default(0)
+  shares        Int            @default(0)
+  views         Int?
+  viralScore    Float          @default(0)
+  postUrl       String         @unique
+  postedAt      DateTime?
+  scrapedAt     DateTime       @default(now())
+  niche         String?
+  country       String?
+  hookType      HookType       @default(OTHER)
+  isBookmarked  Boolean        @default(false)
+  workspaceId   String?
+  workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([platform, viralScore(sort: Desc)])
+  @@index([workspaceId])
+  @@index([hookType])
+  @@index([scrapedAt])
+  @@index([niche])
+  @@index([country])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
