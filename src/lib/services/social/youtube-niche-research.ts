@@ -11,6 +11,7 @@
 
 import { getClaude, getStringParser } from "@/lib/ai/langchain";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { searchGoogle } from "@/lib/ai/serper";
 
 const YT = "https://www.googleapis.com/youtube/v3";
 const TIMEOUT = AbortSignal.timeout(15_000);
@@ -70,6 +71,14 @@ export interface SubNiche {
   reason: string;
 }
 
+export interface NicheBlog {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  position: number;
+}
+
 export interface NicheResearchResult {
   topic: string;
   region: string;
@@ -79,6 +88,7 @@ export interface NicheResearchResult {
   competition: "FAIBLE" | "MODÉRÉE" | "ÉLEVÉE" | "SATURÉE";
   topCreators: TopCreator[];
   topVideos: TopVideo[];
+  topBlogs: NicheBlog[];
   subNiches: SubNiche[];
   bestFormats: Array<{ format: string; why: string }>;
   entryStrategy: string;
@@ -172,6 +182,36 @@ Critères de notation :
 Identifie 3-5 sous-niches à partir des données (titres de vidéos, descriptions, tags).
 Déduis les meilleurs formats depuis les vidéos les plus vues (shorts vs longs, tutos vs vlogs, etc.).`;
 
+// ─── Blog discovery (Serper) ─────────────────────────────────────────────────
+
+async function findNicheBlogs(topic: string): Promise<NicheBlog[]> {
+  if (!process.env.SERPER_API_KEY) return [];
+  try {
+    const queries = [
+      `meilleurs blogs ${topic}`,
+      `top blogs ${topic} site:medium.com OR site:substack.com OR wordpress.com`,
+    ];
+    // Use first query; fall back silently
+    const results = await searchGoogle(`meilleurs blogs ${topic}`, 10);
+    return results
+      .filter((r) => {
+        const domain = new URL(r.link).hostname.replace(/^www\./, "");
+        // Exclude YouTube, social media
+        return !["youtube.com", "twitter.com", "instagram.com", "facebook.com", "tiktok.com", "linkedin.com"].includes(domain);
+      })
+      .map((r) => ({
+        title: r.title,
+        url: r.link,
+        domain: new URL(r.link).hostname.replace(/^www\./, ""),
+        snippet: r.snippet,
+        position: r.position,
+      }))
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function researchYouTubeNiche(
@@ -181,9 +221,10 @@ export async function researchYouTubeNiche(
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error("YOUTUBE_API_KEY manquant");
 
-  const [channels, videos] = await Promise.all([
+  const [channels, videos, topBlogs] = await Promise.all([
     searchChannels(topic, region, apiKey),
     searchTopVideos(topic, region, apiKey),
+    findNicheBlogs(topic),
   ]);
 
   // Build topCreators
@@ -282,5 +323,6 @@ Analyse cette niche et retourne le JSON demandé.`
     ...analysis,
     topCreators,
     topVideos,
+    topBlogs,
   };
 }
