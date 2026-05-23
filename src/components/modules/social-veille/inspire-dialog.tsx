@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,14 @@ export function InspireDialog({ postId, open, onClose }: InspireDialogProps) {
   const [scheduledAt, setScheduledAt] = useState("");
   const [actionState, setActionState] = useState<ActionState>("idle");
   const [actionLabel, setActionLabel] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    // Reset if postId changed (new post opened)
+    setResult(null);
+    setError(null);
+    setEditedPost("");
+  }, [postId]);
 
   useEffect(() => {
     if (!open || result) return;
@@ -118,6 +126,9 @@ export function InspireDialog({ postId, open, onClose }: InspireDialogProps) {
             <Wand2 className="h-4 w-4 text-emerald-400" />
             Post inspiré par le viral
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Génère un post adapté à ta marque depuis un post viral
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 mt-2">
