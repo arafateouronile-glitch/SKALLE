@@ -16,6 +16,11 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import {
+  fetchMetaAdsApify,
+  fetchTikTokAdsApify,
+  fetchLinkedInAdsApify,
+} from "./apify-scrapers";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -181,6 +186,16 @@ async function fetchMetaAdLibrary(
 ): Promise<RawScrapedAd[] | { ads: RawScrapedAd[]; fallback: boolean }> {
   const accessToken = process.env.META_FB_ACCESS_TOKEN;
   if (!accessToken?.trim()) {
+    // Apify en second recours avant les mocks
+    if (process.env.APIFY_API_TOKEN) {
+      try {
+        const country = process.env.META_AD_LIBRARY_COUNTRY ?? "FR";
+        const ads = await fetchMetaAdsApify(keyword, country, limit);
+        if (ads.length > 0) return ads;
+      } catch (e) {
+        console.warn("[Meta Apify] fallback mocks:", e instanceof Error ? e.message : e);
+      }
+    }
     return getMockAds("META", keyword, limit);
   }
 
@@ -213,7 +228,14 @@ async function fetchMetaAdLibrary(
       const is500 = res.status === 500;
       const isUnknown = errText.includes("unknown error");
       if (is500 && isUnknown) {
-        console.warn("[Meta Ad Library] Erreur 500 connue côté Meta. Données de démo utilisées.");
+        console.warn("[Meta Ad Library] Erreur 500 connue côté Meta. Tentative Apify...");
+        if (process.env.APIFY_API_TOKEN) {
+          try {
+            const country = process.env.META_AD_LIBRARY_COUNTRY ?? "FR";
+            const ads = await fetchMetaAdsApify(keyword, country, limit);
+            if (ads.length > 0) return { ads, fallback: false as const };
+          } catch { /* ignore */ }
+        }
         return { ads: getMockAds("META", keyword, limit), fallback: true as const };
       }
       let errMsg = "Meta Ad Library a renvoyé une erreur.";
@@ -262,14 +284,28 @@ async function fetchMetaAdLibrary(
       causeStr.includes("ETIMEDOUT") ||
       causeStr.includes("ECONNRESET");
     if (isNetwork) {
-      console.warn("[Meta Ad Library] Timeout ou erreur réseau. Données de démo utilisées.");
+      console.warn("[Meta Ad Library] Timeout ou erreur réseau. Tentative Apify...");
     } else {
       console.error("[Meta Ad Library] fetch failed", e);
+    }
+    if (process.env.APIFY_API_TOKEN) {
+      try {
+        const country = process.env.META_AD_LIBRARY_COUNTRY ?? "FR";
+        const ads = await fetchMetaAdsApify(keyword, country, limit);
+        if (ads.length > 0) return { ads, fallback: false as const };
+      } catch { /* ignore */ }
     }
     return { ads: getMockAds("META", keyword, limit), fallback: true as const };
   }
 
   if (rawAds.length === 0) {
+    if (process.env.APIFY_API_TOKEN) {
+      try {
+        const country = process.env.META_AD_LIBRARY_COUNTRY ?? "FR";
+        const ads = await fetchMetaAdsApify(keyword, country, limit);
+        if (ads.length > 0) return { ads, fallback: false as const };
+      } catch { /* ignore */ }
+    }
     return { ads: getMockAds("META", keyword, limit), fallback: true as const };
   }
   return rawAds;
@@ -280,8 +316,13 @@ async function fetchTikTokAdLibrary(
   _proxyUrl: string | undefined,
   limit: number
 ): Promise<RawScrapedAd[]> {
-  if (!process.env.TIKTOK_AD_LIBRARY_URL) {
-    return getMockAds("TIKTOK", keyword, limit);
+  if (process.env.APIFY_API_TOKEN) {
+    try {
+      const ads = await fetchTikTokAdsApify(keyword, process.env.META_AD_LIBRARY_COUNTRY ?? "FR", limit);
+      if (ads.length > 0) return ads;
+    } catch (e) {
+      console.warn("[TikTok Apify] fallback mocks:", e instanceof Error ? e.message : e);
+    }
   }
   return getMockAds("TIKTOK", keyword, limit);
 }
@@ -291,8 +332,13 @@ async function fetchLinkedInAdLibrary(
   _proxyUrl: string | undefined,
   limit: number
 ): Promise<RawScrapedAd[]> {
-  if (!process.env.LINKEDIN_AD_LIBRARY_URL) {
-    return getMockAds("LINKEDIN", keyword, limit);
+  if (process.env.APIFY_API_TOKEN) {
+    try {
+      const ads = await fetchLinkedInAdsApify(keyword, process.env.META_AD_LIBRARY_COUNTRY ?? "FR", limit);
+      if (ads.length > 0) return ads;
+    } catch (e) {
+      console.warn("[LinkedIn Ads Apify] fallback mocks:", e instanceof Error ? e.message : e);
+    }
   }
   return getMockAds("LINKEDIN", keyword, limit);
 }
@@ -302,9 +348,6 @@ async function fetchPinterestAdLibrary(
   _proxyUrl: string | undefined,
   limit: number
 ): Promise<RawScrapedAd[]> {
-  if (!process.env.PINTEREST_ADS_API_URL) {
-    return getMockAds("PINTEREST", keyword, limit);
-  }
   return getMockAds("PINTEREST", keyword, limit);
 }
 
