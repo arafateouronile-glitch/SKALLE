@@ -23,6 +23,7 @@ import {
   Handshake,
   LogOut,
   AlertCircle,
+  FlaskConical,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -77,6 +78,12 @@ const sections: NavSection[] = [
     items: [
       { name: "CRM Pipeline", href: "/sales-os/crm", icon: LayoutGrid },
       { name: "Pipeline Analytics", href: "/sales-os/analytics", icon: BarChart3 },
+      {
+        name: "A/B Email",
+        href: "/sales-os/analytics/ab-tests",
+        icon: FlaskConical,
+        indent: true,
+      },
     ],
   },
   {
@@ -85,9 +92,8 @@ const sections: NavSection[] = [
       { name: "Prospection", href: "/sales-os/prospection", icon: Users },
       {
         name: "Séquences",
-        href: "/sales-os/prospection?tab=sequences",
+        href: "/sales-os/sequences",
         icon: GitMerge,
-        matchHref: "/sales-os/prospection",
         indent: true,
       },
       {
