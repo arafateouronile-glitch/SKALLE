@@ -2,17 +2,12 @@
  * GET /api/agents/budget
  *
  * Retourne le statut du budget LLM journalier pour le workspace de l'utilisateur.
- * Utilisé par le dashboard pour afficher la consommation AI du jour.
- *
- * Response :
- *   200 { spentCents, limitCents, remainingCents, spentUsd, limitUsd }
- *   401 Non autorisé
- *   404 Workspace introuvable
  */
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getBudgetStatus } from "@/lib/ai/budget-guard";
+import { getOrCreateWorkspace } from "@/lib/workspace";
 
 export async function GET() {
   const session = await auth();
@@ -20,16 +15,8 @@ export async function GET() {
     return new Response("Non autorisé", { status: 401 });
   }
 
-  const workspace = await prisma.workspace.findFirst({
-    where: { userId: session.user.id },
-    select: { id: true },
-  });
+  const workspace = await getOrCreateWorkspace(session);
 
-  if (!workspace) {
-    return new Response("Workspace introuvable", { status: 404 });
-  }
-
-  // Récupère le plan depuis l'utilisateur pour calculer la limite correcte
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: { plan: true },

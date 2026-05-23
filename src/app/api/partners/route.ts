@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { withCredits } from "@/lib/credits";
+import { getOrCreateWorkspace } from "@/lib/workspace";
 import {
   runSocialPartnerSearch,
   runBlogPartnerSearch,
@@ -24,16 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 
-  // Résolution sécurisée du workspace depuis la session
-  const workspace = await prisma.workspace.findFirst({
-    where: { userId: session.user.id },
-    select: { id: true },
-  });
-
-  if (!workspace) {
-    return NextResponse.json({ error: "Workspace introuvable" }, { status: 404 });
-  }
-
+  const workspace = await getOrCreateWorkspace(session);
   const workspaceId = workspace.id;
 
   let body: Record<string, unknown>;

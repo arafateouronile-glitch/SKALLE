@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrCreateWorkspace } from "@/lib/workspace";
 
 export async function DELETE(
   _req: Request,
@@ -17,13 +18,7 @@ export async function DELETE(
 
   const { id, attachmentId } = await params;
 
-  const workspace = await prisma.workspace.findFirst({
-    where: { userId: session.user.id },
-    select: { id: true },
-  });
-  if (!workspace) {
-    return NextResponse.json({ error: "Workspace non trouvé" }, { status: 404 });
-  }
+  const workspace = await getOrCreateWorkspace(session);
 
   // Vérifier que la pièce jointe appartient bien à une campagne du workspace
   const attachment = await prisma.campaignAttachment.findFirst({

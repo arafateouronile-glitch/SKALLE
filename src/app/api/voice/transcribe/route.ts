@@ -9,6 +9,7 @@ import type { Session } from "next-auth";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { useCredits, addCredits } from "@/lib/credits";
+import { getOrCreateWorkspace } from "@/lib/workspace";
 
 const OPENAI_TRANSCRIBE = "https://api.openai.com/v1/audio/transcriptions";
 const MAX_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -29,13 +30,7 @@ export async function POST(_request: Request) {
       );
     }
 
-    const workspace = await prisma.workspace.findFirst({
-      where: { userId: session.user.id },
-      select: { id: true },
-    });
-    if (!workspace) {
-      return NextResponse.json({ error: "Workspace non trouvé." }, { status: 404 });
-    }
+    const workspace = await getOrCreateWorkspace(session);
 
     const creditResult = await useCredits(session.user.id, "voice_transcribe");
     if (!creditResult.success) {
