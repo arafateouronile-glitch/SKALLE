@@ -25,11 +25,13 @@ import {
   BarChart3,
   Flame,
   Bell,
+  Youtube,
 } from "lucide-react";
 import { analyzeCompetitor } from "@/actions/discovery";
 import { getUserWorkspace } from "@/actions/leads";
 import { toast } from "sonner";
 import { AdIntelligenceTab } from "@/components/modules/ad-intelligence-tab";
+import { YoutubeNicheRadar } from "@/components/modules/youtube-niche-radar";
 import { useCreditsContext } from "@/components/providers/credits-provider";
 import Link from "next/link";
 import { getCompetitorAlertsCountAction, markAlertsReadAction } from "@/actions/integrations";
@@ -253,6 +255,10 @@ export default function DiscoveryPage() {
           <TabsTrigger value="publicites" className="flex items-center gap-1.5">
             <Flame className="h-4 w-4" />
             Ad-Intelligence
+          </TabsTrigger>
+          <TabsTrigger value="niche-youtube" className="flex items-center gap-1.5">
+            <Youtube className="h-4 w-4 text-red-500" />
+            Niche YouTube
           </TabsTrigger>
         </TabsList>
 
@@ -691,6 +697,10 @@ export default function DiscoveryPage() {
         {/* ── Tab: Ad-Intelligence ── */}
         <TabsContent value="publicites">
           {workspaceId && <AdIntelligenceTab workspaceId={workspaceId} />}
+        </TabsContent>
+
+        <TabsContent value="niche-youtube">
+          <YoutubeNicheRadar />
         </TabsContent>
       </Tabs>
     </div>
