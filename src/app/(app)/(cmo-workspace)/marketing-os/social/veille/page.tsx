@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ViralPostCard } from "@/components/modules/social-veille/viral-post-card";
 import { VeilleFilters, DEFAULT_FILTERS, type FilterState } from "@/components/modules/social-veille/veille-filters";
-import { RefreshCw, TrendingUp, Loader2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { RefreshCw, TrendingUp, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import type { ViralPost } from "@prisma/client";
 
@@ -22,7 +22,6 @@ export default function VeillePage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   const limit = 20;
@@ -79,19 +78,6 @@ export default function VeillePage() {
     }
   }
 
-  async function handleSeed() {
-    setSeeding(true);
-    try {
-      const res = await fetch("/api/social/veille/seed", { method: "POST" });
-      const data = await res.json() as { message?: string };
-      toast.success(data.message ?? "Posts démo ajoutés !");
-      fetchPosts(filters, 1);
-    } catch {
-      toast.error("Erreur seed");
-    } finally {
-      setSeeding(false);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto">
@@ -119,20 +105,9 @@ export default function VeillePage() {
           </Button>
           <Button
             size="sm"
-            variant="ghost"
-            className="h-8 text-[12px] gap-1.5 border border-white/[0.08] text-slate-500 hover:text-slate-300"
-            onClick={handleSeed}
-            disabled={seeding || scraping}
-            title="Charger des posts de démonstration"
-          >
-            {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Démo
-          </Button>
-          <Button
-            size="sm"
             className="h-8 text-[12px] gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30"
             onClick={handleScrape}
-            disabled={scraping || seeding}
+            disabled={scraping}
           >
             {scraping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
             Scraper maintenant
@@ -167,27 +142,15 @@ export default function VeillePage() {
               ou ajuste les filtres.
             </p>
           </div>
-          <div className="flex items-center gap-2 mt-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 text-[12px] gap-1.5 border border-white/[0.08] text-slate-500 hover:text-slate-300"
-              onClick={handleSeed}
-              disabled={seeding || scraping}
-            >
-              {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              Charger démo
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 text-[12px] gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30"
-              onClick={handleScrape}
-              disabled={scraping || seeding}
-            >
-              {scraping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
-              Scraper maintenant
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            className="h-8 text-[12px] gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 mt-2"
+            onClick={handleScrape}
+            disabled={scraping}
+          >
+            {scraping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
+            Scraper maintenant
+          </Button>
         </div>
       )}
 
