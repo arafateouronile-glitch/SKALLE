@@ -59,6 +59,8 @@ interface SocialPartner {
   profileUrl: string;
   niche: string;
   pitch?: string;
+  businessEmail?: string;
+  channelId?: string;
 }
 
 interface BlogPartner {
@@ -220,13 +222,19 @@ function EmailFinderBtn({
   name,
   bio,
   domain,
+  businessEmail,
+  channelId,
 }: {
   platform: string;
   name: string;
   bio?: string;
   domain?: string;
+  businessEmail?: string;
+  channelId?: string;
 }) {
-  const [emailData, setEmailData] = useState<{ email: string; confidence: string } | null>(null);
+  const [emailData, setEmailData] = useState<{ email: string; confidence: string } | null>(
+    businessEmail ? { email: businessEmail, confidence: "HIGH" } : null
+  );
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -236,7 +244,7 @@ function EmailFinderBtn({
       const res = await fetch("/api/social/find-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: platform.toLowerCase(), name, bio, domain }),
+        body: JSON.stringify({ platform: platform.toLowerCase(), name, bio, domain, channelId, businessEmail }),
       });
       const data = await res.json() as { email: string | null; confidence: string };
       if (data.email) { setEmailData({ email: data.email, confidence: data.confidence }); toast.success("Email trouvé !"); }
@@ -367,6 +375,8 @@ function InfluencerCard({
             platform={partner.platform}
             name={partner.username}
             bio={partner.bio}
+            businessEmail={partner.businessEmail}
+            channelId={partner.channelId}
           />
           <motion.button
             onClick={() => { setDealDone(true); setTimeout(() => setDealDone(false), 2500); toast.success(`Deal proposé à @${partner.username} !`); }}

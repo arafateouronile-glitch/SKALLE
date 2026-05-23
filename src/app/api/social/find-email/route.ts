@@ -2,7 +2,7 @@
  * POST /api/social/find-email
  *
  * Trouve l'email professionnel d'un créateur ou blog.
- * Body: { platform, name, bio?, domain? }
+ * Body: { platform, name, bio?, domain?, channelId?, businessEmail? }
  */
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
@@ -17,11 +17,20 @@ export async function POST(req: NextRequest) {
     name: string;
     bio?: string;
     domain?: string;
+    channelId?: string;
+    businessEmail?: string;
   };
 
-  const { platform, name, bio, domain } = body;
+  const { platform, name, bio, domain, channelId, businessEmail } = body;
   if (!name?.trim()) return NextResponse.json({ error: "name requis" }, { status: 400 });
 
-  const result = await findCreatorEmail({ platform, name: name.trim(), bio, domain });
+  const result = await findCreatorEmail({
+    platform,
+    name: name.trim(),
+    bio,
+    domain,
+    channelId,
+    businessEmail,
+  });
   return NextResponse.json(result);
 }

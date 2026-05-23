@@ -357,7 +357,7 @@ function CreatorCard({
       const res = await fetch("/api/social/find-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: "youtube", name: creator.name, bio: creator.description }),
+        body: JSON.stringify({ platform: "youtube", name: creator.name, bio: creator.description, channelId: creator.channelId }),
       });
       const data = await res.json() as { email: string | null; confidence: string };
       if (data.email) {

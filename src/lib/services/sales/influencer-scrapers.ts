@@ -18,6 +18,8 @@ interface ApifyInstagramPost {
   ownerFullName?: string;
   followersCount?: number;
   biography?: string;
+  businessEmail?: string;
+  businessCategoryName?: string;
   likesCount?: number;
   commentsCount?: number;
   videoViewCount?: number | null;
@@ -46,6 +48,7 @@ export async function scrapeInstagramInfluencers(
     const profileMap = new Map<string, {
       followersCount: number;
       bio: string;
+      businessEmail?: string;
       likes: number[];
     }>();
 
@@ -58,10 +61,12 @@ export async function scrapeInstagramInfluencers(
         profileMap.set(post.ownerUsername, {
           followersCount: fc,
           bio: post.biography ?? "",
+          businessEmail: post.businessEmail ?? undefined,
           likes: [],
         });
       }
       const entry = profileMap.get(post.ownerUsername)!;
+      if (!entry.businessEmail && post.businessEmail) entry.businessEmail = post.businessEmail;
       const interactions =
         (post.likesCount ?? 0) + (post.commentsCount ?? 0) * 2;
       entry.likes.push(interactions);
@@ -87,6 +92,7 @@ export async function scrapeInstagramInfluencers(
         bio: data.bio,
         profileUrl: `https://www.instagram.com/${username}/`,
         niche,
+        businessEmail: data.businessEmail,
       });
     }
 
@@ -167,6 +173,7 @@ export async function scrapeYouTubeInfluencers(
         bio: ch.snippet.description.slice(0, 200),
         profileUrl: `https://www.youtube.com/channel/${ch.id}`,
         niche,
+        channelId: ch.id,
       });
     }
 

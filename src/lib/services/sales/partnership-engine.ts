@@ -34,6 +34,8 @@ export interface SocialPartner {
   profileUrl: string;
   niche: string;
   pitch?: string;
+  businessEmail?: string; // Instagram: from scraper API
+  channelId?: string;     // YouTube: for Apify email finder
 }
 
 export interface BlogPartner {
