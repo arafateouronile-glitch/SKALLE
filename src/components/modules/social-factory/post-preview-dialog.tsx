@@ -11,6 +11,9 @@ import { Linkedin, Twitter, Instagram, Video, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import type { PostType } from "@prisma/client";
+import { ViralScoreWidget } from "@/components/modules/social-veille/viral-score-widget";
+import { AbTestDialog } from "./ab-test-dialog";
+import { FlaskConical } from "lucide-react";
 
 const NETWORK_LABELS: Record<string, string> = {
   LINKEDIN: "LinkedIn",
@@ -43,6 +46,7 @@ interface PostPreviewDialogProps {
 
 export function PostPreviewDialog({ open, onClose, post }: PostPreviewDialogProps) {
   const [copied, setCopied] = useState(false);
+  const [abTestOpen, setAbTestOpen] = useState(false);
 
   if (!post) return null;
 
@@ -55,6 +59,13 @@ export function PostPreviewDialog({ open, onClose, post }: PostPreviewDialogProp
   };
 
   return (
+    <>
+    <AbTestDialog
+      open={abTestOpen}
+      onClose={() => setAbTestOpen(false)}
+      baseContent={post.content}
+      platform={post.type}
+    />
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
@@ -119,8 +130,25 @@ export function PostPreviewDialog({ open, onClose, post }: PostPreviewDialogProp
               })}
             </p>
           )}
+
+          {/* Viral prediction + A/B test — uniquement pour LinkedIn et X */}
+          {(post.type === "LINKEDIN" || post.type === "X") && (
+            <div className="space-y-2">
+              <ViralScoreWidget content={post.content} platform={post.type} />
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full h-8 text-[12px] gap-2 border-violet-500/30 text-violet-600 hover:bg-violet-50"
+                onClick={() => setAbTestOpen(true)}
+              >
+                <FlaskConical className="h-3.5 w-3.5" />
+                Créer un A/B test (3 variants)
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

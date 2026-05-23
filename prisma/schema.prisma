@@ -109,6 +109,7 @@ model Workspace {
   mcpServerConfigs          MCPServerConfig[]
   adCampaigns               AdCampaign[]
   viralPosts                ViralPost[]
+  postAbTests               PostAbTest[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -1112,6 +1113,51 @@ model AdVariant {
   campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A/B TEST — Variants de posts / ads
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum AbTestStatus {
+  ACTIVE
+  COMPLETED
+  DRAFT
+}
+
+model PostAbTest {
+  id          String       @id @default(cuid())
+  workspaceId String
+  name        String
+  platform    String
+  baseContent String       @db.Text
+  status      AbTestStatus @default(DRAFT)
+  winnerId    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  variants    PostAbVariant[]
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model PostAbVariant {
+  id          String      @id @default(cuid())
+  testId      String
+  label       String      // "A", "B", "C"
+  content     String      @db.Text
+  hookType    String?
+  predictedScore Float?
+  likes       Int         @default(0)
+  comments    Int         @default(0)
+  views       Int         @default(0)
+  engagementRate Float?
+  isWinner    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  test        PostAbTest  @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@index([testId])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
