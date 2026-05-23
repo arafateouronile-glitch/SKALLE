@@ -39,6 +39,7 @@ import {
   MessageCircle,
   Handshake,
   RefreshCw,
+  AtSign,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -312,6 +313,33 @@ function ContactDialog({
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+function EmailChip({ email, confidence }: { email: string; confidence: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy(e: React.MouseEvent) {
+    e.stopPropagation();
+    await navigator.clipboard.writeText(email);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  const chipColor =
+    confidence === "HIGH"
+      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+      : confidence === "MEDIUM"
+      ? "bg-blue-50 border-blue-200 text-blue-700"
+      : "bg-gray-50 border-gray-200 text-gray-600";
+  return (
+    <div className={cn("flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-mono", chipColor)}>
+      <AtSign className="h-2.5 w-2.5 flex-shrink-0" />
+      <a href={`mailto:${email}`} className="hover:underline truncate max-w-[140px]" onClick={(e) => e.stopPropagation()}>
+        {email}
+      </a>
+      <button onClick={copy} className="ml-0.5 flex-shrink-0">
+        {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5 opacity-60" />}
+      </button>
+    </div>
+  );
+}
+
 function CreatorCard({
   creator,
   onContact,
@@ -319,9 +347,32 @@ function CreatorCard({
   creator: TopCreator;
   onContact: () => void;
 }) {
+  const [emailData, setEmailData] = useState<{ email: string; confidence: string } | null>(null);
+  const [emailLoading, setEmailLoading] = useState(false);
+
+  async function findEmail(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEmailLoading(true);
+    try {
+      const res = await fetch("/api/social/find-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: "youtube", name: creator.name, bio: creator.description }),
+      });
+      const data = await res.json() as { email: string | null; confidence: string };
+      if (data.email) {
+        setEmailData({ email: data.email, confidence: data.confidence });
+        toast.success("Email trouvé !");
+      } else {
+        toast.error("Email introuvable pour ce créateur");
+      }
+    } catch { toast.error("Erreur réseau"); }
+    finally { setEmailLoading(false); }
+  }
+
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0 group">
-      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
+    <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0 group">
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 mt-0.5">
         {creator.name.slice(0, 2).toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
@@ -335,19 +386,36 @@ function CreatorCard({
           <ExternalLink className="h-2.5 w-2.5 text-gray-300 flex-shrink-0" />
         </a>
         <p className="text-[11px] text-gray-400 truncate">{creator.description || "—"}</p>
+        {emailData && (
+          <div className="mt-1">
+            <EmailChip email={emailData.email} confidence={emailData.confidence} />
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
         <div className="flex flex-col items-end gap-0.5">
           <span className="text-[12px] font-bold text-gray-700">{fmt(creator.subscribers)}</span>
           <span className="text-[10px] text-gray-400">{creator.engagementRate}% eng.</span>
         </div>
-        <button
-          onClick={onContact}
-          className="opacity-0 group-hover:opacity-100 transition-opacity h-7 px-2 rounded-lg bg-violet-50 border border-violet-200 text-violet-600 text-[11px] flex items-center gap-1 hover:bg-violet-100"
-        >
-          <Handshake className="h-3 w-3" />
-          Pitcher
-        </button>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {!emailData && (
+            <button
+              onClick={findEmail}
+              disabled={emailLoading}
+              className="h-7 px-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600 text-[11px] flex items-center gap-1 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              {emailLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <AtSign className="h-3 w-3" />}
+              Email
+            </button>
+          )}
+          <button
+            onClick={onContact}
+            className="h-7 px-2 rounded-lg bg-violet-50 border border-violet-200 text-violet-600 text-[11px] flex items-center gap-1 hover:bg-violet-100"
+          >
+            <Handshake className="h-3 w-3" />
+            Pitcher
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -361,6 +429,29 @@ function BlogCard({
   onContact: () => void;
 }) {
   const favicon = `https://www.google.com/s2/favicons?domain=${blog.domain}&sz=32`;
+  const [emailData, setEmailData] = useState<{ email: string; confidence: string } | null>(null);
+  const [emailLoading, setEmailLoading] = useState(false);
+
+  async function findEmail(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEmailLoading(true);
+    try {
+      const res = await fetch("/api/social/find-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: "blog", name: blog.title, bio: blog.snippet, domain: blog.domain }),
+      });
+      const data = await res.json() as { email: string | null; confidence: string };
+      if (data.email) {
+        setEmailData({ email: data.email, confidence: data.confidence });
+        toast.success("Email trouvé !");
+      } else {
+        toast.error("Email introuvable pour ce blog");
+      }
+    } catch { toast.error("Erreur réseau"); }
+    finally { setEmailLoading(false); }
+  }
+
   return (
     <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0 group">
       <div className="w-7 h-7 rounded border border-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 mt-0.5">
@@ -383,14 +474,31 @@ function BlogCard({
           {blog.title}
         </a>
         <p className="text-[11px] text-gray-400 line-clamp-2 mt-0.5">{blog.snippet}</p>
+        {emailData && (
+          <div className="mt-1.5">
+            <EmailChip email={emailData.email} confidence={emailData.confidence} />
+          </div>
+        )}
       </div>
-      <button
-        onClick={onContact}
-        className="opacity-0 group-hover:opacity-100 transition-opacity mt-1 flex-shrink-0 h-7 px-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 text-[11px] flex items-center gap-1 hover:bg-blue-100"
-      >
-        <Mail className="h-3 w-3" />
-        Contacter
-      </button>
+      <div className="flex flex-col items-end gap-1 mt-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        {!emailData && (
+          <button
+            onClick={findEmail}
+            disabled={emailLoading}
+            className="h-7 px-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600 text-[11px] flex items-center gap-1 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {emailLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <AtSign className="h-3 w-3" />}
+            Email
+          </button>
+        )}
+        <button
+          onClick={onContact}
+          className="h-7 px-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 text-[11px] flex items-center gap-1 hover:bg-blue-100"
+        >
+          <Mail className="h-3 w-3" />
+          Contacter
+        </button>
+      </div>
     </div>
   );
 }

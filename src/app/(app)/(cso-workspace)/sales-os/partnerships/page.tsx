@@ -39,6 +39,8 @@ import {
   X,
   Radar,
   BarChart2,
+  AtSign,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -211,6 +213,78 @@ function PlatformIcon({ platform, size = 16 }: { platform: SocialPlatform; size?
   return <Zap className={cn(s, "text-white")} />; // TikTok
 }
 
+// ─── Email Finder (shared) ───────────────────────────────────────────────────
+
+function EmailFinderBtn({
+  platform,
+  name,
+  bio,
+  domain,
+}: {
+  platform: string;
+  name: string;
+  bio?: string;
+  domain?: string;
+}) {
+  const [emailData, setEmailData] = useState<{ email: string; confidence: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function find() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/social/find-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: platform.toLowerCase(), name, bio, domain }),
+      });
+      const data = await res.json() as { email: string | null; confidence: string };
+      if (data.email) { setEmailData({ email: data.email, confidence: data.confidence }); toast.success("Email trouvé !"); }
+      else toast.error("Email introuvable");
+    } catch { toast.error("Erreur réseau"); }
+    finally { setLoading(false); }
+  }
+
+  async function copy(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!emailData) return;
+    await navigator.clipboard.writeText(emailData.email);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  if (emailData) {
+    const chipColor =
+      emailData.confidence === "HIGH"
+        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+        : emailData.confidence === "MEDIUM"
+        ? "bg-blue-500/15 border-blue-500/30 text-blue-400"
+        : "bg-white/10 border-white/20 text-white/50";
+    return (
+      <div className={cn("flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-mono", chipColor)}>
+        <AtSign className="h-2.5 w-2.5 flex-shrink-0" />
+        <a href={`mailto:${emailData.email}`} className="hover:underline truncate max-w-[130px]" onClick={(e) => e.stopPropagation()}>
+          {emailData.email}
+        </a>
+        <button onClick={copy} className="ml-0.5 flex-shrink-0">
+          {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5 opacity-60" />}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={find}
+      disabled={loading}
+      className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+    >
+      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+      {loading ? "Recherche…" : "Trouver email"}
+    </button>
+  );
+}
+
 // ─── Influencer Card ─────────────────────────────────────────────────────────
 
 function InfluencerCard({
@@ -288,7 +362,12 @@ function InfluencerCard({
         )}
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <EmailFinderBtn
+            platform={partner.platform}
+            name={partner.username}
+            bio={partner.bio}
+          />
           <motion.button
             onClick={() => { setDealDone(true); setTimeout(() => setDealDone(false), 2500); toast.success(`Deal proposé à @${partner.username} !`); }}
             animate={dealDone ? { backgroundColor: "rgba(16,185,129,0.2)", borderColor: "rgba(16,185,129,0.4)" } : {}}
@@ -382,7 +461,13 @@ function BlogCard({
         )}
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <EmailFinderBtn
+            platform="blog"
+            name={partner.title}
+            bio={partner.snippet}
+            domain={partner.domain}
+          />
           <motion.button
             onClick={() => { setDealDone(true); setTimeout(() => setDealDone(false), 2500); toast.success(`Deal proposé à ${partner.domain} !`); }}
             disabled={!partner.pitch}
