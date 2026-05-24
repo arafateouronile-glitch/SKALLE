@@ -15,7 +15,9 @@ import {
   Newspaper,
   DollarSign,
   Rocket,
+  UserSearch,
 } from "lucide-react";
+import { FindContactsDialog } from "./find-contacts-dialog";
 import { toast } from "sonner";
 import type { SignalType } from "@prisma/client";
 
@@ -130,6 +132,10 @@ export function IntentSignalsPanel({ workspaceId }: Props) {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [filter, setFilter] = useState<SignalType | "ALL">("ALL");
+  const [contactDialog, setContactDialog] = useState<{ open: boolean; company: string }>({
+    open: false,
+    company: "",
+  });
 
   const fetchSignals = useCallback(async () => {
     setLoading(true);
@@ -184,6 +190,7 @@ export function IntentSignalsPanel({ workspaceId }: Props) {
   }, {});
 
   return (
+    <>
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
@@ -362,18 +369,27 @@ export function IntentSignalsPanel({ workspaceId }: Props) {
                   {/* Intent hint */}
                   <p className="text-[10px] text-slate-600 italic">{meta.description}</p>
 
-                  {/* Source */}
-                  {signal.sourceUrl && (
-                    <a
-                      href={signal.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-sky-400 transition-colors"
+                  {/* Actions row */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setContactDialog({ open: true, company: signal.companyName })}
+                      className="inline-flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300 transition-colors font-medium"
                     >
-                      <ExternalLink className="h-2.5 w-2.5" />
-                      Voir la source
-                    </a>
-                  )}
+                      <UserSearch className="h-3 w-3" />
+                      Trouver les contacts
+                    </button>
+                    {signal.sourceUrl && (
+                      <a
+                        href={signal.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-sky-400 transition-colors"
+                      >
+                        <ExternalLink className="h-2.5 w-2.5" />
+                        Source
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -381,5 +397,13 @@ export function IntentSignalsPanel({ workspaceId }: Props) {
         </div>
       )}
     </div>
+
+    <FindContactsDialog
+      companyName={contactDialog.company}
+      workspaceId={workspaceId}
+      open={contactDialog.open}
+      onClose={() => setContactDialog({ open: false, company: "" })}
+    />
+    </>
   );
 }
