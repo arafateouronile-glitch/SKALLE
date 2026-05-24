@@ -78,7 +78,7 @@ export default function VeillePage() {
       const res = await fetch("/api/social/veille/scrape", { method: "POST" });
       const data = await res.json() as {
         ok?: boolean;
-        runIds?: { linkedin: string | null; twitter: string | null };
+        runIds?: { linkedin: string | null; twitter: string | null; facebook?: string | null };
         queries?: string[];
         errors?: string[];
         error?: string;
@@ -127,7 +127,7 @@ export default function VeillePage() {
             <h1 className="text-[20px] font-bold text-white">Veille Virale</h1>
           </div>
           <p className="text-[13px] text-slate-400">
-            Les meilleurs posts LinkedIn & Twitter — inspire-toi pour créer du contenu viral.
+            Les meilleurs posts LinkedIn, Twitter & Facebook — inspire-toi pour créer du contenu viral.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -160,7 +160,7 @@ export default function VeillePage() {
       {!loading && total > 0 && (
         <p className="text-[12px] text-slate-500">
           {total.toLocaleString("fr-FR")} post{total > 1 ? "s" : ""} trouvé{total > 1 ? "s" : ""}
-          {filters.platform && ` · ${filters.platform === "LINKEDIN" ? "LinkedIn" : "Twitter / X"}`}
+          {filters.platform && ` · ${{ LINKEDIN: "LinkedIn", TWITTER: "Twitter / X", FACEBOOK: "Facebook" }[filters.platform] ?? filters.platform}`}
           {filters.niche && ` · niche "${filters.niche}"`}
           {filters.country && ` · ${filters.country}`}
           {filters.minLikes && ` · ≥ ${Number(filters.minLikes).toLocaleString()} likes`}

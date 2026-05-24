@@ -246,6 +246,8 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
   const [leads, setLeads] = useState<QualifiedLead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [scrapeStatus, setScrapeStatus] = useState<string>("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Message generation
   const [generatingFor, setGeneratingFor] = useState<number | null>(null);
@@ -279,39 +281,108 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
     }
   };
 
+  function stopPoll() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }
+
+  useEffect(() => () => stopPoll(), []);
+
+  function autoSaveLeads(parsedLeads: QualifiedLead[]) {
+    const contacts = parsedLeads.map((lead) => ({
+      name: lead.name,
+      email: lead.email,
+      emailVerified: lead.emailVerified,
+      emailScore: (lead as any).emailScore,
+      emailSource: lead.enrichmentData?.emailSource as string | undefined,
+      phone: lead.phone,
+      linkedInUrl: lead.linkedInUrl,
+      company: lead.company,
+      jobTitle: lead.jobTitle,
+      location: lead.location,
+      industry: lead.industry,
+      companySize: (lead as any).companySize,
+      source: (lead.enrichmentData?.source as string) ?? (lead.enrichmentData?.apolloId ? "apollo" : "linkedin-apify"),
+      apolloId: lead.enrichmentData?.apolloId as string | undefined,
+      tags: [],
+    }));
+    saveContactsToDbJSON(workspaceId, JSON.stringify(contacts)).then((r) => {
+      if (r.success && (r.saved > 0 || r.updated > 0)) {
+        toast.info(`Base contacts : +${r.saved} nouveau${r.saved > 1 ? "x" : ""}, ${r.updated} mis à jour`, { duration: 3000 });
+      }
+    });
+  }
+
   const handleSearch = async () => {
     if (!criteria) return;
+    stopPoll();
     setIsSearching(true);
+    setScrapeStatus("");
+
+    // LinkedIn mode → Apify async scraper
+    if (criteria.searchMode === "linkedin") {
+      try {
+        const res = await fetch("/api/prospects/linkedin-scrape", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(criteria),
+        });
+        const data = await res.json() as { ok?: boolean; runId?: string; error?: string };
+        if (!res.ok || !data.ok || !data.runId) {
+          toast.error(data.error ?? "Erreur lancement LinkedIn scraper");
+          setIsSearching(false);
+          return;
+        }
+        toast.success("Scraping LinkedIn lancé — résultats dans ~2 min…");
+        setScrapeStatus("Scraping LinkedIn en cours…");
+        const runId = data.runId;
+        let attempts = 0;
+        pollRef.current = setInterval(async () => {
+          attempts++;
+          try {
+            const cr = await fetch("/api/prospects/linkedin-scrape?collect=1", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ runId }),
+            });
+            const cd = await cr.json() as { status: "running" | "done"; leads?: QualifiedLead[]; error?: string; runStatus?: string };
+            if (cd.status === "done") {
+              stopPoll();
+              setIsSearching(false);
+              setScrapeStatus("");
+              const foundLeads = cd.leads ?? [];
+              if (foundLeads.length > 0) {
+                setLeads(foundLeads);
+                toast.success(`${foundLeads.length} profils LinkedIn trouvés !`);
+                autoSaveLeads(foundLeads);
+              } else {
+                toast.warning(`Scrape terminé — 0 profils${cd.error ? ` (${cd.error})` : ""}`);
+              }
+            } else {
+              setScrapeStatus(`Scraping LinkedIn en cours… (${cd.runStatus ?? "RUNNING"})`);
+            }
+          } catch { /* ignore transient */ }
+          if (attempts >= 12) {
+            stopPoll();
+            setIsSearching(false);
+            setScrapeStatus("");
+            toast.error("Timeout scrape LinkedIn — réessaie.");
+          }
+        }, 20_000);
+      } catch {
+        toast.error("Erreur réseau");
+        setIsSearching(false);
+      }
+      return;
+    }
+
+    // Google Business / Apollo mode
     try {
       const result = await searchQualifiedLeads(workspaceId, criteria);
       if (result.success && result.leadsJson) {
         const parsedLeads = JSON.parse(result.leadsJson);
         setLeads(parsedLeads);
         toast.success(`${parsedLeads.length} leads trouvés !`);
-
-        // Auto-save dans la base de contacts
-        const contacts = parsedLeads.map((lead: any) => ({
-          name: lead.name,
-          email: lead.email,
-          emailVerified: lead.emailVerified,
-          emailScore: lead.emailScore,
-          emailSource: lead.enrichmentData?.emailSource as string | undefined,
-          phone: lead.phone,
-          linkedInUrl: lead.linkedInUrl,
-          company: lead.company,
-          jobTitle: lead.jobTitle,
-          location: lead.location,
-          industry: lead.industry,
-          companySize: lead.companySize,
-          source: (lead.enrichmentData?.apolloId ? "apollo" : "google-scraper") as string,
-          apolloId: lead.enrichmentData?.apolloId as string | undefined,
-          tags: [],
-        }));
-        saveContactsToDbJSON(workspaceId, JSON.stringify(contacts)).then((r) => {
-          if (r.success && (r.saved > 0 || r.updated > 0)) {
-            toast.info(`Base contacts : +${r.saved} nouveau${r.saved > 1 ? "x" : ""}, ${r.updated} mis à jour`, { duration: 3000 });
-          }
-        });
+        autoSaveLeads(parsedLeads);
       } else {
         toast.error(result.error || "Erreur de recherche");
       }
@@ -594,12 +665,22 @@ function FindLeadsTab({ workspaceId }: { workspaceId: string }) {
                   ) : (
                     <Search className="h-4 w-4 mr-2" />
                   )}
-                  {isSearching ? "Recherche..." : "Lancer la recherche"}
+                  {isSearching
+                    ? criteria?.searchMode === "linkedin" ? "Scraping LinkedIn…" : "Recherche..."
+                    : "Lancer la recherche"}
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* LinkedIn scrape status */}
+      {scrapeStatus && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5">
+          <Loader2 className="h-4 w-4 animate-spin text-blue-400 flex-shrink-0" />
+          {scrapeStatus}
+        </div>
       )}
 
       {/* Results */}

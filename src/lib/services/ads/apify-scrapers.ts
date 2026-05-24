@@ -53,69 +53,110 @@ function daysFromNow(dateStr?: string | null): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. FACEBOOK / META ADS LIBRARY  (apify/facebook-ads-scraper)
+// 1. FACEBOOK / META ADS LIBRARY  (apify~facebook-ads-scraper)
+//
+// Real output schema (verified via live test run 2026-05-24):
+//   adArchiveID, pageName, startDateFormatted, endDateFormatted, isActive,
+//   impressionsWithIndex.impressionsText,
+//   snapshot.body.text, snapshot.title, snapshot.caption,
+//   snapshot.images[].originalImageUrl, snapshot.videos[].videoPreviewImageUrl,
+//   snapshot.pageCategories[], snapshot.linkUrl, snapshot.pageLikeCount
+//
+// Input requires startUrls with Facebook Ad Library search URLs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface ApifyFbAd {
-  adId?: string;
-  id?: string;
-  adCreativeBody?: string;
-  adCreativeLinkCaption?: string;
-  adCreativeLinkTitle?: string;
-  pageId?: string;
+interface ApifyFbSnapshot {
+  body?: { text?: string };
+  title?: string;
+  caption?: string;
+  ctaText?: string;
+  displayFormat?: string;
+  linkUrl?: string | null;
+  images?: Array<{ originalImageUrl?: string; resizedImageUrl?: string }>;
+  videos?: Array<{ videoPreviewImageUrl?: string }>;
+  pageCategories?: string[];
+  pageLikeCount?: number;
   pageName?: string;
-  adDeliveryStartTime?: string;
-  adDeliveryStopTime?: string;
-  adSnapshotUrl?: string;
-  snapshotUrl?: string;
-  impressionsLowerBound?: number;
-  impressionsUpperBound?: number;
-  spendLowerBound?: number;
-  currency?: string;
 }
 
+interface ApifyFbAd {
+  adArchiveID?: string;
+  adArchiveId?: string;
+  pageName?: string;
+  startDateFormatted?: string;
+  endDateFormatted?: string | null;
+  isActive?: boolean;
+  snapshot?: ApifyFbSnapshot;
+  impressionsWithIndex?: { impressionsText?: string | null };
+  error?: string;
+}
+
+/** Build a Facebook Ad Library search URL from keyword + country code */
+export function buildFbAdLibraryUrl(keyword: string, country: string): string {
+  const cc = country === "ALL" ? "FR" : country.split(",")[0].trim().toUpperCase();
+  return `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=${cc}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered`;
+}
+
+function parseImpressionsText(text?: string | null): number | null {
+  if (!text) return null;
+  const cleaned = text.replace(/[\s,]/g, "");
+  const numbers = cleaned.match(/\d+/g);
+  if (!numbers) return null;
+  const vals = numbers.map(Number).filter(Boolean);
+  if (!vals.length) return null;
+  return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+}
+
+export function mapFbAdToRaw(item: ApifyFbAd): RawScrapedAd | null {
+  if (item.error) return null;
+  const archiveId = item.adArchiveID ?? item.adArchiveId;
+  if (!archiveId) return null;
+
+  const snap = item.snapshot ?? {};
+  const textParts = [snap.body?.text, snap.title, snap.caption].filter(Boolean);
+  const adContent = textParts.join(" — ").trim();
+  if (!adContent) return null;
+
+  const mediaUrl =
+    snap.videos?.[0]?.videoPreviewImageUrl ??
+    snap.images?.[0]?.originalImageUrl ??
+    snap.images?.[0]?.resizedImageUrl ??
+    null;
+
+  const started = item.startDateFormatted;
+  const stopped = item.endDateFormatted;
+  const isActive = item.isActive ?? (!stopped || new Date(stopped).getTime() > Date.now());
+
+  return {
+    platform: "META" as AdPlatform,
+    adLibraryId: `META-FB-${archiveId}`,
+    advertiserName: item.pageName ?? snap.pageName ?? "Annonceur inconnu",
+    advertiserDomain: snap.linkUrl
+      ? (() => { try { return new URL(snap.linkUrl!).hostname.replace(/^www\./, ""); } catch { return null; } })()
+      : null,
+    industry: snap.pageCategories?.[0] ?? null,
+    adContent,
+    mediaUrl,
+    isActive,
+    daysActive: daysFromNow(started),
+    viewCount: parseImpressionsText(item.impressionsWithIndex?.impressionsText),
+    likeCount: null,
+    commentCount: null,
+    startDate: started,
+  };
+}
+
+/** Sync fetch — used as fallback when called from a Server Action */
 export async function fetchMetaAdsApify(
   keyword: string,
   country: string,
   limit: number
 ): Promise<RawScrapedAd[]> {
-  const items = await runActor<ApifyFbAd>("apify/facebook-ads-scraper", {
-    queries: [keyword],
-    country: country === "ALL" ? "FR" : country.split(",")[0].trim(),
-    maxAdsPerQuery: Math.min(limit, 30),
-    activeStatus: "ALL",
+  const items = await runActor<ApifyFbAd>("apify~facebook-ads-scraper", {
+    startUrls: [{ url: buildFbAdLibraryUrl(keyword, country) }],
+    maxAds: Math.min(limit, 30),
   });
-
-  return items
-    .filter((item) => item.adCreativeBody || item.adCreativeLinkTitle)
-    .map((item) => {
-      const body = [item.adCreativeBody, item.adCreativeLinkCaption, item.adCreativeLinkTitle]
-        .filter(Boolean)
-        .join(" — ");
-      const started = item.adDeliveryStartTime;
-      const stopped = item.adDeliveryStopTime;
-      const daysActive = daysFromNow(started);
-      const isActive = !stopped || new Date(stopped).getTime() > Date.now();
-      const views = item.impressionsLowerBound
-        ? Math.round((item.impressionsLowerBound + (item.impressionsUpperBound ?? item.impressionsLowerBound)) / 2)
-        : null;
-
-      return {
-        platform: "META" as AdPlatform,
-        adLibraryId: `META-APF-${item.adId ?? item.id ?? Math.random().toString(36).slice(2)}`,
-        advertiserName: item.pageName ?? "Annonceur inconnu",
-        advertiserDomain: null,
-        industry: null,
-        adContent: body,
-        mediaUrl: item.adSnapshotUrl ?? item.snapshotUrl ?? null,
-        isActive,
-        daysActive,
-        viewCount: views,
-        likeCount: null,
-        commentCount: null,
-        startDate: started,
-      };
-    });
+  return items.map(mapFbAdToRaw).filter((a): a is RawScrapedAd => a !== null);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

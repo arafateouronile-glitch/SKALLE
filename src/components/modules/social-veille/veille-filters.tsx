@@ -11,6 +11,7 @@ const PLATFORMS = [
   { value: "", label: "Toutes" },
   { value: "LINKEDIN", label: "LinkedIn" },
   { value: "TWITTER", label: "Twitter / X" },
+  { value: "FACEBOOK", label: "Facebook" },
 ] as const;
 
 const HOOK_TYPES = [

@@ -435,6 +435,66 @@ export async function collectTwitterRun(runId: string, queries: string[]): Promi
   return saved;
 }
 
+/** Collecte et sauvegarde les posts d'un run apify~facebook-posts-scraper */
+export async function collectFacebookRun(runId: string, queries: string[]): Promise<number> {
+  interface ApifyFacebookPost {
+    postId?: string;
+    url?: string;
+    topLevelUrl?: string;
+    text?: string;
+    pageName?: string;
+    time?: string;
+    timestamp?: number;
+    user?: { name?: string; profileUrl?: string; profilePic?: string };
+    likes?: number;
+    reactionLikeCount?: number;
+    comments?: number;
+    shares?: number;
+    inputUrl?: string;
+    error?: string;
+  }
+
+  const items = await fetchApifyRunItems<ApifyFacebookPost>(runId);
+  let saved = 0;
+
+  for (const item of items) {
+    if (item.error) continue;
+    const content = item.text?.trim() ?? "";
+    const url = item.url ?? item.topLevelUrl ?? "";
+    if (!content || !url) continue;
+
+    const likes    = item.likes ?? item.reactionLikeCount ?? 0;
+    const comments = item.comments ?? 0;
+    const shares   = item.shares ?? 0;
+    const niche    = queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
+    const rawDate  = item.time ?? (item.timestamp ? new Date(item.timestamp * 1000).toISOString() : undefined);
+
+    try {
+      await prisma.viralPost.upsert({
+        where: { postUrl: url },
+        update: {
+          likes, comments, shares,
+          viralScore: calcViralScore("FACEBOOK", likes, comments, shares),
+        },
+        create: {
+          platform: "FACEBOOK",
+          content,
+          authorName: item.user?.name ?? item.pageName ?? "Anonyme",
+          authorAvatar: item.user?.profilePic,
+          likes, comments, shares,
+          viralScore: calcViralScore("FACEBOOK", likes, comments, shares),
+          postUrl: url,
+          postedAt: rawDate ? new Date(rawDate) : null,
+          hookType: detectHookType(content),
+          niche,
+        },
+      });
+      saved++;
+    } catch { /* duplicate */ }
+  }
+  return saved;
+}
+
 export async function scrapeViralPosts(options: ScrapeOptions): Promise<ScrapeResult> {
   const { queries, maxPostsPerPlatform = 50 } = options;
   const errors: string[] = [];

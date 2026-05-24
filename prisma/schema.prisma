@@ -1170,6 +1170,7 @@ model PostAbVariant {
 enum ViralPlatform {
   LINKEDIN
   TWITTER
+  FACEBOOK
 }
 
 enum HookType {

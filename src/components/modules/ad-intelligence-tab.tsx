@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -137,6 +137,8 @@ export function AdIntelligenceTab({ workspaceId }: AdIntelligenceTabProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"annonces" | "produits">("annonces");
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [scrapeStatus, setScrapeStatus] = useState<string>("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [filters, setFilters] = useState<AdFilters>({
     domain: "",
     industry: "Tous",
@@ -181,31 +183,93 @@ export function AdIntelligenceTab({ workspaceId }: AdIntelligenceTabProps) {
     });
   }, [workspaceId]);
 
+  function stopPoll() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }
+
+  useEffect(() => () => stopPoll(), []);
+
   const handleSearch = async () => {
-    if (!keyword.trim()) {
-      toast.error("Saisissez un mot-clé");
+    if (!keyword.trim()) { toast.error("Saisissez un mot-clé"); return; }
+    stopPoll();
+    setIsSearching(true);
+    setScrapeStatus("");
+
+    // META → Apify async (avoids Vercel 10s timeout)
+    if (platform === "META") {
+      try {
+        const res = await fetch("/api/ads/scrape", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyword: keyword.trim(), country: "FR", limit: 20 }),
+        });
+        const data = await res.json() as { ok?: boolean; runId?: string; error?: string };
+        if (!res.ok || !data.ok || !data.runId) {
+          toast.error(data.error ?? "Erreur lancement scraper Meta");
+          setIsSearching(false);
+          return;
+        }
+        toast.success("Scraping Meta Ads lancé — résultats dans ~30s…");
+        setScrapeStatus("Scraping Meta Ad Library en cours…");
+        const runId = data.runId;
+        let attempts = 0;
+        pollRef.current = setInterval(async () => {
+          attempts++;
+          try {
+            const cr = await fetch("/api/ads/scrape?collect=1", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ runId, workspaceId }),
+            });
+            const cd = await cr.json() as {
+              status: "running" | "done";
+              ads?: ScrapedAd[];
+              error?: string;
+              runStatus?: string;
+            };
+            if (cd.status === "done") {
+              stopPoll();
+              setIsSearching(false);
+              setScrapeStatus("");
+              const list = cd.ads ?? [];
+              if (list.length > 0) {
+                setAds((prev) => {
+                  const existingIds = new Set(list.map((a) => a.id));
+                  return [...list, ...prev.filter((a) => !existingIds.has(a.id))];
+                });
+                toast.success(`${list.length} publicité(s) Meta récupérée(s)`);
+              } else {
+                toast.warning(`Scrape terminé — 0 ads${cd.error ? ` (${cd.error})` : ""}`);
+              }
+            } else {
+              setScrapeStatus(`Scraping Meta Ads… (${cd.runStatus ?? "RUNNING"})`);
+            }
+          } catch { /* ignore transient */ }
+          if (attempts >= 8) {
+            stopPoll();
+            setIsSearching(false);
+            setScrapeStatus("");
+            toast.error("Timeout scrape Meta — réessaie.");
+          }
+        }, 15_000);
+      } catch {
+        toast.error("Erreur réseau");
+        setIsSearching(false);
+      }
       return;
     }
-    setIsSearching(true);
+
+    // TikTok / LinkedIn / Pinterest → Server Action (mock data)
     try {
       const result = await searchCompetitorAds(workspaceId, keyword.trim(), platform);
-      if (!result.success) {
-        toast.error(result.error || "Erreur lors de la recherche");
-        return;
-      }
+      if (!result.success) { toast.error(result.error || "Erreur lors de la recherche"); return; }
       const list = Array.isArray(result.data) ? result.data : [];
-      if (list.length === 0) {
-        toast.info("Aucune publicité trouvée. Essayez un autre mot-clé ou une autre plateforme.");
-        return;
-      }
+      if (list.length === 0) { toast.info("Aucune publicité trouvée. Essayez un autre mot-clé."); return; }
       setAds((prev) => {
         const existingIds = new Set(list.map((a) => a.id));
-        const kept = prev.filter((a) => !existingIds.has(a.id));
-        return [...(list as ScrapedAd[]), ...kept];
+        return [...(list as ScrapedAd[]), ...prev.filter((a) => !existingIds.has(a.id))];
       });
-      if ("warning" in result && result.warning) {
-        toast.warning(result.warning as string, { duration: 6000 });
-      }
+      if ("warning" in result && result.warning) toast.warning(result.warning as string, { duration: 6000 });
       toast.success(`${list.length} publicité(s) récupérée(s)`);
     } catch {
       toast.error("Erreur lors de la recherche");
@@ -475,6 +539,14 @@ export function AdIntelligenceTab({ workspaceId }: AdIntelligenceTabProps) {
         </CardContent>
       </Card>
 
+      {/* Meta scrape status */}
+      {scrapeStatus && (
+        <div className="flex items-center gap-2 rounded-xl border border-violet-100 bg-violet-50 px-4 py-2.5 text-sm text-violet-700">
+          <Loader2 className="h-4 w-4 animate-spin text-violet-500 flex-shrink-0" />
+          {scrapeStatus}
+        </div>
+      )}
+
       {/* Filtres */}
       {ads.length > 0 && !isSearching && (
         <Card className="overflow-hidden border-gray-200/60 bg-white/70 shadow-sm backdrop-blur-sm">
@@ -624,7 +696,9 @@ export function AdIntelligenceTab({ workspaceId }: AdIntelligenceTabProps) {
           <Card className="border-gray-200/60 bg-white/70 py-16 text-center backdrop-blur-sm">
             <CardContent>
               <Loader2 className="mx-auto h-10 w-10 animate-spin text-violet-500" />
-              <p className="mt-3 text-gray-600 font-medium">Recherche en cours...</p>
+              <p className="mt-3 text-gray-600 font-medium">
+                {platform === "META" ? "Scraping Meta Ad Library…" : "Recherche en cours..."}
+              </p>
             </CardContent>
           </Card>
         ) : ads.length === 0 ? (

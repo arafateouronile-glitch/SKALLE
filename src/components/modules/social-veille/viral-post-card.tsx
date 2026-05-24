@@ -7,17 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Bookmark, ExternalLink, Heart, MessageCircle, Repeat2, Eye, Wand2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InspireDialog } from "./inspire-dialog";
+import { RepliesDialog } from "./replies-dialog";
 import type { ViralPost } from "@prisma/client";
 
-const PLATFORM_COLORS = {
+const PLATFORM_COLORS: Record<string, string> = {
   LINKEDIN: "bg-blue-600",
   TWITTER: "bg-sky-500",
-} as const;
+  FACEBOOK: "bg-[#1877F2]",
+};
 
-const PLATFORM_LABELS = {
+const PLATFORM_LABELS: Record<string, string> = {
   LINKEDIN: "LinkedIn",
   TWITTER: "Twitter / X",
-} as const;
+  FACEBOOK: "Facebook",
+};
 
 const HOOK_LABELS: Record<string, string> = {
   QUESTION: "Question",
@@ -46,6 +49,7 @@ export function ViralPostCard({ post, onBookmarkToggle }: ViralPostCardProps) {
   const [bookmarked, setBookmarked] = useState(post.isBookmarked);
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
   const [inspireOpen, setInspireOpen] = useState(false);
+  const [repliesOpen, setRepliesOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   const isLong = post.content.length > 280;
@@ -159,6 +163,16 @@ export function ViralPostCard({ post, onBookmarkToggle }: ViralPostCardProps) {
             <Wand2 className="h-3.5 w-3.5" />
             Inspirer mon post
           </Button>
+          {post.platform === "TWITTER" && (
+            <Button
+              size="sm"
+              className="h-7 text-[12px] bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 gap-1.5"
+              onClick={() => setRepliesOpen(true)}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              Réponses
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -188,6 +202,7 @@ export function ViralPostCard({ post, onBookmarkToggle }: ViralPostCardProps) {
       </div>
 
       <InspireDialog postId={post.id} open={inspireOpen} onClose={() => setInspireOpen(false)} />
+      <RepliesDialog postId={post.id} open={repliesOpen} onClose={() => setRepliesOpen(false)} />
     </>
   );
 }
