@@ -16,8 +16,11 @@ export type CRMSourceFilter =
 
 export type ProspectStatusPipeline =
   | "NEW"
+  | "RESEARCHED"
+  | "MESSAGES_GENERATED"
   | "CONTACTED"
-  | "REPLIED"
+  | "RESPONDED"
+  | "MEETING_BOOKED"
   | "CONVERTED"
   | "REJECTED";
 
@@ -60,6 +63,9 @@ export interface ProspectForCrm {
   company: string;
   jobTitle: string | null;
   email: string | null;
+  phone: string | null;
+  linkedInUrl: string;
+  notes: string | null;
   status: string;
   source: string | null;
   platform: string | null;
@@ -68,6 +74,7 @@ export interface ProspectForCrm {
   temperature: string;
   lastInteractionAt: Date | null;
   updatedAt: Date;
+  createdAt: Date;
 }
 
 const PROSPECT_SELECT = {
@@ -76,6 +83,9 @@ const PROSPECT_SELECT = {
   company: true,
   jobTitle: true,
   email: true,
+  phone: true,
+  linkedInUrl: true,
+  notes: true,
   status: true,
   source: true,
   platform: true,
@@ -84,6 +94,7 @@ const PROSPECT_SELECT = {
   temperature: true,
   lastInteractionAt: true,
   updatedAt: true,
+  createdAt: true,
 } as const;
 
 export async function getProspectsForCrm(
@@ -138,7 +149,7 @@ export async function getRelanceLeads(
     const prospects = await prisma.prospect.findMany({
       where: {
         workspaceId,
-        status: { in: ["CONTACTED", "REPLIED"] },
+        status: { in: ["CONTACTED", "REPLIED", "RESPONDED"] },
         OR: [
           { lastInteractionAt: { lt: fourDaysAgo } },
           { lastInteractionAt: null, updatedAt: { lt: fourDaysAgo } },

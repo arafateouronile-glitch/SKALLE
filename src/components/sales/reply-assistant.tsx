@@ -194,7 +194,7 @@ export function ReplyAssistant({
                     <Sparkles className="h-4 w-4 inline mr-2 text-violet-500" />
                     L&apos;IA suggère : passer ce lead en{" "}
                     <strong>
-                      {result.suggestedPipelineStatus === "CONVERTED" ? "Gagné" : "En Discussion"}
+                      {result.suggestedPipelineStatus === "CONVERTED" ? "Gagné" : "Répondu"}
                     </strong>
                   </p>
                   <Button

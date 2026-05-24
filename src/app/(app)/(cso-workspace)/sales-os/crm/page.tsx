@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * CRM Pipeline — Light theme
- * Kanban + Drag & Drop + Source filters + Relance intelligente
+ * CRM Pipeline — Kanban complet
+ * Statuts : NEW → RESEARCHED → MESSAGES_GENERATED → CONTACTED → RESPONDED → MEETING_BOOKED → CONVERTED (+ REJECTED)
+ * Drag & drop HTML5 · panneau de détail · filtres source · relance intelligente
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -26,6 +27,14 @@ import {
   Globe,
   Users,
   LayoutGrid,
+  X,
+  Mail,
+  Phone,
+  ExternalLink,
+  ChevronRight,
+  Calendar,
+  StickyNote,
+  Rocket,
 } from "lucide-react";
 import {
   getProspectsForCrm,
@@ -56,14 +65,16 @@ const SOURCE_TABS: {
   { value: "INSTAGRAM_HASHTAG", label: "Instagram", icon: <Instagram className="h-3.5 w-3.5" />, color: "text-pink-500" },
 ];
 
-const PIPELINE_COLUMNS: {
+type ColConfig = {
   status: ProspectStatusPipeline;
   label: string;
   accent: string;
   headerBg: string;
   dot: string;
   dropBg: string;
-}[] = [
+};
+
+const PIPELINE_COLUMNS: ColConfig[] = [
   {
     status: "NEW",
     label: "Nouveaux",
@@ -71,6 +82,22 @@ const PIPELINE_COLUMNS: {
     headerBg: "bg-gray-100",
     dot: "bg-gray-400",
     dropBg: "border-gray-400 bg-gray-100",
+  },
+  {
+    status: "RESEARCHED",
+    label: "Recherchés",
+    accent: "border-cyan-200",
+    headerBg: "bg-cyan-50",
+    dot: "bg-cyan-400",
+    dropBg: "border-cyan-400 bg-cyan-50",
+  },
+  {
+    status: "MESSAGES_GENERATED",
+    label: "Msgs générés",
+    accent: "border-purple-200",
+    headerBg: "bg-purple-50",
+    dot: "bg-purple-400",
+    dropBg: "border-purple-400 bg-purple-50",
   },
   {
     status: "CONTACTED",
@@ -81,12 +108,20 @@ const PIPELINE_COLUMNS: {
     dropBg: "border-amber-400 bg-amber-50",
   },
   {
-    status: "REPLIED",
-    label: "En Discussion",
+    status: "RESPONDED",
+    label: "Répondus",
     accent: "border-violet-200",
     headerBg: "bg-violet-50",
     dot: "bg-violet-400",
     dropBg: "border-violet-400 bg-violet-50",
+  },
+  {
+    status: "MEETING_BOOKED",
+    label: "RDV pris",
+    accent: "border-blue-200",
+    headerBg: "bg-blue-50",
+    dot: "bg-blue-400",
+    dropBg: "border-blue-400 bg-blue-50",
   },
   {
     status: "CONVERTED",
@@ -106,15 +141,27 @@ const PIPELINE_COLUMNS: {
   },
 ];
 
+const STATUS_LABELS: Record<string, string> = {
+  NEW: "Nouveau",
+  RESEARCHED: "Recherché",
+  MESSAGES_GENERATED: "Msgs générés",
+  CONTACTED: "Contacté",
+  RESPONDED: "Répondu",
+  MEETING_BOOKED: "RDV pris",
+  CONVERTED: "Gagné",
+  REJECTED: "Perdu",
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatDate(d: Date | null) {
+function formatDate(d: Date | string | null) {
   if (!d) return null;
-  const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const date = d instanceof Date ? d : new Date(d);
+  const diff = Math.floor((Date.now() - date.getTime()) / 86400000);
   if (diff === 0) return "Aujourd'hui";
   if (diff === 1) return "Hier";
   if (diff < 7) return `J-${diff}`;
-  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  return date.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
 
 function SourceIcon({ source, platform }: { source: string | null; platform: string | null }) {
@@ -141,11 +188,13 @@ function ProspectCard({
   isDragging,
   onDragStart,
   onDragEnd,
+  onClick,
 }: {
   p: ProspectForCrm;
   isDragging: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
+  onClick: () => void;
 }) {
   const date = formatDate(p.lastInteractionAt);
 
@@ -158,58 +207,43 @@ function ProspectCard({
         onDragStart(e);
       }}
       onDragEnd={onDragEnd}
+      onClick={onClick}
       className={cn(
-        "group rounded-xl border bg-white p-3 cursor-grab active:cursor-grabbing transition-all duration-150",
+        "group rounded-xl border bg-white p-3 cursor-pointer transition-all duration-150",
         "hover:bg-gray-50 hover:border-gray-300 hover:shadow-md hover:shadow-gray-200/80",
-        isDragging
-          ? "opacity-40 scale-95 border-gray-300"
-          : "border-gray-200"
+        isDragging ? "opacity-40 scale-95 border-gray-300" : "border-gray-200"
       )}
     >
-      {/* Top row: drag handle + name + temp */}
       <div className="flex items-start gap-2">
-        <GripVertical className="h-4 w-4 text-gray-300 group-hover:text-gray-400 shrink-0 mt-0.5 transition-colors" />
+        <GripVertical className="h-4 w-4 text-gray-300 group-hover:text-gray-400 shrink-0 mt-0.5 transition-colors cursor-grab active:cursor-grabbing" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">
             <p className="font-semibold text-gray-900 text-sm truncate">{p.name}</p>
             <TemperatureIcon temp={p.temperature} />
           </div>
 
-          {/* Company + job title */}
           <p className="text-[11px] text-gray-500 truncate mt-0.5">
             {p.company}
-            {p.jobTitle && (
-              <span className="text-gray-400"> · {p.jobTitle}</span>
-            )}
+            {p.jobTitle && <span className="text-gray-400"> · {p.jobTitle}</span>}
           </p>
 
-          {/* Score bar */}
           {p.score > 0 && (
             <div className="mt-2 flex items-center gap-1.5">
               <div className="flex-1 h-1 rounded-full bg-gray-200 overflow-hidden">
                 <div
                   className={cn(
                     "h-full rounded-full transition-all",
-                    p.score >= 80
-                      ? "bg-red-500"
-                      : p.score >= 40
-                      ? "bg-amber-500"
-                      : "bg-gray-300"
+                    p.score >= 80 ? "bg-red-500" : p.score >= 40 ? "bg-amber-500" : "bg-gray-300"
                   )}
                   style={{ width: `${Math.min(p.score, 100)}%` }}
                 />
               </div>
-              <span className="text-[10px] tabular-nums text-gray-400 w-6 text-right">
-                {p.score}
-              </span>
+              <span className="text-[10px] tabular-nums text-gray-400 w-6 text-right">{p.score}</span>
             </div>
           )}
 
-          {/* Meta row */}
           <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <span className="flex items-center gap-1">
-              <SourceIcon source={p.source} platform={p.platform} />
-            </span>
+            <SourceIcon source={p.source} platform={p.platform} />
             {p.value != null && p.value > 0 && (
               <span className="text-[10px] font-semibold text-emerald-600 tabular-nums">
                 {p.value.toLocaleString("fr-FR")} €
@@ -219,16 +253,220 @@ function ProspectCard({
               <span className="text-[10px] text-gray-400 ml-auto tabular-nums">{date}</span>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          {/* Reply link */}
-          <Link
-            href={`/sales-os/reply-assistant?prospectId=${p.id}`}
-            className="mt-2 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-violet-600 transition-colors"
-            onClick={(e) => e.stopPropagation()}
+// ─── Detail Panel ─────────────────────────────────────────────────────────────
+
+function DetailPanel({
+  prospect,
+  onClose,
+  onStatusChange,
+}: {
+  prospect: ProspectForCrm;
+  onClose: () => void;
+  onStatusChange: (prospectId: string, status: ProspectStatusPipeline) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  const col = PIPELINE_COLUMNS.find((c) => c.status === prospect.status);
+  const nextStatuses = PIPELINE_COLUMNS.filter((c) => c.status !== prospect.status && c.status !== "REJECTED");
+
+  const handleMove = async (status: ProspectStatusPipeline) => {
+    setSaving(true);
+    await onStatusChange(prospect.id, status);
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-y-0 right-0 z-40 flex">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/20 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="relative ml-auto w-[380px] bg-white shadow-2xl flex flex-col h-full overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-start justify-between gap-3 z-10">
+          <div className="min-w-0">
+            <h2 className="font-bold text-gray-900 text-base truncate">{prospect.name}</h2>
+            <p className="text-sm text-gray-500 mt-0.5 truncate">
+              {prospect.company}
+              {prospect.jobTitle && <span className="text-gray-400"> · {prospect.jobTitle}</span>}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           >
-            <MessageCircle className="h-3 w-3" />
-            Répondre
-          </Link>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5 flex-1">
+          {/* Status badge */}
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border",
+                col
+                  ? `${col.headerBg} ${col.accent}`
+                  : "bg-gray-100 border-gray-200"
+              )}
+            >
+              {col && <span className={cn("h-1.5 w-1.5 rounded-full", col.dot)} />}
+              {STATUS_LABELS[prospect.status] ?? prospect.status}
+            </span>
+            {prospect.temperature && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <TemperatureIcon temp={prospect.temperature} />
+                {prospect.temperature === "HOT" ? "Chaud" : prospect.temperature === "WARM" ? "Tiède" : "Froid"}
+              </span>
+            )}
+            {prospect.score > 0 && (
+              <span className="text-xs text-gray-400 ml-auto tabular-nums">
+                Score {prospect.score}/100
+              </span>
+            )}
+          </div>
+
+          {/* Contact info */}
+          <div className="space-y-2">
+            {prospect.email && (
+              <a
+                href={`mailto:${prospect.email}`}
+                className="flex items-center gap-2 text-sm text-gray-700 hover:text-blue-600 transition-colors group"
+              >
+                <Mail className="h-4 w-4 text-gray-400 group-hover:text-blue-400 shrink-0" />
+                <span className="truncate">{prospect.email}</span>
+              </a>
+            )}
+            {prospect.phone && (
+              <a
+                href={`tel:${prospect.phone}`}
+                className="flex items-center gap-2 text-sm text-gray-700 hover:text-blue-600 transition-colors group"
+              >
+                <Phone className="h-4 w-4 text-gray-400 group-hover:text-blue-400 shrink-0" />
+                {prospect.phone}
+              </a>
+            )}
+            {prospect.linkedInUrl && (
+              <a
+                href={prospect.linkedInUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-gray-700 hover:text-sky-600 transition-colors group"
+              >
+                <Linkedin className="h-4 w-4 text-gray-400 group-hover:text-sky-500 shrink-0" />
+                <span className="truncate text-sky-600">{prospect.linkedInUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "").replace(/\/$/, "")}</span>
+                <ExternalLink className="h-3 w-3 text-gray-300 shrink-0" />
+              </a>
+            )}
+          </div>
+
+          {/* Value */}
+          {prospect.value != null && prospect.value > 0 && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+              <p className="text-xs text-emerald-600 mb-0.5">Valeur estimée</p>
+              <p className="text-lg font-bold text-emerald-700 tabular-nums">
+                {prospect.value.toLocaleString("fr-FR")} €
+              </p>
+            </div>
+          )}
+
+          {/* Notes */}
+          {prospect.notes && (
+            <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <StickyNote className="h-3.5 w-3.5 text-gray-400" />
+                <p className="text-xs font-medium text-gray-500">Notes</p>
+              </div>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{prospect.notes}</p>
+            </div>
+          )}
+
+          {/* Timestamps */}
+          <div className="space-y-1.5 text-[11px] text-gray-400">
+            {prospect.lastInteractionAt && (
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-3 w-3" />
+                Dernière interaction : {formatDate(prospect.lastInteractionAt)}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3 w-3" />
+              Ajouté le {new Date(prospect.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+            </div>
+          </div>
+
+          {/* Quick actions */}
+          <div className="space-y-2 pt-1">
+            <Link
+              href={`/sales-os/reply-assistant?prospectId=${prospect.id}`}
+              className="flex items-center justify-between w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-700 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 transition-all group"
+            >
+              <span className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-gray-400 group-hover:text-violet-500" />
+                Reply Assistant
+              </span>
+              <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-violet-400" />
+            </Link>
+            {prospect.linkedInUrl && (
+              <a
+                href={`/sales-os/prospection?tab=linkedin-queue`}
+                className="flex items-center justify-between w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 transition-all group"
+              >
+                <span className="flex items-center gap-2">
+                  <Rocket className="h-4 w-4 text-gray-400 group-hover:text-sky-500" />
+                  Lancer séquence LinkedIn
+                </span>
+                <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-sky-400" />
+              </a>
+            )}
+          </div>
+
+          {/* Move to stage */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Déplacer vers</p>
+            <div className="flex flex-wrap gap-1.5">
+              {nextStatuses.map((c) => (
+                <button
+                  key={c.status}
+                  disabled={saving}
+                  onClick={() => handleMove(c.status)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border transition-all",
+                    c.headerBg,
+                    c.accent,
+                    "hover:brightness-95 disabled:opacity-50"
+                  )}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", c.dot)} />
+                  {c.label}
+                </button>
+              ))}
+              {prospect.status !== "REJECTED" && (
+                <button
+                  disabled={saving}
+                  onClick={() => handleMove("REJECTED")}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-all disabled:opacity-50"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-400 shrink-0" />
+                  Perdu
+                </button>
+              )}
+            </div>
+            {saving && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Mise à jour…
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -245,6 +483,7 @@ export default function CRMPage() {
   const [loading, setLoading] = useState(true);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<ProspectStatusPipeline | null>(null);
+  const [selectedProspect, setSelectedProspect] = useState<ProspectForCrm | null>(null);
 
   const loadAll = useCallback(async (wsId: string, tab: CRMSourceFilter) => {
     setLoading(true);
@@ -282,27 +521,26 @@ export default function CRMPage() {
       if (!workspaceId) return;
       setDraggedId(null);
       setDropTarget(null);
-      // Optimistic update
       setProspects((prev) =>
         prev.map((p) => (p.id === prospectId ? { ...p, status: newStatus } : p))
       );
+      if (selectedProspect?.id === prospectId) {
+        setSelectedProspect((p) => p ? { ...p, status: newStatus } : p);
+      }
       const ok = await updateProspectStatusAction(prospectId, newStatus, workspaceId);
       if (!ok.success) {
         toast.error(ok.error || "Erreur");
-        // Revert on error
         loadAll(workspaceId, sourceTab);
       }
     },
-    [workspaceId, sourceTab, loadAll]
+    [workspaceId, sourceTab, loadAll, selectedProspect]
   );
 
   const byStatus = (status: ProspectStatusPipeline) =>
     prospects.filter((p) => p.status === status);
 
-  // Stats
   const total = prospects.length;
   const hot = prospects.filter((p) => p.temperature === "HOT").length;
-  const converted = byStatus("CONVERTED");
   const pipelineValue = prospects.reduce((s, p) => s + (p.value ?? 0), 0);
 
   if (!workspaceId) {
@@ -318,9 +556,8 @@ export default function CRMPage() {
 
       {/* ── Header ── */}
       <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8">
 
-          {/* Title row */}
           <div className="flex items-center justify-between py-4 border-b border-gray-100">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-200">
@@ -328,13 +565,10 @@ export default function CRMPage() {
               </div>
               <div>
                 <h1 className="text-sm font-bold text-gray-900">CRM Pipeline</h1>
-                <p className="text-[11px] text-gray-400">
-                  Drag & drop pour changer de statut
-                </p>
+                <p className="text-[11px] text-gray-400">Drag & drop · cliquez une carte pour les détails</p>
               </div>
             </div>
 
-            {/* Stats pills */}
             <div className="hidden md:flex items-center gap-2">
               <span className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-500">
                 <Users className="h-3 w-3" />
@@ -412,16 +646,14 @@ export default function CRMPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
+      <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-6">
 
         {/* ── Relance intelligente ── */}
         {relanceLeads.length > 0 && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
             <div className="flex items-center gap-2 mb-3">
               <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-              <p className="text-sm font-semibold text-amber-700">
-                Relance intelligente
-              </p>
+              <p className="text-sm font-semibold text-amber-700">Relance intelligente</p>
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">
                 {relanceLeads.length} sans réponse depuis 4+ jours
               </span>
@@ -458,17 +690,12 @@ export default function CRMPage() {
               <div
                 key={col.status}
                 className={cn(
-                  "shrink-0 w-[260px] rounded-xl border-2 transition-all duration-150",
+                  "shrink-0 w-[240px] rounded-xl border-2 transition-all duration-150",
                   isDropTarget ? col.dropBg : `${col.accent} bg-white/80`
                 )}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDropTarget(col.status);
-                }}
+                onDragOver={(e) => { e.preventDefault(); setDropTarget(col.status); }}
                 onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    setDropTarget(null);
-                  }
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget(null);
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
@@ -478,12 +705,7 @@ export default function CRMPage() {
                 }}
               >
                 {/* Column header */}
-                <div
-                  className={cn(
-                    "flex items-center justify-between px-3 py-2.5 rounded-t-[10px] border-b border-gray-200",
-                    col.headerBg
-                  )}
-                >
+                <div className={cn("flex items-center justify-between px-3 py-2.5 rounded-t-[10px] border-b border-gray-200", col.headerBg)}>
                   <div className="flex items-center gap-2">
                     <span className={cn("h-2 w-2 rounded-full", col.dot)} />
                     <span className="text-xs font-semibold text-gray-700">{col.label}</span>
@@ -514,6 +736,7 @@ export default function CRMPage() {
                         isDragging={draggedId === p.id}
                         onDragStart={() => setDraggedId(p.id)}
                         onDragEnd={() => setDraggedId(null)}
+                        onClick={() => setSelectedProspect(p)}
                       />
                     ))
                   )}
@@ -523,6 +746,15 @@ export default function CRMPage() {
           })}
         </div>
       </div>
+
+      {/* ── Detail Panel ── */}
+      {selectedProspect && (
+        <DetailPanel
+          prospect={selectedProspect}
+          onClose={() => setSelectedProspect(null)}
+          onStatusChange={onDrop}
+        />
+      )}
     </div>
   );
 }

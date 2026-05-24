@@ -35,7 +35,7 @@ Calme, expert, empathique mais détaché du résultat (Posture d'autorité).`;
 export type ClosingIntention = "LOGISTIQUE" | "PRIX" | "CONFIANCE" | "CURIOSITE_SCEPTIQUE" | "OBJECTION" | "ENGAGEMENT";
 
 /** Statut pipeline suggéré par l'IA selon le message reçu (CRM). */
-export type SuggestedPipelineStatus = "REPLIED" | "CONVERTED";
+export type SuggestedPipelineStatus = "RESPONDED" | "CONVERTED";
 
 export interface ClosingResponseResult {
   /** Intention détectée (pour l'UI "Intention : ...") */
@@ -154,7 +154,7 @@ INSTRUCTIONS :
    - REPLIED : le prospect est en discussion (question, intérêt, pas encore décidé).
    - CONVERTED : le prospect montre un accord clair, demande un devis/call/paiement, ou dit oui.
 
-Réponds UNIQUEMENT en JSON valide avec les clés : intentionDetected (string: LOGISTIQUE | PRIX | CONFIANCE | CURIOSITE_SCEPTIQUE | OBJECTION | ENGAGEMENT), objectionLabel (string optionnel), optionA (string), optionB (string), strategicNote (string), suggestedPipelineStatus (string optionnel: REPLIED | CONVERTED).`,
+Réponds UNIQUEMENT en JSON valide avec les clés : intentionDetected (string: LOGISTIQUE | PRIX | CONFIANCE | CURIOSITE_SCEPTIQUE | OBJECTION | ENGAGEMENT), objectionLabel (string optionnel), optionA (string), optionB (string), strategicNote (string), suggestedPipelineStatus (string optionnel: RESPONDED | CONVERTED).`,
   ],
 ]);
 
@@ -215,7 +215,7 @@ export async function generateClosingResponse(
       suggestedPipelineStatus?: string;
     };
     const suggested =
-      parsed.suggestedPipelineStatus === "CONVERTED" || parsed.suggestedPipelineStatus === "REPLIED"
+      parsed.suggestedPipelineStatus === "CONVERTED" || parsed.suggestedPipelineStatus === "RESPONDED"
         ? (parsed.suggestedPipelineStatus as SuggestedPipelineStatus)
         : undefined;
     return {
