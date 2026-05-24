@@ -227,38 +227,6 @@ async function serperSearch(q: string, num = 10): Promise<SerperOrganicResult[]>
   return data.organic ?? [];
 }
 
-/** Trouve des profils LinkedIn pertinents via Serper pour les passer à Apify */
-export async function findLinkedInProfiles(queries: string[], maxProfiles = 15): Promise<string[]> {
-  const profileUrls = new Set<string>();
-
-  for (const query of queries.slice(0, 4)) {
-    const results = await serperSearch(
-      `site:linkedin.com/in ${query} -login -signup -jobs -company`,
-      5
-    );
-    for (const item of results) {
-      const url = item.link ?? "";
-      // Keep only /in/ profile URLs, strip query params
-      const match = url.match(/https:\/\/www\.linkedin\.com\/in\/[^/?#]+/);
-      if (match) profileUrls.add(match[0] + "/");
-      if (profileUrls.size >= maxProfiles) break;
-    }
-    if (profileUrls.size >= maxProfiles) break;
-  }
-
-  return Array.from(profileUrls);
-}
-
-/** Lance un run async harvestapi~linkedin-profile-posts, retourne le runId */
-export async function startLinkedInProfileScrape(
-  profileUrls: string[],
-  maxPostsPerProfile = 5
-): Promise<string> {
-  return startApifyRun("harvestapi~linkedin-profile-posts", {
-    profileUrls,
-    maxPostsPerProfile,
-  });
-}
 
 /** Collecte et sauvegarde les posts d'un run harvestapi~linkedin-profile-posts */
 export async function collectHarvestLinkedInRun(runId: string, queries: string[]): Promise<number> {

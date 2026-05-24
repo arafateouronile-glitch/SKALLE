@@ -1,19 +1,15 @@
 /**
  * POST /api/social/veille/scrape
- * 1. Trouve des profils LinkedIn via Serper
- * 2. Lance harvestapi~linkedin-profile-posts (async)
- * 3. Lance apidojo~tweet-scraper (async)
- * → Retourne { runIds } immédiatement
+ * Lance harvestapi~linkedin-profile-posts + apidojo~tweet-scraper en async.
+ * Retourne { runIds } immédiatement, le frontend poll jusqu'à SUCCEEDED.
  *
  * POST /api/social/veille/scrape?collect=1  { runIds, queries }
- * Vérifie le statut des runs et collecte si SUCCEEDED.
+ * Vérifie le statut et collecte le dataset quand terminé.
  */
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
-  findLinkedInProfiles,
-  startLinkedInProfileScrape,
   startApifyRun,
   getApifyRunStatus,
   collectHarvestLinkedInRun,
@@ -36,7 +32,10 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
   if (!process.env.APIFY_API_TOKEN) {
-    return NextResponse.json({ error: "APIFY_API_TOKEN manquant dans les variables d'environnement Vercel." }, { status: 503 });
+    return NextResponse.json(
+      { error: "APIFY_API_TOKEN manquant dans les variables Vercel." },
+      { status: 503 }
+    );
   }
 
   if (req.nextUrl.searchParams.get("collect") === "1") {
@@ -54,26 +53,24 @@ export async function POST(req: NextRequest) {
   if (Array.isArray(bv?.contentPillars)) queries.unshift(...(bv.contentPillars as string[]).slice(0, 3));
   const uniqueQueries = [...new Set(queries)].slice(0, 10);
 
-  // Trouver les profils LinkedIn via Serper
-  const profileUrls = await findLinkedInProfiles(uniqueQueries, 15).catch(() => [] as string[]);
-
   const errors: string[] = [];
   let linkedinRunId: string | null = null;
   let twitterRunId: string | null = null;
 
   await Promise.allSettled([
-    (profileUrls.length > 0
-      ? startLinkedInProfileScrape(profileUrls, 6)
-      : Promise.reject(new Error("Aucun profil LinkedIn trouvé via Serper"))
-    ).then((id) => { linkedinRunId = id; })
-     .catch((e: Error) => errors.push(`LinkedIn: ${e.message}`)),
+    startApifyRun("harvestapi~linkedin-profile-posts", {
+      queries: uniqueQueries,
+      sortBy: "TOP_POSTS",
+      maxResults: 30,
+    }).then((id) => { linkedinRunId = id; })
+      .catch((e: Error) => errors.push(`LinkedIn: ${e.message}`)),
 
     startApifyRun("apidojo~tweet-scraper", {
       searchTerms: uniqueQueries.slice(0, 6),
       maxTweets: 30,
       queryType: "Top",
     }).then((id) => { twitterRunId = id; })
-     .catch((e: Error) => errors.push(`Twitter: ${e.message}`)),
+      .catch((e: Error) => errors.push(`Twitter: ${e.message}`)),
   ]);
 
   if (!linkedinRunId && !twitterRunId) {
@@ -84,9 +81,8 @@ export async function POST(req: NextRequest) {
     ok: true,
     runIds: { linkedin: linkedinRunId, twitter: twitterRunId },
     queries: uniqueQueries,
-    profilesFound: profileUrls.length,
     errors,
-    message: `Scrape lancé (${profileUrls.length} profils LinkedIn) — résultats dans ~2 min`,
+    message: "Scrape lancé — résultats dans ~2 min",
   });
 }
 
@@ -113,13 +109,15 @@ async function handleCollect(req: NextRequest) {
   const errors: string[] = [];
 
   if (liStatus === "SUCCEEDED" && runIds.linkedin) {
-    saved += await collectHarvestLinkedInRun(runIds.linkedin, queries).catch((e: Error) => { errors.push(`LinkedIn: ${e.message}`); return 0; });
+    saved += await collectHarvestLinkedInRun(runIds.linkedin, queries)
+      .catch((e: Error) => { errors.push(`LinkedIn: ${e.message}`); return 0; });
   } else if (runIds.linkedin) {
     errors.push(`LinkedIn run ${liStatus}`);
   }
 
   if (twStatus === "SUCCEEDED" && runIds.twitter) {
-    saved += await collectTwitterRun(runIds.twitter, queries).catch((e: Error) => { errors.push(`Twitter: ${e.message}`); return 0; });
+    saved += await collectTwitterRun(runIds.twitter, queries)
+      .catch((e: Error) => { errors.push(`Twitter: ${e.message}`); return 0; });
   } else if (runIds.twitter) {
     errors.push(`Twitter run ${twStatus}`);
   }
