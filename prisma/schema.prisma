@@ -110,6 +110,7 @@ model Workspace {
   adCampaigns               AdCampaign[]
   viralPosts                ViralPost[]
   postAbTests               PostAbTest[]
+  intentSignals             IntentSignal[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -312,6 +313,7 @@ model Prospect {
   aiNotes             ProspectAiNote[]
   interactions        ProspectInteraction[]
   lists               ProspectListEntry[]
+  intentSignals       IntentSignal[]
 
   @@unique([email, workspaceId])
   @@index([workspaceId])
@@ -1277,4 +1279,39 @@ model ContactDB {
   @@index([source])
   @@index([createdAt])
   @@index([seenCount])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTENT SIGNALS — Signaux d'achat détectés via Serper News
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum SignalType {
+  FUNDING
+  HIRING
+  EXPANSION
+  ACQUISITION
+  PARTNERSHIP
+  NEWS
+}
+
+model IntentSignal {
+  id          String     @id @default(cuid())
+  type        SignalType
+  companyName String
+  title       String
+  description String?
+  sourceUrl   String?
+  score       Int        @default(50)
+  prospectId  String?
+  workspaceId String
+  detectedAt  DateTime   @default(now())
+
+  prospect    Prospect?  @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([prospectId])
+  @@index([companyName])
+  @@index([type])
+  @@index([detectedAt])
 }

@@ -78,7 +78,9 @@ import {
   Download,
   Upload,
   FileSpreadsheet,
+  Zap,
 } from "lucide-react";
+import { IntentSignalsPanel } from "@/components/modules/cso/intent-signals-panel";
 import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
 import { EmailWarmupDashboard } from "@/components/prospection/email-warmup-dashboard";
 import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
@@ -2631,6 +2633,13 @@ export default function ProspectionPage() {
             <Shield className="h-4 w-4 mr-2" />
             Délivrabilité
           </TabsTrigger>
+          <TabsTrigger
+            value="intent-signals"
+            className="data-[state=active]:bg-amber-500 data-[state=active]:text-white"
+          >
+            <Zap className="h-4 w-4 mr-2" />
+            Intent Signals
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="find-leads">
@@ -2686,6 +2695,10 @@ export default function ProspectionPage() {
             <EmailWarmupDashboard workspaceId={workspaceId} />
             <DeliverabilityTab workspaceId={workspaceId} />
           </div>
+        </TabsContent>
+
+        <TabsContent value="intent-signals">
+          <IntentSignalsPanel workspaceId={workspaceId} />
         </TabsContent>
       </Tabs>
     </div>
