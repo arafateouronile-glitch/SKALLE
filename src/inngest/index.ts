@@ -42,6 +42,7 @@ import { syncPostAnalyticsCron, syncPostAnalyticsManual } from "./functions/sync
 import { intentSignalsDailyCron, intentSignalsManual } from "./functions/intent-signals-daily";
 import { linkedInOutreachDaily, linkedInOutreachManual } from "./functions/linkedin-outreach-daily";
 import { linkedInReplyChecker, linkedInReplyCheckerManual } from "./functions/linkedin-reply-checker";
+import { emailOutreachDaily, emailOutreachManual } from "./functions/email-outreach-daily";
 
 // Export all Inngest functions
 export const functions = [
@@ -98,4 +99,7 @@ export const functions = [
   // CSO LinkedIn — Détection des réponses (toutes les 4h)
   linkedInReplyChecker,
   linkedInReplyCheckerManual,
+  // CSO Email — Outreach autonome (envoi quotidien 8h)
+  emailOutreachDaily,
+  emailOutreachManual,
 ];

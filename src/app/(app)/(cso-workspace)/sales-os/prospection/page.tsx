@@ -90,6 +90,7 @@ import { LinkedInImportDialog } from "@/components/prospection/linkedin-import-d
 import { LinkedInActionsQueue } from "@/components/prospection/linkedin-actions-queue";
 import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
 import { BulkLinkedInLaunchDialog } from "@/components/modules/cso/bulk-linkedin-launch-dialog";
+import { BulkEmailLaunchDialog } from "@/components/modules/cso/bulk-email-launch-dialog";
 import { LookalikeDialog } from "@/components/prospection/lookalike-dialog";
 import { createProspect, generateProspectionSequence, getProspects } from "@/actions/prospects";
 import {
@@ -2553,6 +2554,7 @@ export default function ProspectionPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [showBulkLaunch, setShowBulkLaunch] = useState(false);
   const [linkedInQueueKey, setLinkedInQueueKey] = useState(0);
+  const [showBulkEmail, setShowBulkEmail] = useState(false);
   useEffect(() => {
     getUserWorkspace().then((result) => {
       if (result.success && result.workspaceId) {
@@ -2656,14 +2658,32 @@ export default function ProspectionPage() {
 
         <TabsContent value="campaigns">
           <div className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">Campagnes Email</h2>
-              <p className="text-gray-500 mt-1">
-                Gérez vos campagnes d'emailing multi-étapes avec personnalisation
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Campagnes Email</h2>
+                <p className="text-gray-500 mt-1">
+                  Campagnes multi-étapes + séquences 1:1 autonomes
+                </p>
+              </div>
+              <Button
+                onClick={() => setShowBulkEmail(true)}
+                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+              >
+                <Mail className="h-4 w-4 mr-2" />
+                Lancer des séquences email
+              </Button>
             </div>
             <CampaignDashboard workspaceId={workspaceId} />
           </div>
+          <BulkEmailLaunchDialog
+            workspaceId={workspaceId}
+            open={showBulkEmail}
+            onClose={() => setShowBulkEmail(false)}
+            onLaunched={(count) => {
+              setShowBulkEmail(false);
+              toast.success(`${count} séquence(s) email créées — envoi prochain run à 8h`);
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="sequences">
