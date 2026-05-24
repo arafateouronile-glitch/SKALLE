@@ -12,7 +12,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { scanWorkspaceSignals } from "@/lib/services/prospects/intent-scanner";
+import {
+  scanWorkspaceSignals,
+  scanNewCompaniesInSectors,
+} from "@/lib/services/prospects/intent-scanner";
 
 async function resolveWorkspace(workspaceId: string, userId: string) {
   return prisma.workspace.findFirst({
@@ -73,11 +76,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (companies.length === 0) {
+  // Get persona industries from LeadSearchCriteria
+  const criteriaList = await prisma.leadSearchCriteria.findMany({
+    where: { workspaceId, isActive: true },
+    select: { industries: true },
+    take: 3,
+  });
+  const industries = [
+    ...new Set(criteriaList.flatMap((c) => c.industries).filter(Boolean)),
+  ];
+
+  const [companySignals, newCompanySignals] = await Promise.all([
+    companies.length > 0 ? scanWorkspaceSignals(companies) : Promise.resolve([]),
+    industries.length > 0 ? scanNewCompaniesInSectors(industries) : Promise.resolve([]),
+  ]);
+
+  const detected: Array<ReturnType<typeof Object.assign> & { prospectId?: string }> = [
+    ...companySignals,
+    ...newCompanySignals.map((s) => ({ ...s, prospectId: undefined })),
+  ];
+
+  if (detected.length === 0 && companies.length === 0) {
     return NextResponse.json({ saved: 0, signals: [], message: "Aucun prospect trouvé" });
   }
-
-  const detected = await scanWorkspaceSignals(companies);
 
   // Persist — skip duplicates (same company + type + title in last 7 days)
   const cutoff = new Date(Date.now() - 7 * 86_400_000);

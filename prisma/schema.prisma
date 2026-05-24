@@ -1292,6 +1292,7 @@ enum SignalType {
   ACQUISITION
   PARTNERSHIP
   NEWS
+  NEW_COMPANY
 }
 
 model IntentSignal {

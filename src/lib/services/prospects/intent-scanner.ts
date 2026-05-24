@@ -2,10 +2,13 @@
  * Intent signal scanner — détecte les signaux d'achat via Serper News.
  *
  * Pour chaque entreprise, lance 4 requêtes news en parallèle :
- *   FUNDING    → levée de fonds, série A/B/C, investissement
- *   HIRING     → recrutement, offres d'emploi
- *   EXPANSION  → ouverture, expansion, nouveau marché, international
+ *   FUNDING     → levée de fonds, série A/B/C, investissement
+ *   HIRING      → recrutement, offres d'emploi
+ *   EXPANSION   → ouverture, expansion, nouveau marché, international
  *   ACQUISITION → acquisition, rachat, partenariat, lancement produit
+ *
+ * Pour chaque secteur du persona :
+ *   NEW_COMPANY → nouvelles entreprises créées/lancées dans ce secteur
  *
  * Retourne des IntentSignal[] prêts à être persistés.
  */
@@ -126,4 +129,51 @@ export async function scanWorkspaceSignals(
   }
 
   return signals;
+}
+
+/**
+ * Détecte les nouvelles entreprises créées dans les secteurs du persona.
+ * Chaque résultat est un signal NEW_COMPANY sans prospectId (nouveau prospect potentiel).
+ */
+export async function scanNewCompaniesInSectors(
+  industries: string[]
+): Promise<DetectedSignal[]> {
+  if (!industries.length) return [];
+
+  const year = new Date().getFullYear();
+  const signals: DetectedSignal[] = [];
+
+  const results = await Promise.allSettled(
+    industries.slice(0, 5).map(async (industry) => {
+      const items = await searchNews(
+        `startup OR "nouvelle entreprise" OR "société créée" OR lancée ${industry} ${year} France`
+      );
+      return items.slice(0, 3).map(
+        (item): DetectedSignal => ({
+          type: "NEW_COMPANY",
+          companyName: extractCompanyName(item.title, industry),
+          title: item.title,
+          description: item.snippet,
+          sourceUrl: item.link,
+          score: 65,
+        })
+      );
+    })
+  );
+
+  for (const r of results) {
+    if (r.status === "fulfilled") signals.push(...r.value);
+  }
+
+  return signals;
+}
+
+function extractCompanyName(title: string, industry: string): string {
+  // Try to extract a company name from the headline — fallback to industry label
+  const colonParts = title.split(/[:\-–|]/);
+  if (colonParts.length > 1) {
+    const candidate = colonParts[0].trim();
+    if (candidate.length > 2 && candidate.length < 60) return candidate;
+  }
+  return `Nouvelle entreprise (${industry})`;
 }

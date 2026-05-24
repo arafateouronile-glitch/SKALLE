@@ -14,6 +14,7 @@ import {
   Handshake,
   Newspaper,
   DollarSign,
+  Rocket,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SignalType } from "@prisma/client";
@@ -81,6 +82,12 @@ const SIGNAL_META: Record<
     icon: <Newspaper className="h-3.5 w-3.5" />,
     description: "Mention récente — bon prétexte pour contacter",
   },
+  NEW_COMPANY: {
+    label: "Nouvelle entreprise",
+    color: "bg-rose-500/15 text-rose-400 border-rose-500/30",
+    icon: <Rocket className="h-3.5 w-3.5" />,
+    description: "Vient d'être créée dans ton secteur cible — premier à approcher",
+  },
 };
 
 const SCORE_COLOR: Record<string, string> = {
@@ -110,6 +117,7 @@ function formatDate(iso: string) {
 
 const FILTERS: Array<{ value: SignalType | "ALL"; label: string }> = [
   { value: "ALL", label: "Tous" },
+  { value: "NEW_COMPANY", label: "Nouvelles entreprises" },
   { value: "FUNDING", label: "Levées" },
   { value: "HIRING", label: "Recrutement" },
   { value: "EXPANSION", label: "Expansion" },
