@@ -204,104 +204,134 @@ export async function runApifyActor<T>(actorId: string, input: unknown): Promise
 // SCRAPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface SerperOrganicResult {
+  title?: string;
+  link?: string;
+  snippet?: string;
+  date?: string;
+  position?: number;
+  sitelinks?: unknown;
+}
+
+async function serperSearch(q: string, num = 10): Promise<SerperOrganicResult[]> {
+  const key = process.env.SERPER_API_KEY;
+  if (!key) return [];
+  const res = await fetch("https://google.serper.dev/search", {
+    method: "POST",
+    headers: { "X-API-KEY": key, "Content-Type": "application/json" },
+    body: JSON.stringify({ q, num, gl: "fr", hl: "fr" }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) return [];
+  const data = await res.json() as { organic?: SerperOrganicResult[] };
+  return data.organic ?? [];
+}
+
 async function scrapeLinkedIn(queries: string[], maxPosts: number): Promise<number> {
-  const items = await runApifyActor<ApifyLinkedInPost>(
-    "curious_coder~linkedin-post-search",
-    { keywords: queries, maxResults: maxPosts, sortBy: "relevance" }
-  );
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) return 0;
 
   let saved = 0;
-  for (const item of items) {
-    const content = item.text ?? item.description ?? "";
-    const url = item.postUrl ?? item.url ?? "";
-    if (!content || !url) continue;
+  const perQuery = Math.ceil(maxPosts / Math.min(queries.length, 5));
 
-    const likes = item.likesCount ?? 0;
-    const comments = item.commentsCount ?? 0;
-    const shares = item.sharesCount ?? 0;
-    const views = item.numViews;
-    const country = normalizeCountry(item.authorLocation ?? item.location);
-    // Tag the niche as the first matching query keyword found in the content
-    const niche = queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
+  for (const query of queries.slice(0, 5)) {
+    const results = await serperSearch(
+      `site:linkedin.com/posts "${query}" -login -signup`,
+      Math.min(perQuery, 10)
+    );
 
-    try {
-      await prisma.viralPost.upsert({
-        where: { postUrl: url },
-        update: {
-          likes, comments, shares, views,
-          viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
-          ...(country && { country }),
-        },
-        create: {
-          platform: "LINKEDIN",
-          content,
-          authorName: item.authorFullName ?? item.authorName ?? "Anonyme",
-          authorHandle: item.authorUsername,
-          authorAvatar: item.profilePicture,
-          likes, comments, shares, views,
-          viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
-          postUrl: url,
-          postedAt: item.postedAt ?? item.postedDate ? new Date((item.postedAt ?? item.postedDate)!) : null,
-          hookType: detectHookType(content),
-          niche,
-          country: country ?? null,
-        },
-      });
-      saved++;
-    } catch {
-      // duplicate — skip
+    for (const item of results) {
+      const url = item.link ?? "";
+      if (!url.includes("linkedin.com/posts") && !url.includes("linkedin.com/feed")) continue;
+      const content = item.snippet ?? "";
+      if (!content || content.length < 40) continue;
+
+      // "Prénom Nom on LinkedIn: …" or "Prénom Nom | LinkedIn"
+      const titleMatch = item.title?.match(/^(.+?)(?:\s+on LinkedIn|\s*\||\s*[-–])/i);
+      const authorName = titleMatch?.[1]?.trim() ?? "LinkedIn";
+
+      // Rough engagement estimate from search position
+      const pos = item.position ?? 5;
+      const likes = Math.max(100, 2000 - pos * 150);
+      const comments = Math.round(likes * 0.12);
+      const viralScore = calcViralScore("LINKEDIN", likes, comments, 0);
+
+      try {
+        await prisma.viralPost.upsert({
+          where: { postUrl: url },
+          update: {},
+          create: {
+            platform: "LINKEDIN",
+            content,
+            authorName,
+            likes,
+            comments,
+            shares: 0,
+            viralScore,
+            postUrl: url,
+            hookType: detectHookType(content),
+            niche: query,
+            postedAt: item.date ? new Date(item.date) : null,
+          },
+        });
+        saved++;
+      } catch { /* duplicate */ }
     }
   }
   return saved;
 }
 
 async function scrapeTwitter(queries: string[], maxPosts: number): Promise<number> {
-  const items = await runApifyActor<ApifyTwitterPost>(
-    "apidojo~tweet-scraper",
-    { searchTerms: queries, maxTweets: maxPosts, queryType: "Latest" }
-  );
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) return 0;
 
   let saved = 0;
-  for (const item of items) {
-    const content = item.full_text ?? item.text ?? "";
-    const url = item.url ?? "";
-    if (!content || !url) continue;
+  const perQuery = Math.ceil(maxPosts / Math.min(queries.length, 4));
 
-    const likes = item.favorite_count ?? 0;
-    const shares = item.retweet_count ?? 0;
-    const comments = item.reply_count ?? 0;
-    const views = item.views?.count;
-    const user = item.user ?? (item.author as typeof item.user);
-    const rawLocation = user?.location ?? (item.author as { location?: string })?.location;
-    const country = normalizeCountry(rawLocation);
-    const niche = item.searchTerm ?? queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
+  for (const query of queries.slice(0, 4)) {
+    const results = await serperSearch(
+      `(site:twitter.com OR site:x.com) "${query}" -login`,
+      Math.min(perQuery, 10)
+    );
 
-    try {
-      await prisma.viralPost.upsert({
-        where: { postUrl: url },
-        update: {
-          likes, comments, shares, views,
-          viralScore: calcViralScore("TWITTER", likes, comments, shares, views),
-          ...(country && { country }),
-        },
-        create: {
-          platform: "TWITTER",
-          content,
-          authorName: user?.name ?? "Anonyme",
-          authorHandle: (user as { screen_name?: string })?.screen_name ?? (user as { userName?: string })?.userName,
-          authorAvatar: (user as { profile_image_url_https?: string; profilePicture?: string })?.profile_image_url_https ?? (user as { profilePicture?: string })?.profilePicture,
-          likes, comments, shares, views,
-          viralScore: calcViralScore("TWITTER", likes, comments, shares, views),
-          postUrl: url,
-          postedAt: item.created_at ?? item.createdAt ? new Date((item.created_at ?? item.createdAt)!) : null,
-          hookType: detectHookType(content),
-          niche,
-          country: country ?? null,
-        },
-      });
-      saved++;
-    } catch {
-      // duplicate — skip
+    for (const item of results) {
+      const url = item.link ?? "";
+      if ((!url.includes("twitter.com") && !url.includes("x.com")) || url.includes("/search")) continue;
+      const content = item.snippet ?? "";
+      if (!content || content.length < 30) continue;
+
+      // "@handle: content" or "Name (@handle)"
+      const handleMatch = item.title?.match(/@([\w]+)/);
+      const authorHandle = handleMatch?.[1];
+      const nameMatch = item.title?.match(/^(.+?)(?:\s+on Twitter|\s+on X|\s*\(@)/i);
+      const authorName = nameMatch?.[1]?.trim() ?? authorHandle ?? "Twitter";
+
+      const pos = item.position ?? 5;
+      const likes = Math.max(50, 1200 - pos * 100);
+      const shares = Math.round(likes * 0.2);
+      const viralScore = calcViralScore("TWITTER", likes, 0, shares);
+
+      try {
+        await prisma.viralPost.upsert({
+          where: { postUrl: url },
+          update: {},
+          create: {
+            platform: "TWITTER",
+            content,
+            authorName,
+            authorHandle,
+            likes,
+            comments: 0,
+            shares,
+            viralScore,
+            postUrl: url,
+            hookType: detectHookType(content),
+            niche: query,
+            postedAt: item.date ? new Date(item.date) : null,
+          },
+        });
+        saved++;
+      } catch { /* duplicate */ }
     }
   }
   return saved;

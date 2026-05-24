@@ -16,18 +16,12 @@ interface PostsResponse {
   limit: number;
 }
 
-interface ScrapeRunIds {
-  linkedin: string;
-  twitter: string;
-}
-
 export default function VeillePage() {
   const [posts, setPosts] = useState<ViralPost[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
-  const [scrapeStatus, setScrapeStatus] = useState<string>("");
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -79,78 +73,30 @@ export default function VeillePage() {
 
   async function handleScrape() {
     setScraping(true);
-    setScrapeStatus("Lancement du scrape…");
     stopPolling();
     try {
       const res = await fetch("/api/social/veille/scrape", { method: "POST" });
-      const data = await res.json() as {
-        ok?: boolean;
-        runIds?: { linkedin: string | null; twitter: string | null };
-        queries?: string[];
-        errors?: string[];
-        error?: string;
-      };
+      const data = await res.json() as { ok?: boolean; error?: string; message?: string };
       if (!res.ok || !data.ok) {
         toast.error(data.error ?? "Erreur lors du lancement");
         setScraping(false);
-        setScrapeStatus("");
         return;
       }
-      if (data.errors?.length) {
-        toast.warning(`Avertissement: ${data.errors.join(", ")}`);
-      }
+      toast.success(data.message ?? "Scrape lancé !");
 
-      const { runIds, queries } = data;
-      setScrapeStatus("Scraping en cours…");
-      toast.success("Scrape lancé — collecte dans ~90s");
-
+      // Auto-refresh toutes les 10s pendant 60s
       let attempts = 0;
-      const maxAttempts = 12; // 12 × 15s = 3 min
-
-      pollRef.current = setInterval(async () => {
+      pollRef.current = setInterval(() => {
         attempts++;
-        try {
-          const collectRes = await fetch("/api/social/veille/scrape?collect=1", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ runIds, queries }),
-          });
-          const collectData = await collectRes.json() as {
-            status: "running" | "done";
-            saved?: number;
-            liStatus?: string;
-            twStatus?: string;
-            errors?: string[];
-          };
-
-          if (collectData.status === "running") {
-            setScrapeStatus(`Scraping… (${collectData.liStatus ?? "?"} / ${collectData.twStatus ?? "?"})`);
-          } else {
-            stopPolling();
-            setScraping(false);
-            setScrapeStatus("");
-            if ((collectData.saved ?? 0) > 0) {
-              toast.success(`${collectData.saved} posts viraux récupérés !`);
-              fetchPosts(filters, 1);
-            } else {
-              toast.warning("Scrape terminé — aucun nouveau post (essayez différentes niches)");
-            }
-          }
-        } catch {
-          // ignore transient errors during polling
-        }
-
-        if (attempts >= maxAttempts) {
+        fetchPosts(filters, 1);
+        if (attempts >= 6) {
           stopPolling();
           setScraping(false);
-          setScrapeStatus("");
-          toast.error("Timeout — le scrape prend trop de temps. Réessayez.");
         }
-      }, 15_000);
+      }, 10_000);
     } catch {
       toast.error("Erreur réseau");
       setScraping(false);
-      setScrapeStatus("");
     }
   }
 
@@ -186,7 +132,7 @@ export default function VeillePage() {
             disabled={scraping}
           >
             {scraping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
-            {scraping ? (scrapeStatus || "Scraping…") : "Scraper maintenant"}
+            {scraping ? "Scraping…" : "Scraper maintenant"}
           </Button>
         </div>
       </div>
@@ -225,7 +171,7 @@ export default function VeillePage() {
             disabled={scraping}
           >
             {scraping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
-            {scraping ? (scrapeStatus || "Scraping…") : "Scraper maintenant"}
+            {scraping ? "Scraping…" : "Scraper maintenant"}
           </Button>
         </div>
       )}
