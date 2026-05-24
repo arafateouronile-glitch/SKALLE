@@ -203,9 +203,12 @@ export function IntentSignalsPanel({ workspaceId }: Props) {
                 {signals.length}
               </span>
             )}
+            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-semibold">
+              ● Auto 8h/jour
+            </span>
           </div>
           <p className="text-[12px] text-slate-400">
-            Signaux d&apos;achat détectés sur vos prospects — levées de fonds, recrutements, expansions.
+            Surveillance continue — levées de fonds, recrutements, nouvelles entreprises dans ton secteur.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

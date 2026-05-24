@@ -10,6 +10,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { findEmailsByCompany } from "@/lib/services/prospects/email-enricher";
 
 export interface FoundContact {
   name: string;
@@ -121,25 +122,49 @@ export async function GET(req: NextRequest) {
   });
   if (!ws) return NextResponse.json({ error: "Workspace non trouvé" }, { status: 403 });
 
-  const [contacts, emailMap] = await Promise.all([
+  const [contacts, emailMap, hunterEmails] = await Promise.all([
     searchLinkedIn(company),
     searchEmails(company),
+    findEmailsByCompany(company, undefined, 10),
   ]);
 
-  // Merge emails found in the second search into contacts that don't already have one
+  // Build name→email map from Hunter results
+  const hunterMap = new Map<string, string>();
+  for (const h of hunterEmails) {
+    if (h.firstName) hunterMap.set(h.firstName.toLowerCase(), h.email);
+    if (h.fullName) hunterMap.set(h.fullName.toLowerCase(), h.email);
+  }
+
+  // Merge emails — priority: Hunter > Serper news
   const enriched = contacts.map((c) => {
     if (c.email) return c;
-    // Try to match by partial name
+    const firstName = c.name.split(" ")[0]?.toLowerCase() ?? "";
+    const fullNameKey = c.name.toLowerCase();
+    const hunterEmail = hunterMap.get(fullNameKey) ?? hunterMap.get(firstName);
+    if (hunterEmail) return { ...c, email: hunterEmail };
+    // Try to match by partial name in Serper results
     for (const [, email] of emailMap) {
-      const namePart = c.name.split(" ")[0]?.toLowerCase();
-      if (namePart && email.toLowerCase().includes(namePart)) {
+      if (firstName && email.toLowerCase().includes(firstName)) {
         return { ...c, email };
       }
     }
     return c;
   });
 
-  return NextResponse.json({ contacts: enriched });
+  // Add Hunter-only contacts (found by email but not on LinkedIn via Serper)
+  const linkedinNames = new Set(enriched.map((c) => c.name.toLowerCase()));
+  for (const h of hunterEmails) {
+    if (!h.email || linkedinNames.has(h.fullName.toLowerCase())) continue;
+    enriched.push({
+      name: h.fullName,
+      jobTitle: h.position ?? "",
+      linkedinUrl: h.linkedinUrl ?? `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(h.fullName)}`,
+      email: h.email,
+      snippet: h.position ? `${h.position} — trouvé via Hunter.io (confiance ${h.confidence}%)` : undefined,
+    });
+  }
+
+  return NextResponse.json({ contacts: enriched.slice(0, 10) });
 }
 
 export async function POST(req: NextRequest) {
