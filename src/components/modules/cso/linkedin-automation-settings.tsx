@@ -38,6 +38,7 @@ interface AutomationConfig {
   } | null;
   warmupDay: number;
   warmupStartedAt: string | null;
+  proxyCountry: string;
 }
 
 interface Props {
@@ -69,6 +70,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
   const [dailyConnectLimit, setDailyConnectLimit] = useState(10);
   const [dailyMessageLimit, setDailyMessageLimit] = useState(25);
   const [sendAt, setSendAt] = useState("10:00");
+  const [proxyCountry, setProxyCountry] = useState("FR");
 
   useEffect(() => {
     loadConfig();
@@ -90,6 +92,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
         setDailyConnectLimit(data.config.dailyConnectLimit);
         setDailyMessageLimit(data.config.dailyMessageLimit);
         setSendAt(data.config.sendAt);
+        setProxyCountry(data.config.proxyCountry ?? "FR");
       }
     } catch {
       toast.error("Erreur de chargement");
@@ -106,6 +109,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
         dailyConnectLimit,
         dailyMessageLimit,
         sendAt,
+        proxyCountry,
       };
       if (liAt.trim()) body.liAt = liAt.trim();
 
@@ -401,18 +405,43 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-[11px] text-slate-500 flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            Heure d'envoi automatique
-          </Label>
-          <Input
-            type="time"
-            value={sendAt}
-            onChange={(e) => setSendAt(e.target.value)}
-            className="bg-white/[0.03] border-white/[0.08] text-white h-9 text-[12px] w-32"
-          />
-          <p className="text-[10px] text-slate-600">Lun–Ven, heure serveur (UTC)</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-slate-500 flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              Heure d'envoi automatique
+            </Label>
+            <Input
+              type="time"
+              value={sendAt}
+              onChange={(e) => setSendAt(e.target.value)}
+              className="bg-white/[0.03] border-white/[0.08] text-white h-9 text-[12px]"
+            />
+            <p className="text-[10px] text-slate-600">Lun–Ven, heure serveur (UTC)</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-slate-500">
+              Pays proxy résidentiel
+            </Label>
+            <select
+              value={proxyCountry}
+              onChange={(e) => setProxyCountry(e.target.value)}
+              className="w-full h-9 rounded-md bg-white/[0.03] border border-white/[0.08] text-white text-[12px] px-2"
+            >
+              <option value="FR">🇫🇷 France</option>
+              <option value="BE">🇧🇪 Belgique</option>
+              <option value="CH">🇨🇭 Suisse</option>
+              <option value="LU">🇱🇺 Luxembourg</option>
+              <option value="CA">🇨🇦 Canada</option>
+              <option value="GB">🇬🇧 Royaume-Uni</option>
+              <option value="DE">🇩🇪 Allemagne</option>
+              <option value="US">🇺🇸 États-Unis</option>
+            </select>
+            <p className="text-[10px] text-slate-600">
+              Proxy actif si <code className="text-sky-500">APIFY_PROXY_ENABLED=true</code>
+            </p>
+          </div>
         </div>
       </div>
 

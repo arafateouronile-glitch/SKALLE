@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
       lastRunStats: true,
       warmupDay: true,
       warmupStartedAt: true,
+      proxyCountry: true,
       // liAt intentionnellement masqué — juste indique si configuré
       liAt: false,
     },
@@ -79,6 +80,7 @@ export async function POST(req: NextRequest) {
     sendAt?: string;
     connectActor?: string;
     messageActor?: string;
+    proxyCountry?: string;
   };
 
   const ws = await getWorkspace(body.workspaceId, session.user.id);
@@ -114,6 +116,7 @@ export async function POST(req: NextRequest) {
   if (body.sendAt !== undefined) data.sendAt = body.sendAt;
   if (body.connectActor !== undefined) data.connectActor = body.connectActor;
   if (body.messageActor !== undefined) data.messageActor = body.messageActor;
+  if (body.proxyCountry !== undefined) data.proxyCountry = body.proxyCountry.toUpperCase().slice(0, 2);
 
   const config = await prisma.linkedInAutomationConfig.upsert({
     where: { workspaceId: body.workspaceId },
@@ -129,6 +132,7 @@ export async function POST(req: NextRequest) {
       lastRunStats: true,
       warmupDay: true,
       warmupStartedAt: true,
+      proxyCountry: true,
     },
   });
 

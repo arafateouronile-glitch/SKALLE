@@ -1298,6 +1298,7 @@ model LinkedInAutomationConfig {
   messageActor         String    @default("wangzishuo~linkedin-message-sender")
   warmupDay            Int       @default(0)   // incrément à chaque run (0→21 = warm-up)
   warmupStartedAt      DateTime?               // date du 1er run réussi
+  proxyCountry         String    @default("FR") // code ISO pour le proxy résidentiel Apify
   lastRunAt            DateTime?
   lastRunStats         Json?     // { sent, failed, skipped, abortReason? }
   createdAt            DateTime  @default(now())

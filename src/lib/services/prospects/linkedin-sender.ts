@@ -2,10 +2,13 @@
  * LinkedIn Sender — envoie connexions et messages via Apify actors.
  *
  * Sécurité anti-ban :
- *   - Warm-up progressif : 25 % → 40 % → 60 % → 80 % → 100 % sur 21 jours
- *   - Détection des erreurs LinkedIn (challenge, rate-limit, cookie expiré)
- *     → abortBatch=true sur le premier résultat critique → stop immédiat du batch
- *   - Délai humain 3–8 s entre chaque action
+ *   1. Warm-up progressif : 25 % → 40 % → 60 % → 80 % → 100 % sur 21 jours
+ *   2. Détection des erreurs LinkedIn (challenge, rate-limit, cookie expiré)
+ *      → abortBatch immédiat, steps restants laissés PENDING
+ *   3. Proxy résidentiel Apify (opt-in via APIFY_PROXY_ENABLED=true)
+ *      → même pays que l'utilisateur pour éviter les logins suspects
+ *   4. Cookie validity check avant chaque batch (fail-open si réseau KO)
+ *   5. Délai humain 3–8 s entre chaque action
  */
 
 const APIFY_BASE = "https://api.apify.com/v2";
@@ -28,7 +31,13 @@ export interface LinkedInSendResult {
   profileUrl: string;
   success: boolean;
   error?: string;
-  abortCode?: LinkedInAbortCode; // présent → arrêter le batch immédiatement
+  abortCode?: LinkedInAbortCode;
+}
+
+export interface BatchResult {
+  results: LinkedInSendResult[];
+  aborted: boolean;
+  abortCode?: LinkedInAbortCode;
 }
 
 interface ApifyRunResponse {
@@ -48,10 +57,6 @@ interface ApifyDatasetResponse {
 
 // ─── Warm-up ──────────────────────────────────────────────────────────────────
 
-/**
- * Retourne les limites effectives en fonction du jour de warm-up.
- * Jours 0-4 : 25 %, 5-9 : 40 %, 10-14 : 60 %, 15-20 : 80 %, 21+ : 100 %
- */
 export function getEffectiveLimits(
   warmupDay: number,
   connectLimit: number,
@@ -63,11 +68,55 @@ export function getEffectiveLimits(
     : warmupDay >= 10 ? 0.6
     : warmupDay >= 5  ? 0.4
     : 0.25;
-
   return {
     effectiveConnect: Math.max(2, Math.floor(connectLimit * pct)),
     effectiveMessage: Math.max(3, Math.floor(messageLimit * pct)),
     warmupPct: Math.round(pct * 100),
+  };
+}
+
+// ─── Cookie validity check ────────────────────────────────────────────────────
+
+/**
+ * Vérifie que le cookie li_at est encore valide via l'API Voyager LinkedIn.
+ * Fail-open : si le réseau échoue, on considère le cookie valide pour ne pas
+ * bloquer l'automation sur une erreur transitoire.
+ */
+export async function checkLinkedInCookie(liAt: string): Promise<{ valid: boolean }> {
+  if (!liAt) return { valid: false };
+  try {
+    const res = await fetch("https://www.linkedin.com/voyager/api/identity/profiles/me", {
+      headers: {
+        Cookie: `li_at=${liAt}`,
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "X-Li-Lang": "fr_FR",
+        "X-Restli-Protocol-Version": "2.0.0",
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    // 401 / 403 = session expirée ; 200 / 302 = OK
+    return { valid: res.status !== 401 && res.status !== 403 };
+  } catch {
+    // Réseau KO → fail-open, on laisse l'actor décider
+    return { valid: true };
+  }
+}
+
+// ─── Proxy résidentiel ────────────────────────────────────────────────────────
+
+/**
+ * Construit la config proxy Apify résidentiel.
+ * Activé uniquement si APIFY_PROXY_ENABLED=true dans les variables d'env.
+ * Utilise le même pays que l'utilisateur pour éviter les connexions suspectes.
+ */
+function buildProxyConfig(country: string): object | undefined {
+  if (process.env.APIFY_PROXY_ENABLED !== "true") return undefined;
+  return {
+    useApifyProxy: true,
+    apifyProxyGroups: ["RESIDENTIAL"],
+    apifyProxyCountry: country.toUpperCase(),
   };
 }
 
@@ -96,18 +145,22 @@ function classifyLinkedInError(msg: string): LinkedInAbortCode | undefined {
 
 async function runActorSync<T>(
   actorId: string,
-  input: unknown,
-  timeoutSecs = 120
+  input: object,
+  options: { timeoutSecs?: number; proxyCountry?: string } = {}
 ): Promise<T[]> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN manquant");
+
+  const { timeoutSecs = 120, proxyCountry } = options;
+  const proxyConfig = proxyCountry ? buildProxyConfig(proxyCountry) : undefined;
+  const enrichedInput = proxyConfig ? { ...input, proxyConfiguration: proxyConfig } : input;
 
   const res = await fetch(
     `${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items?token=${token}&memory=256&timeout=${timeoutSecs}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify(enrichedInput),
       signal: AbortSignal.timeout((timeoutSecs + 30) * 1_000),
     }
   );
@@ -126,22 +179,26 @@ export async function sendConnectionRequest(
   profileUrl: string,
   note: string | undefined,
   liAt: string,
-  actorId = "wangzishuo~linkedin-auto-connect"
+  actorId = "wangzishuo~linkedin-auto-connect",
+  proxyCountry?: string
 ): Promise<LinkedInSendResult> {
   try {
-    await runActorSync(actorId, {
-      sessionCookie: liAt,
-      profileUrls: [profileUrl],
-      message: note ? note.slice(0, 300) : undefined,
-      maxConnections: 1,
-      minDelay: 5,
-      maxDelay: 15,
-    });
+    await runActorSync(
+      actorId,
+      {
+        sessionCookie: liAt,
+        profileUrls: [profileUrl],
+        message: note ? note.slice(0, 300) : undefined,
+        maxConnections: 1,
+        minDelay: 5,
+        maxDelay: 15,
+      },
+      { proxyCountry }
+    );
     return { profileUrl, success: true };
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : String(e);
-    const abortCode = classifyLinkedInError(errMsg);
-    return { profileUrl, success: false, error: errMsg, abortCode };
+    return { profileUrl, success: false, error: errMsg, abortCode: classifyLinkedInError(errMsg) };
   }
 }
 
@@ -149,79 +206,72 @@ export async function sendDirectMessage(
   profileUrl: string,
   message: string,
   liAt: string,
-  actorId = "wangzishuo~linkedin-message-sender"
+  actorId = "wangzishuo~linkedin-message-sender",
+  proxyCountry?: string
 ): Promise<LinkedInSendResult> {
   try {
-    await runActorSync(actorId, {
-      sessionCookie: liAt,
-      conversations: [{ profileUrl, message }],
-      minDelay: 5,
-      maxDelay: 20,
-    });
+    await runActorSync(
+      actorId,
+      {
+        sessionCookie: liAt,
+        conversations: [{ profileUrl, message }],
+        minDelay: 5,
+        maxDelay: 20,
+      },
+      { proxyCountry }
+    );
     return { profileUrl, success: true };
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : String(e);
-    const abortCode = classifyLinkedInError(errMsg);
-    return { profileUrl, success: false, error: errMsg, abortCode };
+    return { profileUrl, success: false, error: errMsg, abortCode: classifyLinkedInError(errMsg) };
   }
 }
 
 // ─── Batch processor ──────────────────────────────────────────────────────────
 
-export interface BatchResult {
-  results: LinkedInSendResult[];
-  aborted: boolean;         // true si le batch a été interrompu
-  abortCode?: LinkedInAbortCode;
-}
-
 /**
- * Traite un batch en s'arrêtant au premier signe de blocage LinkedIn.
+ * Traite un sous-batch en s'arrêtant au premier signe de blocage LinkedIn.
  * Les items non traités restent PENDING (pas FAILED).
  */
 export async function processBatch(
   actions: LinkedInAction[],
   liAt: string,
-  config: { connectActor: string; messageActor: string }
+  config: { connectActor: string; messageActor: string; proxyCountry?: string }
 ): Promise<BatchResult> {
   const results: LinkedInSendResult[] = [];
-  let aborted = false;
-  let abortCode: LinkedInAbortCode | undefined;
 
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i];
-    let result: LinkedInSendResult;
-
-    if (action.type === "connect") {
-      result = await sendConnectionRequest(
-        action.profileUrl,
-        action.message,
-        liAt,
-        config.connectActor
-      );
-    } else {
-      result = await sendDirectMessage(
-        action.profileUrl,
-        action.message ?? "",
-        liAt,
-        config.messageActor
-      );
-    }
+    const result =
+      action.type === "connect"
+        ? await sendConnectionRequest(
+            action.profileUrl,
+            action.message,
+            liAt,
+            config.connectActor,
+            config.proxyCountry
+          )
+        : await sendDirectMessage(
+            action.profileUrl,
+            action.message ?? "",
+            liAt,
+            config.messageActor,
+            config.proxyCountry
+          );
 
     results.push(result);
 
     if (result.abortCode) {
-      aborted = true;
-      abortCode = result.abortCode;
-      break; // arrêt immédiat
+      return { results, aborted: true, abortCode: result.abortCode };
     }
 
-    // Petite pause humaine entre chaque action (3–8 s)
+    // Pause humaine entre actions (3–8 s)
     if (i < actions.length - 1) {
       await new Promise((r) => setTimeout(r, 3_000 + Math.random() * 5_000));
     }
   }
 
-  return { results, aborted, abortCode };
+  return { results, aborted: false };
 }
 
 export type { ApifyRunResponse, ApifyDatasetResponse };
