@@ -1,25 +1,26 @@
 /**
  * LinkedIn Sender — envoie connexions et messages via Apify actors.
  *
- * Actors utilisés (configurables dans LinkedInAutomationConfig) :
- *   connect  → wangzishuo~linkedin-auto-connect
- *   message  → wangzishuo~linkedin-message-sender
- *
- * Nécessite APIFY_API_TOKEN + un cookie li_at valide.
- *
- * Limites recommandées (éviter ban LinkedIn) :
- *   - Connexions  : max 20/jour
- *   - Messages    : max 50/jour
- *   - Délai entre actions : 30–120s (géré par l'actor)
+ * Sécurité anti-ban :
+ *   - Warm-up progressif : 25 % → 40 % → 60 % → 80 % → 100 % sur 21 jours
+ *   - Détection des erreurs LinkedIn (challenge, rate-limit, cookie expiré)
+ *     → abortBatch=true sur le premier résultat critique → stop immédiat du batch
+ *   - Délai humain 3–8 s entre chaque action
  */
 
 const APIFY_BASE = "https://api.apify.com/v2";
 
 export type LinkedInActionType = "connect" | "message" | "inmail";
 
+export type LinkedInAbortCode =
+  | "RATE_LIMITED"
+  | "CHALLENGE"
+  | "EXPIRED_COOKIE"
+  | "RESTRICTED";
+
 export interface LinkedInAction {
   profileUrl: string;
-  message?: string;  // note de connexion (max 300 car) ou message direct
+  message?: string;
   type: LinkedInActionType;
 }
 
@@ -27,6 +28,7 @@ export interface LinkedInSendResult {
   profileUrl: string;
   success: boolean;
   error?: string;
+  abortCode?: LinkedInAbortCode; // présent → arrêter le batch immédiatement
 }
 
 interface ApifyRunResponse {
@@ -43,6 +45,54 @@ interface ApifyDatasetResponse {
     message?: string;
   }>;
 }
+
+// ─── Warm-up ──────────────────────────────────────────────────────────────────
+
+/**
+ * Retourne les limites effectives en fonction du jour de warm-up.
+ * Jours 0-4 : 25 %, 5-9 : 40 %, 10-14 : 60 %, 15-20 : 80 %, 21+ : 100 %
+ */
+export function getEffectiveLimits(
+  warmupDay: number,
+  connectLimit: number,
+  messageLimit: number
+): { effectiveConnect: number; effectiveMessage: number; warmupPct: number } {
+  const pct =
+    warmupDay >= 21 ? 1.0
+    : warmupDay >= 15 ? 0.8
+    : warmupDay >= 10 ? 0.6
+    : warmupDay >= 5  ? 0.4
+    : 0.25;
+
+  return {
+    effectiveConnect: Math.max(2, Math.floor(connectLimit * pct)),
+    effectiveMessage: Math.max(3, Math.floor(messageLimit * pct)),
+    warmupPct: Math.round(pct * 100),
+  };
+}
+
+// ─── Error classification ─────────────────────────────────────────────────────
+
+function classifyLinkedInError(msg: string): LinkedInAbortCode | undefined {
+  const m = msg.toLowerCase();
+  if (m.includes("429") || m.includes("rate limit") || m.includes("too many"))
+    return "RATE_LIMITED";
+  if (m.includes("challenge") || m.includes("captcha") || m.includes("verification"))
+    return "CHALLENGE";
+  if (
+    m.includes("login") ||
+    m.includes("sign in") ||
+    m.includes("session") ||
+    m.includes("expired") ||
+    m.includes("cookie")
+  )
+    return "EXPIRED_COOKIE";
+  if (m.includes("restricted") || m.includes("blocked") || m.includes("banned"))
+    return "RESTRICTED";
+  return undefined;
+}
+
+// ─── Apify runner ─────────────────────────────────────────────────────────────
 
 async function runActorSync<T>(
   actorId: string,
@@ -70,10 +120,8 @@ async function runActorSync<T>(
   return res.json() as Promise<T[]>;
 }
 
-/**
- * Envoie une demande de connexion LinkedIn avec note optionnelle.
- * Utilise wangzishuo~linkedin-auto-connect (configurable).
- */
+// ─── Individual senders ───────────────────────────────────────────────────────
+
 export async function sendConnectionRequest(
   profileUrl: string,
   note: string | undefined,
@@ -91,14 +139,12 @@ export async function sendConnectionRequest(
     });
     return { profileUrl, success: true };
   } catch (e: unknown) {
-    return { profileUrl, success: false, error: e instanceof Error ? e.message : String(e) };
+    const errMsg = e instanceof Error ? e.message : String(e);
+    const abortCode = classifyLinkedInError(errMsg);
+    return { profileUrl, success: false, error: errMsg, abortCode };
   }
 }
 
-/**
- * Envoie un message direct à un contact LinkedIn existant.
- * Utilise wangzishuo~linkedin-message-sender (configurable).
- */
 export async function sendDirectMessage(
   profileUrl: string,
   message: string,
@@ -114,22 +160,35 @@ export async function sendDirectMessage(
     });
     return { profileUrl, success: true };
   } catch (e: unknown) {
-    return { profileUrl, success: false, error: e instanceof Error ? e.message : String(e) };
+    const errMsg = e instanceof Error ? e.message : String(e);
+    const abortCode = classifyLinkedInError(errMsg);
+    return { profileUrl, success: false, error: errMsg, abortCode };
   }
 }
 
+// ─── Batch processor ──────────────────────────────────────────────────────────
+
+export interface BatchResult {
+  results: LinkedInSendResult[];
+  aborted: boolean;         // true si le batch a été interrompu
+  abortCode?: LinkedInAbortCode;
+}
+
 /**
- * Traite un batch d'actions LinkedIn en respectant les limites quotidiennes.
- * Retourne les résultats par profileUrl.
+ * Traite un batch en s'arrêtant au premier signe de blocage LinkedIn.
+ * Les items non traités restent PENDING (pas FAILED).
  */
 export async function processBatch(
   actions: LinkedInAction[],
   liAt: string,
   config: { connectActor: string; messageActor: string }
-): Promise<LinkedInSendResult[]> {
+): Promise<BatchResult> {
   const results: LinkedInSendResult[] = [];
+  let aborted = false;
+  let abortCode: LinkedInAbortCode | undefined;
 
-  for (const action of actions) {
+  for (let i = 0; i < actions.length; i++) {
+    const action = actions[i];
     let result: LinkedInSendResult;
 
     if (action.type === "connect") {
@@ -140,7 +199,6 @@ export async function processBatch(
         config.connectActor
       );
     } else {
-      // message ou inmail → même actor
       result = await sendDirectMessage(
         action.profileUrl,
         action.message ?? "",
@@ -151,14 +209,19 @@ export async function processBatch(
 
     results.push(result);
 
-    // Petite pause humaine entre chaque action (3-8s)
-    if (actions.indexOf(action) < actions.length - 1) {
+    if (result.abortCode) {
+      aborted = true;
+      abortCode = result.abortCode;
+      break; // arrêt immédiat
+    }
+
+    // Petite pause humaine entre chaque action (3–8 s)
+    if (i < actions.length - 1) {
       await new Promise((r) => setTimeout(r, 3_000 + Math.random() * 5_000));
     }
   }
 
-  return results;
+  return { results, aborted, abortCode };
 }
 
-// Re-export du type pour référence externe
 export type { ApifyRunResponse, ApifyDatasetResponse };

@@ -42,6 +42,8 @@ export async function GET(req: NextRequest) {
       messageActor: true,
       lastRunAt: true,
       lastRunStats: true,
+      warmupDay: true,
+      warmupStartedAt: true,
       // liAt intentionnellement masqué — juste indique si configuré
       liAt: false,
     },
@@ -99,7 +101,13 @@ export async function POST(req: NextRequest) {
 
   // Upsert config
   const data: Record<string, unknown> = {};
-  if (body.liAt !== undefined) data.liAt = body.liAt;
+  if (body.liAt !== undefined) {
+    data.liAt = body.liAt;
+    // Nouveau cookie → reset warm-up pour repartir de zéro
+    data.warmupDay = 0;
+    data.warmupStartedAt = null;
+    data.isActive = false; // l'utilisateur doit réactiver manuellement
+  }
   if (body.isActive !== undefined) data.isActive = body.isActive;
   if (body.dailyConnectLimit !== undefined) data.dailyConnectLimit = Math.min(body.dailyConnectLimit, 40);
   if (body.dailyMessageLimit !== undefined) data.dailyMessageLimit = Math.min(body.dailyMessageLimit, 100);
@@ -119,6 +127,8 @@ export async function POST(req: NextRequest) {
       sendAt: true,
       lastRunAt: true,
       lastRunStats: true,
+      warmupDay: true,
+      warmupStartedAt: true,
     },
   });
 

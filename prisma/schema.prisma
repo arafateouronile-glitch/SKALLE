@@ -1291,13 +1291,15 @@ model LinkedInAutomationConfig {
   workspaceId          String    @unique
   liAt                 String    // cookie li_at (session LinkedIn)
   isActive             Boolean   @default(false)
-  dailyConnectLimit    Int       @default(20)
-  dailyMessageLimit    Int       @default(50)
+  dailyConnectLimit    Int       @default(10)  // défaut sécurisé (pas 20)
+  dailyMessageLimit    Int       @default(25)  // défaut sécurisé (pas 50)
   sendAt               String    @default("10:00") // heure locale HH:mm
   connectActor         String    @default("wangzishuo~linkedin-auto-connect")
   messageActor         String    @default("wangzishuo~linkedin-message-sender")
+  warmupDay            Int       @default(0)   // incrément à chaque run (0→21 = warm-up)
+  warmupStartedAt      DateTime?               // date du 1er run réussi
   lastRunAt            DateTime?
-  lastRunStats         Json?     // { sent, failed, skipped }
+  lastRunStats         Json?     // { sent, failed, skipped, abortReason? }
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

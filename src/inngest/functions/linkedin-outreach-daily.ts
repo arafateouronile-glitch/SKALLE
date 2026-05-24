@@ -1,29 +1,36 @@
 /**
  * LinkedIn Outreach Daily Cron — traite la queue d'actions LinkedIn PENDING.
  *
- * Tourne chaque jour à 10h pour tous les workspaces avec
- * LinkedInAutomationConfig.isActive = true.
- *
- * Pour chaque workspace :
- *   1. Récupère les SequenceStep PENDING de channel LINKEDIN dans l'ordre
- *   2. Respecte dailyConnectLimit / dailyMessageLimit
- *   3. Envoie via processBatch (Apify actors)
- *   4. Marque chaque step SENT ou FAILED
- *   5. Met à jour lastRunAt + lastRunStats
+ * Sécurité anti-ban :
+ *   1. Warm-up : limites réduites les 21 premiers jours (25 → 40 → 60 → 80 → 100 %)
+ *   2. Abort : si LinkedIn renvoie challenge / rate-limit / cookie expiré,
+ *              le batch s'arrête, les steps restants restent PENDING,
+ *              l'automation est désactivée jusqu'à correction manuelle.
  */
 
 import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
-import { processBatch, type LinkedInAction } from "@/lib/services/prospects/linkedin-sender";
+import {
+  processBatch,
+  getEffectiveLimits,
+  type LinkedInAction,
+} from "@/lib/services/prospects/linkedin-sender";
+
+const ABORT_LABELS: Record<string, string> = {
+  RATE_LIMITED: "LinkedIn rate-limit détecté — réessaie demain",
+  CHALLENGE:    "LinkedIn challenge / CAPTCHA — reconnecte-toi manuellement",
+  EXPIRED_COOKIE: "Cookie li_at expiré — colle un nouveau cookie",
+  RESTRICTED:   "Compte LinkedIn restreint — contact LinkedIn support",
+};
 
 export const linkedInOutreachDaily = inngest.createFunction(
   {
     id: "linkedin-outreach-daily",
     name: "LinkedIn Outreach — Envoi quotidien autonome",
     concurrency: { limit: 3 },
-    retries: 0, // pas de retry — éviter les doubles envois
+    retries: 0,
   },
-  { cron: "0 10 * * 1-5" }, // lun–ven à 10h (pas le weekend)
+  { cron: "0 10 * * 1-5" },
   async ({ step, logger }) => {
     const configs = await step.run("load-active-configs", async () => {
       return prisma.linkedInAutomationConfig.findMany({
@@ -36,17 +43,36 @@ export const linkedInOutreachDaily = inngest.createFunction(
           dailyMessageLimit: true,
           connectActor: true,
           messageActor: true,
+          warmupDay: true,
+          warmupStartedAt: true,
         },
       });
     });
 
     logger.info(`LinkedIn outreach — ${configs.length} workspaces actifs`);
 
-    const summary: Array<{ workspaceId: string; sent: number; failed: number; skipped: number }> = [];
+    const summary: Array<{
+      workspaceId: string;
+      sent: number;
+      failed: number;
+      skipped: number;
+      aborted: boolean;
+      warmupPct: number;
+    }> = [];
 
     for (const cfg of configs) {
       const stats = await step.run(`process-workspace-${cfg.workspaceId}`, async () => {
-        // Récupère les steps PENDING LinkedIn pour ce workspace
+        const { effectiveConnect, effectiveMessage, warmupPct } = getEffectiveLimits(
+          cfg.warmupDay,
+          cfg.dailyConnectLimit,
+          cfg.dailyMessageLimit
+        );
+
+        logger.info(
+          `Workspace ${cfg.workspaceId} — warmupDay=${cfg.warmupDay} (${warmupPct}%) ` +
+          `→ connect=${effectiveConnect}, message=${effectiveMessage}`
+        );
+
         const pendingSteps = await prisma.sequenceStep.findMany({
           where: {
             status: "PENDING",
@@ -56,25 +82,22 @@ export const linkedInOutreachDaily = inngest.createFunction(
           include: {
             sequence: {
               include: {
-                prospect: {
-                  select: { linkedInUrl: true, name: true },
-                },
+                prospect: { select: { linkedInUrl: true, name: true } },
               },
             },
           },
           orderBy: { createdAt: "asc" },
-          take: Math.max(cfg.dailyConnectLimit, cfg.dailyMessageLimit),
+          take: Math.max(effectiveConnect, effectiveMessage),
         });
 
-        if (!pendingSteps.length) return { sent: 0, failed: 0, skipped: 0 };
+        if (!pendingSteps.length) return { sent: 0, failed: 0, skipped: 0, aborted: false, warmupPct };
 
-        // Sépare connexions vs messages et applique les limites
         const connectSteps = pendingSteps
           .filter((s) => s.linkedInAction === "connect")
-          .slice(0, cfg.dailyConnectLimit);
+          .slice(0, effectiveConnect);
         const messageSteps = pendingSteps
           .filter((s) => s.linkedInAction === "message" || s.linkedInAction === "inmail")
-          .slice(0, cfg.dailyMessageLimit);
+          .slice(0, effectiveMessage);
 
         const batch: Array<LinkedInAction & { stepId: string }> = [
           ...connectSteps.map((s) => ({
@@ -93,14 +116,12 @@ export const linkedInOutreachDaily = inngest.createFunction(
 
         const skipped = pendingSteps.length - batch.length;
 
-        // Envoie le batch
-        const results = await processBatch(
+        const { results, aborted, abortCode } = await processBatch(
           batch.map(({ stepId: _id, ...action }) => action),
           cfg.liAt,
           { connectActor: cfg.connectActor, messageActor: cfg.messageActor }
         );
 
-        // Met à jour le statut de chaque step
         let sent = 0;
         let failed = 0;
 
@@ -113,25 +134,51 @@ export const linkedInOutreachDaily = inngest.createFunction(
               data: { status: "SENT", sentAt: new Date() },
             });
             sent++;
-          } else {
+          } else if (!r.abortCode) {
+            // erreur non-critique : on marque FAILED
             await prisma.sequenceStep.update({
               where: { id: stepId },
               data: { status: "FAILED", error: r.error?.slice(0, 255) },
             });
             failed++;
           }
+          // si abortCode présent : step reste PENDING
         }
 
-        return { sent, failed, skipped };
+        if (aborted && abortCode) {
+          logger.warn(`Workspace ${cfg.workspaceId} — abort (${abortCode}), automation désactivée`);
+          await prisma.linkedInAutomationConfig.update({
+            where: { id: cfg.id },
+            data: {
+              isActive: false,
+              lastRunAt: new Date(),
+              lastRunStats: {
+                sent, failed, skipped,
+                abortReason: ABORT_LABELS[abortCode] ?? abortCode,
+              },
+            },
+          });
+          return { sent, failed, skipped, aborted: true, warmupPct };
+        }
+
+        return { sent, failed, skipped, aborted: false, warmupPct };
       });
 
-      // Persiste les stats
+      // Persiste stats + incrémente warmupDay
       await step.run(`update-stats-${cfg.workspaceId}`, async () => {
+        const newWarmupDay = Math.min(cfg.warmupDay + 1, 30);
         await prisma.linkedInAutomationConfig.update({
           where: { id: cfg.id },
           data: {
             lastRunAt: new Date(),
-            lastRunStats: stats,
+            lastRunStats: {
+              sent: stats.sent,
+              failed: stats.failed,
+              skipped: stats.skipped,
+              warmupPct: stats.warmupPct,
+            },
+            warmupDay: newWarmupDay,
+            warmupStartedAt: cfg.warmupStartedAt ?? new Date(),
           },
         });
       });
@@ -145,7 +192,8 @@ export const linkedInOutreachDaily = inngest.createFunction(
   }
 );
 
-// Event déclenché manuellement depuis le dashboard
+// ─── Manuel ───────────────────────────────────────────────────────────────────
+
 export const linkedInOutreachManual = inngest.createFunction(
   {
     id: "linkedin-outreach-manual",
@@ -162,6 +210,12 @@ export const linkedInOutreachManual = inngest.createFunction(
       });
       if (!cfg?.isActive || !cfg.liAt) return { error: "Automation non configurée" };
 
+      const { effectiveConnect, effectiveMessage, warmupPct } = getEffectiveLimits(
+        cfg.warmupDay,
+        cfg.dailyConnectLimit,
+        cfg.dailyMessageLimit
+      );
+
       const pendingSteps = await prisma.sequenceStep.findMany({
         where: {
           status: "PENDING",
@@ -174,43 +228,55 @@ export const linkedInOutreachManual = inngest.createFunction(
           },
         },
         orderBy: { createdAt: "asc" },
-        take: Math.max(cfg.dailyConnectLimit, cfg.dailyMessageLimit),
+        take: Math.max(effectiveConnect, effectiveMessage),
       });
 
-      if (!pendingSteps.length) return { sent: 0, failed: 0, message: "Queue vide" };
+      if (!pendingSteps.length) return { sent: 0, failed: 0, message: "Queue vide", warmupPct };
 
-      const connectSteps = pendingSteps.filter((s) => s.linkedInAction === "connect").slice(0, cfg.dailyConnectLimit);
-      const messageSteps = pendingSteps.filter((s) => s.linkedInAction !== "connect").slice(0, cfg.dailyMessageLimit);
+      const connectSteps = pendingSteps.filter((s) => s.linkedInAction === "connect").slice(0, effectiveConnect);
+      const messageSteps = pendingSteps.filter((s) => s.linkedInAction !== "connect").slice(0, effectiveMessage);
       const batch: Array<{ stepId: string; profileUrl: string; message: string; type: "connect" | "message" }> = [
         ...connectSteps.map((s) => ({ stepId: s.id, profileUrl: s.sequence.prospect.linkedInUrl, message: s.content, type: "connect" as const })),
         ...messageSteps.map((s) => ({ stepId: s.id, profileUrl: s.sequence.prospect.linkedInUrl, message: s.content, type: "message" as const })),
       ];
 
-      const results = await processBatch(
+      const { results, aborted, abortCode } = await processBatch(
         batch.map(({ stepId: _id, ...a }) => a),
         cfg.liAt,
         { connectActor: cfg.connectActor, messageActor: cfg.messageActor }
       );
 
-      let sent = 0; let failed = 0;
+      let sent = 0;
+      let failed = 0;
       for (let i = 0; i < results.length; i++) {
         const r = results[i];
         const stepId = batch[i].stepId;
         if (r.success) {
           await prisma.sequenceStep.update({ where: { id: stepId }, data: { status: "SENT", sentAt: new Date() } });
           sent++;
-        } else {
+        } else if (!r.abortCode) {
           await prisma.sequenceStep.update({ where: { id: stepId }, data: { status: "FAILED", error: r.error?.slice(0, 255) } });
           failed++;
         }
       }
 
+      const newWarmupDay = Math.min(cfg.warmupDay + 1, 30);
       await prisma.linkedInAutomationConfig.update({
         where: { workspaceId },
-        data: { lastRunAt: new Date(), lastRunStats: { sent, failed } },
+        data: {
+          lastRunAt: new Date(),
+          lastRunStats: {
+            sent, failed,
+            abortReason: aborted && abortCode ? (ABORT_LABELS[abortCode] ?? abortCode) : undefined,
+            warmupPct,
+          },
+          isActive: aborted ? false : cfg.isActive,
+          warmupDay: newWarmupDay,
+          warmupStartedAt: cfg.warmupStartedAt ?? new Date(),
+        },
       });
 
-      return { sent, failed };
+      return { sent, failed, warmupPct, aborted, abortCode };
     });
   }
 );

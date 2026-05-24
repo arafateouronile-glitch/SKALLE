@@ -17,6 +17,8 @@ import {
   EyeOff,
   ToggleLeft,
   ToggleRight,
+  AlertTriangle,
+  TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -27,11 +29,31 @@ interface AutomationConfig {
   dailyMessageLimit: number;
   sendAt: string;
   lastRunAt: string | null;
-  lastRunStats: { sent: number; failed: number; skipped?: number } | null;
+  lastRunStats: {
+    sent: number;
+    failed: number;
+    skipped?: number;
+    warmupPct?: number;
+    abortReason?: string;
+  } | null;
+  warmupDay: number;
+  warmupStartedAt: string | null;
 }
 
 interface Props {
   workspaceId: string;
+}
+
+function warmupMultiplier(day: number): number {
+  return day >= 21 ? 1.0 : day >= 15 ? 0.8 : day >= 10 ? 0.6 : day >= 5 ? 0.4 : 0.25;
+}
+
+function warmupLabel(day: number): string {
+  if (day >= 21) return "Plein régime";
+  if (day >= 15) return "80 %";
+  if (day >= 10) return "60 %";
+  if (day >= 5)  return "40 %";
+  return "Démarrage (25 %)";
 }
 
 export function LinkedInAutomationSettings({ workspaceId }: Props) {
@@ -44,8 +66,8 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
 
   const [liAt, setLiAt] = useState("");
   const [showLiAt, setShowLiAt] = useState(false);
-  const [dailyConnectLimit, setDailyConnectLimit] = useState(20);
-  const [dailyMessageLimit, setDailyMessageLimit] = useState(50);
+  const [dailyConnectLimit, setDailyConnectLimit] = useState(10);
+  const [dailyMessageLimit, setDailyMessageLimit] = useState(25);
   const [sendAt, setSendAt] = useState("10:00");
 
   useEffect(() => {
@@ -96,8 +118,13 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
       if (!data.ok) { toast.error(data.error ?? "Erreur"); return; }
 
       setConfig(data.config ?? null);
-      if (liAt.trim()) { setHasSession(true); setLiAt(""); }
-      toast.success("Configuration sauvegardée");
+      if (liAt.trim()) {
+        setHasSession(true);
+        setLiAt("");
+        toast.success("Cookie sauvegardé — warm-up remis à zéro. Active l'automation quand tu es prêt.");
+      } else {
+        toast.success("Configuration sauvegardée");
+      }
     } catch {
       toast.error("Erreur réseau");
     } finally {
@@ -107,6 +134,10 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
 
   async function handleToggleActive() {
     if (!config) return;
+    if (!config.isActive && !hasSession) {
+      toast.error("Configure d'abord ton cookie li_at");
+      return;
+    }
     try {
       const res = await fetch("/api/linkedin-automation", {
         method: "POST",
@@ -124,7 +155,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
   }
 
   async function handleTriggerNow() {
-    if (!hasSession) { toast.error("Configurez d'abord votre cookie li_at"); return; }
+    if (!hasSession) { toast.error("Configure d'abord ton cookie li_at"); return; }
     setIsTriggeringRun(true);
     try {
       const res = await fetch("/api/linkedin-automation?trigger=1", {
@@ -154,6 +185,13 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
   }
 
   const isActive = config?.isActive ?? false;
+  const warmupDay = config?.warmupDay ?? 0;
+  const warmupPct = Math.round(warmupMultiplier(warmupDay) * 100);
+  const warmupProgress = Math.min(100, Math.round((warmupDay / 21) * 100));
+  const abortReason = config?.lastRunStats?.abortReason;
+
+  const effectiveConnect = Math.max(2, Math.floor(dailyConnectLimit * warmupMultiplier(warmupDay)));
+  const effectiveMessage = Math.max(3, Math.floor(dailyMessageLimit * warmupMultiplier(warmupDay)));
 
   return (
     <div className="space-y-5">
@@ -193,7 +231,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
             className="h-8 text-[12px] gap-1.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30"
             onClick={handleTriggerNow}
             disabled={isTriggeringRun || !hasSession}
-            title={!hasSession ? "Configurez d'abord votre cookie li_at" : ""}
+            title={!hasSession ? "Configure d'abord ton cookie li_at" : ""}
           >
             {isTriggeringRun ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -204,6 +242,46 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
           </Button>
         </div>
       </div>
+
+      {/* Alerte abort */}
+      {abortReason && !isActive && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-[12px] text-amber-300 font-medium">Automation stoppée automatiquement</p>
+            <p className="text-[11px] text-amber-400/80 mt-0.5">{abortReason}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Warm-up progress */}
+      {config && (
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="text-[12px] text-white font-medium">Warm-up</span>
+              <span className="text-[10px] text-slate-500">Jour {warmupDay}/21</span>
+            </div>
+            <span className="text-[11px] text-emerald-400 font-semibold">{warmupLabel(warmupDay)}</span>
+          </div>
+          <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 rounded-full transition-all"
+              style={{ width: `${warmupProgress}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-slate-600">
+            Limites effectives aujourd'hui :{" "}
+            <span className="text-sky-400">{effectiveConnect} connexions</span>
+            {" · "}
+            <span className="text-sky-400">{effectiveMessage} messages</span>
+            {warmupDay < 21 && (
+              <span className="text-slate-600"> ({warmupPct}% de ta config)</span>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
@@ -227,7 +305,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
         </div>
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
           <div className="text-[10px] text-slate-500 mb-1">Stats dernière run</div>
-          {config?.lastRunStats ? (
+          {config?.lastRunStats && !abortReason ? (
             <div className="text-[12px] text-slate-300">
               <span className="text-emerald-400">{config.lastRunStats.sent} envoyés</span>
               {" · "}
@@ -256,7 +334,8 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
 
         <div className="space-y-1.5">
           <Label className="text-[11px] text-slate-500">
-            Cookie <code className="bg-white/[0.05] px-1 rounded text-sky-400">li_at</code>
+            Cookie{" "}
+            <code className="bg-white/[0.05] px-1 rounded text-sky-400">li_at</code>
             {" "}(depuis les DevTools LinkedIn)
           </Label>
           <div className="relative">
@@ -264,7 +343,11 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
               type={showLiAt ? "text" : "password"}
               value={liAt}
               onChange={(e) => setLiAt(e.target.value)}
-              placeholder={hasSession ? "••••••••••• (laisser vide pour conserver)" : "Colle ton cookie li_at ici"}
+              placeholder={
+                hasSession
+                  ? "••••••••••• (laisser vide pour conserver)"
+                  : "Colle ton cookie li_at ici"
+              }
               className="bg-white/[0.03] border-white/[0.08] text-white placeholder:text-slate-600 text-[12px] pr-10 h-9"
             />
             <button
@@ -276,7 +359,11 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
             </button>
           </div>
           <p className="text-[10px] text-slate-600">
-            DevTools → Application → Cookies → linkedin.com → cherche <code className="text-sky-500">li_at</code>
+            DevTools → Application → Cookies → linkedin.com → cherche{" "}
+            <code className="text-sky-500">li_at</code>.
+            {hasSession && (
+              <span className="text-amber-500/80"> Changer le cookie remet le warm-up à zéro.</span>
+            )}
           </p>
         </div>
       </div>
@@ -285,8 +372,8 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-4 space-y-4">
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-amber-400" />
-          <span className="text-[13px] font-medium text-white">Limites quotidiennes</span>
-          <span className="text-[10px] text-slate-600">(pour protéger ton compte)</span>
+          <span className="text-[13px] font-medium text-white">Limites quotidiennes cibles</span>
+          <span className="text-[10px] text-slate-600">(le warm-up réduit ces valeurs au démarrage)</span>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -325,7 +412,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
             onChange={(e) => setSendAt(e.target.value)}
             className="bg-white/[0.03] border-white/[0.08] text-white h-9 text-[12px] w-32"
           />
-          <p className="text-[10px] text-slate-600">Lun–Ven, heure locale serveur (UTC)</p>
+          <p className="text-[10px] text-slate-600">Lun–Ven, heure serveur (UTC)</p>
         </div>
       </div>
 
