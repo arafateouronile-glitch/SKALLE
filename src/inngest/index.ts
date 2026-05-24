@@ -41,6 +41,7 @@ import { runSuperscaleAd } from "./functions/superscale-ads";
 import { syncPostAnalyticsCron, syncPostAnalyticsManual } from "./functions/sync-post-analytics";
 import { intentSignalsDailyCron, intentSignalsManual } from "./functions/intent-signals-daily";
 import { linkedInOutreachDaily, linkedInOutreachManual } from "./functions/linkedin-outreach-daily";
+import { linkedInReplyChecker, linkedInReplyCheckerManual } from "./functions/linkedin-reply-checker";
 
 // Export all Inngest functions
 export const functions = [
@@ -94,4 +95,7 @@ export const functions = [
   // CSO LinkedIn — Outreach autonome (connexions + messages)
   linkedInOutreachDaily,
   linkedInOutreachManual,
+  // CSO LinkedIn — Détection des réponses (toutes les 4h)
+  linkedInReplyChecker,
+  linkedInReplyCheckerManual,
 ];

@@ -112,6 +112,7 @@ model Workspace {
   postAbTests               PostAbTest[]
   intentSignals             IntentSignal[]
   linkedInAutomationConfig  LinkedInAutomationConfig?
+  linkedInReplies           LinkedInReply[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -315,6 +316,7 @@ model Prospect {
   interactions        ProspectInteraction[]
   lists               ProspectListEntry[]
   intentSignals       IntentSignal[]
+  linkedInReplies     LinkedInReply[]
 
   @@unique([email, workspaceId])
   @@index([workspaceId])
@@ -1305,6 +1307,30 @@ model LinkedInAutomationConfig {
   updatedAt            DateTime  @updatedAt
 
   workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LINKEDIN REPLIES — Réponses LinkedIn détectées via Voyager API
+// ═══════════════════════════════════════════════════════════════════════════
+
+model LinkedInReply {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  prospectId      String?
+  linkedInUrl     String    // URL du profil qui a répondu
+  senderName      String
+  messageText     String    @db.Text
+  conversationUrn String    // urn:li:fs_conversation:xxx (identifiant unique)
+  receivedAt      DateTime
+  isRead          Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  workspace       Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  prospect        Prospect?  @relation(fields: [prospectId], references: [id])
+
+  @@unique([workspaceId, conversationUrn])
+  @@index([workspaceId])
+  @@index([isRead])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
