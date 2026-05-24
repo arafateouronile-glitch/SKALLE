@@ -395,6 +395,7 @@ model SequenceStep {
   updatedAt      DateTime           @updatedAt
   linkedInAction String?
   messageId      String?
+  scheduledAt    DateTime?          // null = immédiat ; set = ne pas envoyer avant cette date
   replies        ReplyDetection[]
   sequence       OutreachSequence   @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
 

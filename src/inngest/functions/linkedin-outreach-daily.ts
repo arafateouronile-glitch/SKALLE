@@ -118,8 +118,14 @@ export const linkedInOutreachDaily = inngest.createFunction(
           `→ connect=${effectiveConnect}, message=${effectiveMessage}`
         );
 
+        const now = new Date();
         const pendingSteps = await prisma.sequenceStep.findMany({
-          where: { status: "PENDING", channel: "LINKEDIN", sequence: { workspaceId: cfg.workspaceId } },
+          where: {
+            status: "PENDING",
+            channel: "LINKEDIN",
+            sequence: { workspaceId: cfg.workspaceId },
+            OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+          },
           include: { sequence: { include: { prospect: { select: { linkedInUrl: true, name: true } } } } },
           orderBy: { createdAt: "asc" },
           take: Math.max(effectiveConnect, effectiveMessage),
@@ -252,8 +258,14 @@ export const linkedInOutreachManual = inngest.createFunction(
         cfg.warmupDay, cfg.dailyConnectLimit, cfg.dailyMessageLimit
       );
 
+      const now = new Date();
       const pendingSteps = await prisma.sequenceStep.findMany({
-        where: { status: "PENDING", channel: "LINKEDIN", sequence: { workspaceId } },
+        where: {
+          status: "PENDING",
+          channel: "LINKEDIN",
+          sequence: { workspaceId },
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+        },
         include: { sequence: { include: { prospect: { select: { linkedInUrl: true } } } } },
         orderBy: { createdAt: "asc" },
         take: Math.max(effectiveConnect, effectiveMessage),

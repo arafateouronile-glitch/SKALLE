@@ -89,6 +89,7 @@ import { CSVImportDialog } from "@/components/prospection/csv-import-dialog";
 import { LinkedInImportDialog } from "@/components/prospection/linkedin-import-dialog";
 import { LinkedInActionsQueue } from "@/components/prospection/linkedin-actions-queue";
 import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
+import { BulkLinkedInLaunchDialog } from "@/components/modules/cso/bulk-linkedin-launch-dialog";
 import { LookalikeDialog } from "@/components/prospection/lookalike-dialog";
 import { createProspect, generateProspectionSequence, getProspects } from "@/actions/prospects";
 import {
@@ -2550,6 +2551,8 @@ function ProspectsTab({ workspaceId }: { workspaceId: string }) {
 
 export default function ProspectionPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [showBulkLaunch, setShowBulkLaunch] = useState(false);
+  const [linkedInQueueKey, setLinkedInQueueKey] = useState(0);
   useEffect(() => {
     getUserWorkspace().then((result) => {
       if (result.success && result.workspaceId) {
@@ -2669,21 +2672,39 @@ export default function ProspectionPage() {
 
         <TabsContent value="linkedin-queue">
           <div className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">Actions LinkedIn</h2>
-              <p className="text-gray-500 mt-1">
-                File d'attente des actions LinkedIn (invitations, messages, InMail)
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Actions LinkedIn</h2>
+                <p className="text-gray-500 mt-1">
+                  File d'attente des actions LinkedIn (invitations, messages, InMail)
+                </p>
+              </div>
+              <Button
+                onClick={() => setShowBulkLaunch(true)}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+              >
+                <Linkedin className="h-4 w-4 mr-2" />
+                Lancer des séquences LinkedIn
+              </Button>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
-                <LinkedInActionsQueue workspaceId={workspaceId} />
+                <LinkedInActionsQueue key={linkedInQueueKey} workspaceId={workspaceId} />
               </div>
               <div className="rounded-2xl border border-white/[0.06] bg-[#0f1117] p-5">
                 <LinkedInAutomationSettings workspaceId={workspaceId} />
               </div>
             </div>
           </div>
+          <BulkLinkedInLaunchDialog
+            workspaceId={workspaceId}
+            open={showBulkLaunch}
+            onClose={() => setShowBulkLaunch(false)}
+            onLaunched={() => {
+              setShowBulkLaunch(false);
+              setLinkedInQueueKey((k) => k + 1);
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="smtp">
