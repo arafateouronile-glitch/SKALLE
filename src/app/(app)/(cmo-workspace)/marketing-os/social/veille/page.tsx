@@ -76,24 +76,40 @@ export default function VeillePage() {
     stopPolling();
     try {
       const res = await fetch("/api/social/veille/scrape", { method: "POST" });
-      const data = await res.json() as { ok?: boolean; error?: string; message?: string };
-      if (!res.ok || !data.ok) {
-        toast.error(data.error ?? "Erreur lors du lancement");
-        setScraping(false);
-        return;
-      }
+      const data = await res.json() as {
+        ok?: boolean;
+        runIds?: { linkedin: string | null; twitter: string | null };
+        queries?: string[];
+        errors?: string[];
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok || !data.ok) { toast.error(data.error ?? "Erreur lancement"); setScraping(false); return; }
+      if (data.errors?.length) toast.warning(data.errors.join(" | "));
       toast.success(data.message ?? "Scrape lancé !");
 
-      // Auto-refresh toutes les 10s pendant 60s
+      const { runIds, queries } = data;
       let attempts = 0;
-      pollRef.current = setInterval(() => {
+
+      // Poll toutes les 20s — Apify prend ~90-120s
+      pollRef.current = setInterval(async () => {
         attempts++;
-        fetchPosts(filters, 1);
-        if (attempts >= 6) {
-          stopPolling();
-          setScraping(false);
-        }
-      }, 10_000);
+        try {
+          const cr = await fetch("/api/social/veille/scrape?collect=1", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ runIds, queries }),
+          });
+          const cd = await cr.json() as { status: "running" | "done"; saved?: number; errors?: string[] };
+          if (cd.status === "done") {
+            stopPolling();
+            setScraping(false);
+            if ((cd.saved ?? 0) > 0) { toast.success(`${cd.saved} posts récupérés !`); fetchPosts(filters, 1); }
+            else toast.warning(`Scrape terminé — 0 posts${cd.errors?.length ? ` (${cd.errors.join(", ")})` : ""}`);
+          }
+        } catch { /* ignore transient */ }
+        if (attempts >= 10) { stopPolling(); setScraping(false); toast.error("Timeout scrape — réessaie."); }
+      }, 20_000);
     } catch {
       toast.error("Erreur réseau");
       setScraping(false);

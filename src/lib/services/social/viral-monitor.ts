@@ -227,56 +227,100 @@ async function serperSearch(q: string, num = 10): Promise<SerperOrganicResult[]>
   return data.organic ?? [];
 }
 
-async function scrapeLinkedIn(queries: string[], maxPosts: number): Promise<number> {
-  const apiKey = process.env.SERPER_API_KEY;
-  if (!apiKey) return 0;
+/** Trouve des profils LinkedIn pertinents via Serper pour les passer à Apify */
+export async function findLinkedInProfiles(queries: string[], maxProfiles = 15): Promise<string[]> {
+  const profileUrls = new Set<string>();
 
-  let saved = 0;
-  const perQuery = Math.ceil(maxPosts / Math.min(queries.length, 5));
-
-  for (const query of queries.slice(0, 5)) {
+  for (const query of queries.slice(0, 4)) {
     const results = await serperSearch(
-      `site:linkedin.com/posts "${query}" -login -signup`,
-      Math.min(perQuery, 10)
+      `site:linkedin.com/in ${query} -login -signup -jobs -company`,
+      5
     );
-
     for (const item of results) {
       const url = item.link ?? "";
-      if (!url.includes("linkedin.com/posts") && !url.includes("linkedin.com/feed")) continue;
-      const content = item.snippet ?? "";
-      if (!content || content.length < 40) continue;
-
-      // "Prénom Nom on LinkedIn: …" or "Prénom Nom | LinkedIn"
-      const titleMatch = item.title?.match(/^(.+?)(?:\s+on LinkedIn|\s*\||\s*[-–])/i);
-      const authorName = titleMatch?.[1]?.trim() ?? "LinkedIn";
-
-      // Rough engagement estimate from search position
-      const pos = item.position ?? 5;
-      const likes = Math.max(100, 2000 - pos * 150);
-      const comments = Math.round(likes * 0.12);
-      const viralScore = calcViralScore("LINKEDIN", likes, comments, 0);
-
-      try {
-        await prisma.viralPost.upsert({
-          where: { postUrl: url },
-          update: {},
-          create: {
-            platform: "LINKEDIN",
-            content,
-            authorName,
-            likes,
-            comments,
-            shares: 0,
-            viralScore,
-            postUrl: url,
-            hookType: detectHookType(content),
-            niche: query,
-            postedAt: item.date ? new Date(item.date) : null,
-          },
-        });
-        saved++;
-      } catch { /* duplicate */ }
+      // Keep only /in/ profile URLs, strip query params
+      const match = url.match(/https:\/\/www\.linkedin\.com\/in\/[^/?#]+/);
+      if (match) profileUrls.add(match[0] + "/");
+      if (profileUrls.size >= maxProfiles) break;
     }
+    if (profileUrls.size >= maxProfiles) break;
+  }
+
+  return Array.from(profileUrls);
+}
+
+/** Lance un run async harvestapi~linkedin-profile-posts, retourne le runId */
+export async function startLinkedInProfileScrape(
+  profileUrls: string[],
+  maxPostsPerProfile = 5
+): Promise<string> {
+  return startApifyRun("harvestapi~linkedin-profile-posts", {
+    profileUrls,
+    maxPostsPerProfile,
+  });
+}
+
+/** Collecte et sauvegarde les posts d'un run harvestapi~linkedin-profile-posts */
+export async function collectHarvestLinkedInRun(runId: string, queries: string[]): Promise<number> {
+  interface HarvestLinkedInPost {
+    url?: string;
+    postUrl?: string;
+    text?: string;
+    content?: string;
+    numLikes?: number;
+    likesCount?: number;
+    numComments?: number;
+    commentsCount?: number;
+    numShares?: number;
+    sharesCount?: number;
+    numViews?: number;
+    viewsCount?: number;
+    postedDate?: string;
+    postedAt?: string;
+    authorName?: string;
+    authorFullName?: string;
+    authorUrl?: string;
+    authorProfilePicture?: string;
+    authorAvatar?: string;
+  }
+
+  const items = await fetchApifyRunItems<HarvestLinkedInPost>(runId);
+  let saved = 0;
+
+  for (const item of items) {
+    const content = item.text ?? item.content ?? "";
+    const url = item.url ?? item.postUrl ?? "";
+    if (!content || !url) continue;
+
+    const likes    = item.numLikes    ?? item.likesCount    ?? 0;
+    const comments = item.numComments ?? item.commentsCount ?? 0;
+    const shares   = item.numShares   ?? item.sharesCount   ?? 0;
+    const views    = item.numViews    ?? item.viewsCount;
+    const niche    = queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
+    const rawDate  = item.postedDate  ?? item.postedAt;
+
+    try {
+      await prisma.viralPost.upsert({
+        where: { postUrl: url },
+        update: {
+          likes, comments, shares, views,
+          viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
+        },
+        create: {
+          platform: "LINKEDIN",
+          content,
+          authorName:   item.authorName ?? item.authorFullName ?? "Anonyme",
+          authorAvatar: item.authorProfilePicture ?? item.authorAvatar,
+          likes, comments, shares, views,
+          viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
+          postUrl: url,
+          postedAt: rawDate ? new Date(rawDate) : null,
+          hookType: detectHookType(content),
+          niche,
+        },
+      });
+      saved++;
+    } catch { /* duplicate */ }
   }
   return saved;
 }
@@ -428,16 +472,14 @@ export async function scrapeViralPosts(options: ScrapeOptions): Promise<ScrapeRe
   const errors: string[] = [];
   let saved = 0;
 
+  // LinkedIn uses harvestapi~linkedin-profile-posts via the /scrape route (async Apify)
+  // scrapeViralPosts only covers Twitter (Serper-based, used by cron fallback)
   const results = await Promise.allSettled([
-    scrapeLinkedIn(queries, maxPostsPerPlatform),
     scrapeTwitter(queries, maxPostsPerPlatform),
   ]);
 
   if (results[0].status === "fulfilled") saved += results[0].value;
-  else errors.push(`LinkedIn: ${results[0].reason}`);
-
-  if (results[1].status === "fulfilled") saved += results[1].value;
-  else errors.push(`Twitter: ${results[1].reason}`);
+  else errors.push(`Twitter: ${results[0].reason}`);
 
   return { saved, skipped: 0, errors };
 }
