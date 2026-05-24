@@ -111,6 +111,7 @@ model Workspace {
   viralPosts                ViralPost[]
   postAbTests               PostAbTest[]
   intentSignals             IntentSignal[]
+  linkedInAutomationConfig  LinkedInAutomationConfig?
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -1279,6 +1280,28 @@ model ContactDB {
   @@index([source])
   @@index([createdAt])
   @@index([seenCount])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LINKEDIN AUTOMATION — Config outreach autonome par workspace
+// ═══════════════════════════════════════════════════════════════════════════
+
+model LinkedInAutomationConfig {
+  id                   String    @id @default(cuid())
+  workspaceId          String    @unique
+  liAt                 String    // cookie li_at (session LinkedIn)
+  isActive             Boolean   @default(false)
+  dailyConnectLimit    Int       @default(20)
+  dailyMessageLimit    Int       @default(50)
+  sendAt               String    @default("10:00") // heure locale HH:mm
+  connectActor         String    @default("wangzishuo~linkedin-auto-connect")
+  messageActor         String    @default("wangzishuo~linkedin-message-sender")
+  lastRunAt            DateTime?
+  lastRunStats         Json?     // { sent, failed, skipped }
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

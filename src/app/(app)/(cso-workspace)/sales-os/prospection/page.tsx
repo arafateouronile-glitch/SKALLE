@@ -88,6 +88,7 @@ import { CampaignDashboard } from "@/components/campaigns/campaign-dashboard";
 import { CSVImportDialog } from "@/components/prospection/csv-import-dialog";
 import { LinkedInImportDialog } from "@/components/prospection/linkedin-import-dialog";
 import { LinkedInActionsQueue } from "@/components/prospection/linkedin-actions-queue";
+import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
 import { LookalikeDialog } from "@/components/prospection/lookalike-dialog";
 import { createProspect, generateProspectionSequence, getProspects } from "@/actions/prospects";
 import {
@@ -2674,7 +2675,14 @@ export default function ProspectionPage() {
                 File d'attente des actions LinkedIn (invitations, messages, InMail)
               </p>
             </div>
-            <LinkedInActionsQueue workspaceId={workspaceId} />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <LinkedInActionsQueue workspaceId={workspaceId} />
+              </div>
+              <div className="rounded-2xl border border-white/[0.06] bg-[#0f1117] p-5">
+                <LinkedInAutomationSettings workspaceId={workspaceId} />
+              </div>
+            </div>
           </div>
         </TabsContent>
 

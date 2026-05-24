@@ -40,6 +40,7 @@ import { scheduledPostPublisher } from "./functions/scheduled-publisher";
 import { runSuperscaleAd } from "./functions/superscale-ads";
 import { syncPostAnalyticsCron, syncPostAnalyticsManual } from "./functions/sync-post-analytics";
 import { intentSignalsDailyCron, intentSignalsManual } from "./functions/intent-signals-daily";
+import { linkedInOutreachDaily, linkedInOutreachManual } from "./functions/linkedin-outreach-daily";
 
 // Export all Inngest functions
 export const functions = [
@@ -90,4 +91,7 @@ export const functions = [
   // CSO Intelligence — Surveillance continue intent signals
   intentSignalsDailyCron,
   intentSignalsManual,
+  // CSO LinkedIn — Outreach autonome (connexions + messages)
+  linkedInOutreachDaily,
+  linkedInOutreachManual,
 ];
