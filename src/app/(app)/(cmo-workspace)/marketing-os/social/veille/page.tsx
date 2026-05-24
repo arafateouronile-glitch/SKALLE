@@ -85,8 +85,9 @@ export default function VeillePage() {
       const res = await fetch("/api/social/veille/scrape", { method: "POST" });
       const data = await res.json() as {
         ok?: boolean;
-        runIds?: ScrapeRunIds;
+        runIds?: { linkedin: string | null; twitter: string | null };
         queries?: string[];
+        errors?: string[];
         error?: string;
       };
       if (!res.ok || !data.ok) {
@@ -94,6 +95,9 @@ export default function VeillePage() {
         setScraping(false);
         setScrapeStatus("");
         return;
+      }
+      if (data.errors?.length) {
+        toast.warning(`Avertissement: ${data.errors.join(", ")}`);
       }
 
       const { runIds, queries } = data;

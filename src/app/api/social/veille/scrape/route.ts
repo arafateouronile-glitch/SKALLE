@@ -57,24 +57,37 @@ export async function POST(req: NextRequest) {
   if (Array.isArray(bv?.contentPillars)) queries.unshift(...(bv.contentPillars as string[]).slice(0, 3));
   const uniqueQueries = [...new Set(queries)].slice(0, 12);
 
-  const [linkedinRunId, twitterRunId] = await Promise.all([
+  let linkedinRunId: string | null = null;
+  let twitterRunId: string | null = null;
+  const startErrors: string[] = [];
+
+  await Promise.allSettled([
     startApifyRun("curious_coder~linkedin-post-search", {
       keywords: uniqueQueries,
       maxResults: 25,
       sortBy: "relevance",
-    }),
+    }).then((id) => { linkedinRunId = id; }).catch((e: Error) => startErrors.push(`LinkedIn: ${e.message}`)),
+
     startApifyRun("apidojo~tweet-scraper", {
       searchTerms: uniqueQueries.slice(0, 8),
       maxTweets: 25,
       queryType: "Latest",
-    }),
+    }).then((id) => { twitterRunId = id; }).catch((e: Error) => startErrors.push(`Twitter: ${e.message}`)),
   ]);
+
+  if (!linkedinRunId && !twitterRunId) {
+    return NextResponse.json(
+      { error: `Échec lancement Apify : ${startErrors.join(" | ")}` },
+      { status: 502 }
+    );
+  }
 
   return NextResponse.json({
     ok: true,
     runIds: { linkedin: linkedinRunId, twitter: twitterRunId },
     queries: uniqueQueries,
-    message: "Scrape lancé — vérification du statut automatique dans 30s",
+    errors: startErrors,
+    message: "Scrape lancé — collecte automatique dans ~90s",
   });
 }
 
@@ -82,14 +95,18 @@ export async function POST(req: NextRequest) {
 
 async function handleCollect(req: NextRequest) {
   const body = await req.json() as {
-    runIds: { linkedin: string; twitter: string };
+    runIds: { linkedin: string | null; twitter: string | null };
     queries: string[];
   };
   const { runIds, queries } = body;
 
   const [liStatus, twStatus] = await Promise.all([
-    getApifyRunStatus(runIds.linkedin).catch(() => "FAILED" as const),
-    getApifyRunStatus(runIds.twitter).catch(() => "FAILED" as const),
+    runIds.linkedin
+      ? getApifyRunStatus(runIds.linkedin).catch(() => "FAILED" as const)
+      : Promise.resolve("FAILED" as const),
+    runIds.twitter
+      ? getApifyRunStatus(runIds.twitter).catch(() => "FAILED" as const)
+      : Promise.resolve("FAILED" as const),
   ]);
 
   const allDone = liStatus !== "RUNNING" && twStatus !== "RUNNING";
@@ -100,7 +117,7 @@ async function handleCollect(req: NextRequest) {
   let saved = 0;
   const errors: string[] = [];
 
-  if (liStatus === "SUCCEEDED") {
+  if (liStatus === "SUCCEEDED" && runIds.linkedin) {
     const n = await collectLinkedInRun(runIds.linkedin, queries).catch((e: Error) => {
       errors.push(`LinkedIn: ${e.message}`);
       return 0;
@@ -110,7 +127,7 @@ async function handleCollect(req: NextRequest) {
     errors.push("LinkedIn run failed");
   }
 
-  if (twStatus === "SUCCEEDED") {
+  if (twStatus === "SUCCEEDED" && runIds.twitter) {
     const n = await collectTwitterRun(runIds.twitter, queries).catch((e: Error) => {
       errors.push(`Twitter: ${e.message}`);
       return 0;

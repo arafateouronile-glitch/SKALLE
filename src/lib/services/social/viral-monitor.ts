@@ -151,8 +151,10 @@ export async function startApifyRun(actorId: string, input: unknown): Promise<st
   return json.data.id;
 }
 
+type ApifyRunStatus = "RUNNING" | "READY" | "SUCCEEDED" | "FAILED" | "ABORTED" | "TIMING-OUT" | "TIMED-OUT";
+
 /** Récupère le statut d'un run Apify */
-export async function getApifyRunStatus(runId: string): Promise<"RUNNING" | "SUCCEEDED" | "FAILED" | "ABORTED"> {
+export async function getApifyRunStatus(runId: string): Promise<ApifyRunStatus> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN manquant");
 
@@ -161,7 +163,7 @@ export async function getApifyRunStatus(runId: string): Promise<"RUNNING" | "SUC
   });
   if (!res.ok) throw new Error(`Apify status failed (${res.status})`);
   const json = await res.json() as { data: { status: string } };
-  return json.data.status as ReturnType<typeof getApifyRunStatus> extends Promise<infer U> ? U : never;
+  return json.data.status as ApifyRunStatus;
 }
 
 /** Récupère les items du dataset d'un run terminé */
