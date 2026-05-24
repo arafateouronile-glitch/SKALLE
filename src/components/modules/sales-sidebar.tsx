@@ -24,6 +24,7 @@ import {
   LogOut,
   AlertCircle,
   FlaskConical,
+  Brain,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -84,6 +85,12 @@ const sections: NavSection[] = [
         icon: FlaskConical,
         indent: true,
       },
+    ],
+  },
+  {
+    label: "Agent CSO",
+    items: [
+      { name: "CSO Agent", href: "/sales-os/agent", icon: Brain },
     ],
   },
   {

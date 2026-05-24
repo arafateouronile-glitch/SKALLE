@@ -66,11 +66,20 @@ async function getSalesDashboardData(userId: string) {
     take: 5,
   });
 
+  const csoPendingCount = await prisma.agentDecision.count({
+    where: {
+      workspaceId: workspace.id,
+      status: "PENDING",
+      actionType: { in: ["CSO_LAUNCH_LINKEDIN", "CSO_LAUNCH_EMAIL", "CSO_FOLLOWUP", "CSO_STALE_REJECT"] },
+    },
+  });
+
   const totalProspects = prospectsByStatus.reduce((s, p) => s + p._count, 0);
 
   return {
     workspace,
     user,
+    csoPendingCount,
     kpis: {
       total: totalProspects,
       newThisWeek,
@@ -104,7 +113,7 @@ export default async function SalesDashboardPage() {
   const data = await getSalesDashboardData(session.user.id);
   if (!data) redirect("/login");
 
-  const { user, kpis, todaySalesDecisions, isAutopilotActive } = data;
+  const { user, kpis, todaySalesDecisions, isAutopilotActive, csoPendingCount } = data;
   const firstName = user?.name?.split(" ")[0] ?? session.user.name?.split(" ")[0] ?? "là";
 
   const conversionRate = kpis.total > 0 ? Math.round((kpis.converted / kpis.total) * 100) : 0;
@@ -320,6 +329,33 @@ export default async function SalesDashboardPage() {
           ))}
         </div>
       </div>
+
+      {/* ── CSO AGENT PENDING BANNER ── */}
+      {csoPendingCount > 0 && (
+        <div className="relative overflow-hidden rounded-2xl bg-amber-50 border border-amber-200 p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 border border-amber-200">
+                <Brain className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-amber-900">
+                  {csoPendingCount} décision{csoPendingCount !== 1 ? "s" : ""} CSO en attente
+                </h3>
+                <p className="text-[12px] text-amber-700 mt-0.5">
+                  Votre agent pipeline a préparé des actions — validez ou rejetez chaque proposition.
+                </p>
+              </div>
+            </div>
+            <Button asChild className="shrink-0 rounded-xl bg-amber-600 px-5 font-medium text-white shadow-sm hover:bg-amber-700 border-0">
+              <Link href="/sales-os/agent">
+                <Sparkles className="mr-2 h-4 w-4" />
+                Voir les décisions
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ── AUTOPILOT CTA ── */}
       {!isAutopilotActive && (

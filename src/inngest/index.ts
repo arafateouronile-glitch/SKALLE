@@ -43,6 +43,7 @@ import { intentSignalsDailyCron, intentSignalsManual } from "./functions/intent-
 import { linkedInOutreachDaily, linkedInOutreachManual } from "./functions/linkedin-outreach-daily";
 import { linkedInReplyChecker, linkedInReplyCheckerManual } from "./functions/linkedin-reply-checker";
 import { emailOutreachDaily, emailOutreachManual } from "./functions/email-outreach-daily";
+import { csoAgentDaily, csoAgentManual, csoAgentExecute } from "./functions/cso-agent-daily";
 
 // Export all Inngest functions
 export const functions = [
@@ -102,4 +103,8 @@ export const functions = [
   // CSO Email — Outreach autonome (envoi quotidien 8h)
   emailOutreachDaily,
   emailOutreachManual,
+  // CSO Agent — Pipeline manager semi-auto (analyse 7h + exécution on approve)
+  csoAgentDaily,
+  csoAgentManual,
+  csoAgentExecute,
 ];
