@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/modules/app-topbar";
-import { Sparkles, FileText, Calendar, Image, RotateCcw, Plus } from "lucide-react";
+import { Sparkles, FileText, Image, RotateCcw } from "lucide-react";
 
 const TABS = [
   { id: "articles", label: "Articles", count: 47 },
@@ -12,6 +14,7 @@ const TABS = [
 ] as const;
 
 type Tab = typeof TABS[number]["id"];
+type StatusFilter = "Tous" | "Publié" | "Programmé" | "Brouillon";
 
 const TEMPLATES = [
   { id: "seo", title: "Article SEO", desc: "Long format optimisé, plan + preview avant validation", credits: 8, icon: FileText },
@@ -21,17 +24,31 @@ const TEMPLATES = [
 ];
 
 const MOCK_CREATIONS = [
-  { id: 1, title: "10 stratégies SEO pour 2026", type: "Article", status: "Publié", date: "hier", statusColor: "emerald" },
-  { id: 2, title: "Thread LinkedIn : AI Sales", type: "Post", status: "Programmé", date: "demain", statusColor: "violet" },
-  { id: 3, title: "Guide Signals Radar — B2B", type: "Article", status: "Brouillon", date: "aujourd'hui", statusColor: "amber" },
-  { id: 4, title: "30 posts automation marketing", type: "Posts", status: "Publié", date: "il y a 2j", statusColor: "emerald" },
-  { id: 5, title: "Image couverture guide SEO", type: "Image", status: "Brouillon", date: "aujourd'hui", statusColor: "amber" },
-  { id: 6, title: "Remixage article lead scoring", type: "Remix", status: "Programmé", date: "cette semaine", statusColor: "violet" },
+  { id: 1, title: "10 stratégies SEO pour 2026", type: "Article", status: "Publié" as StatusFilter, date: "hier", statusColor: "emerald" },
+  { id: 2, title: "Thread LinkedIn : AI Sales", type: "Post", status: "Programmé" as StatusFilter, date: "demain", statusColor: "violet" },
+  { id: 3, title: "Guide Signals Radar — B2B", type: "Article", status: "Brouillon" as StatusFilter, date: "aujourd'hui", statusColor: "amber" },
+  { id: 4, title: "30 posts automation marketing", type: "Posts", status: "Publié" as StatusFilter, date: "il y a 2j", statusColor: "emerald" },
+  { id: 5, title: "Image couverture guide SEO", type: "Image", status: "Brouillon" as StatusFilter, date: "aujourd'hui", statusColor: "amber" },
+  { id: 6, title: "Remixage article lead scoring", type: "Remix", status: "Programmé" as StatusFilter, date: "cette semaine", statusColor: "violet" },
 ];
 
+const STATUS_FILTERS: StatusFilter[] = ["Tous", "Publié", "Programmé", "Brouillon"];
+
 export default function StudioPage() {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<Tab>("articles");
   const [prompt, setPrompt] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("Tous");
+
+  const filtered = statusFilter === "Tous"
+    ? MOCK_CREATIONS
+    : MOCK_CREATIONS.filter((c) => c.status === statusFilter);
+
+  function handleCreate() {
+    if (!prompt.trim()) { inputRef.current?.focus(); return; }
+    router.push("/marketing-os/studio");
+  }
 
   return (
     <>
@@ -39,6 +56,7 @@ export default function StudioPage() {
         title="Studio"
         breadcrumb="marketing-os / studio"
         cta="Créer"
+        onCta={() => inputRef.current?.focus()}
         accent="emerald"
       />
 
@@ -93,14 +111,17 @@ export default function StudioPage() {
               >
                 <span className="font-mono text-[15px]" style={{ color: "var(--emerald-fg)" }}>✦</span>
                 <input
+                  ref={inputRef}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                   className="flex-1 bg-transparent text-[14px] outline-none placeholder:opacity-50"
                   style={{ color: "var(--fg)" }}
                   placeholder="Ex : Article SEO sur le lead scoring B2B · 30 posts LinkedIn sur l'IA..."
                 />
               </div>
               <button
+                onClick={handleCreate}
                 className="px-5 py-3 rounded-[10px] font-semibold text-[13px] transition-all hover:brightness-110 whitespace-nowrap"
                 style={{ background: "var(--emerald-fg)", color: "white" }}
               >
@@ -118,7 +139,7 @@ export default function StudioPage() {
                   key={tpl.id}
                   className="text-left p-4 rounded-[12px] transition-all hover:-translate-y-0.5 hover:brightness-[0.97]"
                   style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
-                  onClick={() => setPrompt(tpl.title)}
+                  onClick={() => { setPrompt(tpl.title); inputRef.current?.focus(); }}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <Icon className="h-4 w-4" style={{ color: "var(--emerald-fg)" }} />
@@ -143,30 +164,38 @@ export default function StudioPage() {
             <h2 className="font-display text-[18px] font-semibold" style={{ color: "var(--fg)" }}>
               Vos créations récentes
             </h2>
-            <div className="flex items-center gap-2">
-              {["Publié", "Programmé", "Brouillon"].map((f) => (
-                <button
-                  key={f}
-                  className="text-[11.5px] font-medium px-2.5 py-1 rounded-md transition-all"
-                  style={{ background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
-                >
-                  {f}
-                </button>
-              ))}
+            <div className="flex items-center gap-1.5">
+              {STATUS_FILTERS.map((f) => {
+                const active = statusFilter === f;
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setStatusFilter(f)}
+                    className="text-[11.5px] font-medium px-2.5 py-1 rounded-md transition-all"
+                    style={
+                      active
+                        ? { background: "var(--emerald-soft)", border: "1px solid var(--emerald-line)", color: "var(--emerald-fg)" }
+                        : { background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line)", color: "var(--fg-dim)" }
+                    }
+                  >
+                    {f}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            {MOCK_CREATIONS.map((item) => (
-              <div
+            {filtered.map((item) => (
+              <Link
                 key={item.id}
-                className="rounded-[14px] p-4 transition-all hover:-translate-y-0.5"
+                href="/marketing-os/studio"
+                className="block rounded-[14px] p-4 transition-all hover:-translate-y-0.5"
                 style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
               >
-                {/* Gradient thumbnail */}
                 <div
                   className="h-24 rounded-[10px] mb-3 flex items-center justify-center"
-                  style={{ background: `linear-gradient(135deg, var(--emerald-soft), var(--violet-soft))` }}
+                  style={{ background: "linear-gradient(135deg, var(--emerald-soft), var(--violet-soft))" }}
                 >
                   <FileText className="h-8 w-8 opacity-30" style={{ color: "var(--emerald-fg)" }} />
                 </div>
@@ -187,7 +216,7 @@ export default function StudioPage() {
                 <p className="mt-1 text-[11px]" style={{ color: "var(--fg-mute)" }}>
                   {item.type} · {item.date}
                 </p>
-              </div>
+              </Link>
             ))}
           </div>
         </section>

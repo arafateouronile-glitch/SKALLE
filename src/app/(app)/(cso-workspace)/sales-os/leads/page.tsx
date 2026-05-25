@@ -307,12 +307,13 @@ export default function LeadsPage() {
                       {s.credits} cr
                     </span>
                   )}
-                  <button
+                  <Link
+                    href="/sales-os/outreach"
                     className="px-4 py-2 rounded-[8px] text-[12px] font-semibold transition-all hover:brightness-110"
                     style={{ background: "var(--violet-fg)", color: "white" }}
                   >
                     Lancer →
-                  </button>
+                  </Link>
                 </div>
               </div>
             ))}

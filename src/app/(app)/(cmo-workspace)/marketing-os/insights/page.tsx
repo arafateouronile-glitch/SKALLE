@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { KpiCard } from "@/components/ui/kpi-card";
 
@@ -149,9 +150,10 @@ export default function InsightsCMOPage() {
               <span>Contenu</span><span>Type</span><span>Revenu</span><span>Visites</span><span>Conv.</span>
             </div>
             {TOP_CONTENTS.map((item, i) => (
-              <div
+              <Link
                 key={i}
-                className="grid items-center gap-4 px-4 py-3 rounded-[10px]"
+                href="/marketing-os/studio"
+                className="grid items-center gap-4 px-4 py-3 rounded-[10px] transition-all hover:brightness-[0.97]"
                 style={{ gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr", background: i % 2 === 0 ? "var(--bg)" : "transparent" }}
               >
                 <span className="text-[13px] font-medium truncate" style={{ color: "var(--fg)" }}>{item.title}</span>
@@ -159,7 +161,7 @@ export default function InsightsCMOPage() {
                 <span className="text-[13px] font-semibold tabular-nums" style={{ color: "var(--emerald-fg)" }}>{item.revenue}</span>
                 <span className="text-[12px] tabular-nums" style={{ color: "var(--fg-dim)" }}>{item.visits}</span>
                 <span className="text-[12px] tabular-nums" style={{ color: "var(--fg-dim)" }}>{item.conv}</span>
-              </div>
+              </Link>
             ))}
           </div>
         </section>

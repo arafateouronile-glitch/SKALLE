@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { KpiCard } from "@/components/ui/kpi-card";
 
@@ -203,9 +204,10 @@ export default function CSOInsightsPage() {
               <span>Séquence</span><span>Leads</span><span>Réponses</span><span>RDV</span><span>Revenu</span>
             </div>
             {TOP_SEQUENCES.map((seq, i) => (
-              <div
+              <Link
                 key={i}
-                className="grid items-center gap-4 px-4 py-3 rounded-[10px]"
+                href="/sales-os/outreach"
+                className="grid items-center gap-4 px-4 py-3 rounded-[10px] transition-all hover:brightness-[0.97]"
                 style={{ gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr", background: i % 2 === 0 ? "var(--bg)" : "transparent" }}
               >
                 <span className="text-[13px] font-medium truncate" style={{ color: "var(--fg)" }}>{seq.name}</span>
@@ -223,7 +225,7 @@ export default function CSOInsightsPage() {
                 >
                   {seq.revenue}
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         </section>

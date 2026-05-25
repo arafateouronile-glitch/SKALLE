@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { Zap, RotateCcw } from "lucide-react";
 import { Sparkline } from "@/components/ui/sparkline";
@@ -11,7 +12,9 @@ const FRAMEWORKS = [
   { id: "pas", title: "PAS", desc: "Problème → Agitation → Solution" },
   { id: "socialproof", title: "Social Proof", desc: "Témoignage client + stats + autorité" },
   { id: "urgence", title: "Urgence", desc: "Deadline, rareté, opportunité limitée" },
-];
+] as const;
+
+type Framework = (typeof FRAMEWORKS)[number]["id"];
 
 const MOCK_CAMPAIGNS = [
   { name: "B2B SaaS — Q2 2026", spend: "€4 200", roas: "6.2×", cpl: "€32", ctr: "3.4%", spark: [22,26,24,28,32,30,34,38,36,40,44,48] as number[], color: "emerald" as const },
@@ -26,7 +29,15 @@ const COMPETITOR_ADS = [
 ];
 
 export default function AdsPage() {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState("");
+  const [activeFramework, setActiveFramework] = useState<Framework>("avantapres");
+
+  function handleLaunch() {
+    if (!prompt.trim()) { inputRef.current?.focus(); return; }
+    router.push("/marketing-os/ads");
+  }
 
   return (
     <>
@@ -34,7 +45,7 @@ export default function AdsPage() {
         title="Ads"
         breadcrumb="marketing-os / ads"
         cta="Nouvelle campagne"
-        ctaHref="/marketing-os/ads"
+        onCta={() => inputRef.current?.focus()}
         accent="amber"
       />
 
@@ -68,14 +79,17 @@ export default function AdsPage() {
               >
                 <Zap className="h-4 w-4 shrink-0" style={{ color: "var(--amber-fg)" }} />
                 <input
+                  ref={inputRef}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleLaunch()}
                   className="flex-1 bg-transparent text-[14px] outline-none placeholder:opacity-50"
                   style={{ color: "var(--fg)" }}
                   placeholder="Ex : Outil SaaS B2B pour les directeurs commerciaux..."
                 />
               </div>
               <button
+                onClick={handleLaunch}
                 className="px-5 py-3 rounded-[10px] font-semibold text-[13px] transition-all hover:brightness-110 whitespace-nowrap flex items-center gap-2"
                 style={{ background: "var(--amber-fg)", color: "white" }}
               >
@@ -86,16 +100,24 @@ export default function AdsPage() {
 
             {/* Frameworks */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {FRAMEWORKS.map((f) => (
-                <button
-                  key={f.id}
-                  className="text-left p-4 rounded-[12px] transition-all hover:brightness-[0.97]"
-                  style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
-                >
-                  <p className="text-[13px] font-semibold mb-0.5" style={{ color: "var(--fg)" }}>{f.title}</p>
-                  <p className="text-[11.5px]" style={{ color: "var(--fg-mute)" }}>{f.desc}</p>
-                </button>
-              ))}
+              {FRAMEWORKS.map((f) => {
+                const active = activeFramework === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setActiveFramework(f.id)}
+                    className="text-left p-4 rounded-[12px] transition-all hover:brightness-[0.97]"
+                    style={
+                      active
+                        ? { background: "var(--amber-soft)", border: "1px solid var(--amber-line)" }
+                        : { background: "var(--bg)", border: "1px solid var(--line)" }
+                    }
+                  >
+                    <p className="text-[13px] font-semibold mb-0.5" style={{ color: active ? "var(--amber-fg)" : "var(--fg)" }}>{f.title}</p>
+                    <p className="text-[11.5px]" style={{ color: "var(--fg-mute)" }}>{f.desc}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -114,9 +136,10 @@ export default function AdsPage() {
               <span>Campagne</span><span>Dépense</span><span>ROAS</span><span>CPL</span><span>CTR</span><span>Perf. 7j</span>
             </div>
             {MOCK_CAMPAIGNS.map((c) => (
-              <div
+              <Link
                 key={c.name}
-                className="grid items-center gap-4 px-4 py-3 rounded-[12px]"
+                href="/marketing-os/insights"
+                className="grid items-center gap-4 px-4 py-3 rounded-[12px] transition-all hover:brightness-[0.97]"
                 style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 100px", background: "var(--bg)", border: "1px solid var(--line)" }}
               >
                 <span className="text-[13px] font-medium truncate" style={{ color: "var(--fg)" }}>{c.name}</span>
@@ -127,7 +150,7 @@ export default function AdsPage() {
                 <div className="h-8 -my-1">
                   <Sparkline data={c.spark} color={c.color} height={32} />
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </section>
@@ -153,14 +176,14 @@ export default function AdsPage() {
                   </div>
                 </div>
                 <p className="text-[13px] italic mb-4" style={{ color: "var(--fg-dim)" }}>{ad.hook}</p>
-                <Link
-                  href="/marketing-os/ads"
+                <button
+                  onClick={() => { setPrompt(`Remixer : ${ad.hook}`); inputRef.current?.focus(); }}
                   className="w-full flex items-center justify-center gap-2 py-2 rounded-md text-[12px] font-medium transition-all hover:brightness-110"
                   style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   ↻ Remixer
-                </Link>
+                </button>
               </div>
             ))}
           </div>

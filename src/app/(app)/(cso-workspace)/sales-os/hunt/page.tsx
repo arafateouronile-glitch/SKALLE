@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { Search, Download } from "lucide-react";
@@ -43,11 +43,17 @@ function tempStyle(temp: "HOT" | "WARM") {
 }
 
 export default function HuntPage() {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [selectedMode, setSelectedMode] = useState<HuntMode>("jobs");
   const [query, setQuery] = useState("");
-  const [hasResults] = useState(true);
+  const [hasResults, setHasResults] = useState(false);
 
   const mode = HUNT_MODES.find((m) => m.id === selectedMode)!;
+
+  function handleScan() {
+    if (!query.trim()) { inputRef.current?.focus(); return; }
+    setHasResults(true);
+  }
 
   return (
     <>
@@ -75,7 +81,7 @@ export default function HuntPage() {
               return (
                 <button
                   key={m.id}
-                  onClick={() => setSelectedMode(m.id)}
+                  onClick={() => { setSelectedMode(m.id); setHasResults(false); }}
                   className="text-left p-4 rounded-[12px] transition-all"
                   style={
                     active
@@ -111,8 +117,10 @@ export default function HuntPage() {
             >
               <span className="text-[16px]">{mode.icon}</span>
               <input
+                ref={inputRef}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => { setQuery(e.target.value); setHasResults(false); }}
+                onKeyDown={(e) => e.key === "Enter" && handleScan()}
                 className="flex-1 bg-transparent text-[14px] outline-none placeholder:opacity-50"
                 style={{ color: "var(--fg)" }}
                 placeholder={
@@ -125,6 +133,7 @@ export default function HuntPage() {
               />
             </div>
             <button
+              onClick={handleScan}
               className="px-5 py-3 rounded-[10px] font-semibold text-[13px] transition-all hover:brightness-110 whitespace-nowrap flex items-center gap-2"
               style={{ background: "var(--amber-fg)", color: "white" }}
             >
@@ -144,7 +153,7 @@ export default function HuntPage() {
               <div>
                 <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.16em] mb-1" style={{ color: "var(--fg-mute)" }}>
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--amber-fg)" }} />
-                  Résultats du scan
+                  Résultats — {query}
                 </div>
                 <h2 className="font-display text-[20px] font-semibold" style={{ color: "var(--fg)" }}>
                   {MOCK_RESULTS.length} leads détectés
@@ -164,50 +173,33 @@ export default function HuntPage() {
               {MOCK_RESULTS.map((lead) => (
                 <div
                   key={lead.id}
-                  className="flex items-center gap-4 px-4 py-4 rounded-[12px] transition-all hover:brightness-[0.97]"
+                  className="flex items-center gap-4 px-4 py-4 rounded-[12px]"
                   style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
                 >
-                  {/* Avatar */}
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
                     style={{ background: "var(--amber-soft)", color: "var(--amber-fg)" }}
                   >
                     {lead.initials}
                   </div>
-
-                  {/* Name + location + size */}
                   <div className="w-44 shrink-0">
                     <p className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>{lead.name}</p>
                     <p className="text-[11px]" style={{ color: "var(--fg-mute)" }}>{lead.co} · {lead.city} · {lead.size}</p>
                   </div>
-
-                  {/* Signal */}
                   <div className="flex-1 min-w-0">
                     <p className="text-[12px] font-medium truncate" style={{ color: "var(--amber-fg)" }}>⚡ {lead.signal}</p>
                     <p className="text-[11px] truncate" style={{ color: "var(--fg-mute)" }}>{lead.reason}</p>
                   </div>
-
-                  {/* Score + temp */}
                   <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded"
-                      style={tempStyle(lead.temp)}
-                    >
-                      {lead.temp}
-                    </span>
-                    <span
-                      className="text-[13px] font-mono font-bold"
-                      style={{ color: lead.score >= 85 ? "var(--danger-fg)" : "var(--amber-fg)" }}
-                    >
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={tempStyle(lead.temp)}>{lead.temp}</span>
+                    <span className="text-[13px] font-mono font-bold" style={{ color: lead.score >= 85 ? "var(--danger-fg)" : "var(--amber-fg)" }}>
                       {lead.score}
                     </span>
                   </div>
-
-                  {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0">
                     <Link
                       href="/sales-os/leads"
-                      className="px-3 py-1.5 rounded-md text-[11.5px] font-medium transition-all"
+                      className="px-3 py-1.5 rounded-md text-[11.5px] font-medium transition-all hover:brightness-[0.97]"
                       style={{ background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
                     >
                       Voir

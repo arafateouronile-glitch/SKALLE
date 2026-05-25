@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { Search } from "lucide-react";
@@ -28,9 +28,23 @@ function priorityChip(p: string) {
   return { bg: "var(--cold-soft)", color: "var(--cold-fg)" };
 }
 
+const MOCK_RESULTS = [
+  { domain: "hubspot.com", score: 94, keywords: 48200, backlinks: "2.1M", ads: 24 },
+  { domain: "pipedrive.com", score: 87, keywords: 31400, backlinks: "890k", ads: 11 },
+];
+
 export default function SpyPage() {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [selectedMode, setSelectedMode] = useState<Mode>("competitor");
   const [query, setQuery] = useState("");
+  const [hasResults, setHasResults] = useState(false);
+
+  const mode = MODES.find((m) => m.id === selectedMode)!;
+
+  function handleAnalyze() {
+    if (!query.trim()) { inputRef.current?.focus(); return; }
+    setHasResults(true);
+  }
 
   return (
     <>
@@ -59,7 +73,7 @@ export default function SpyPage() {
                 return (
                   <button
                     key={mode.id}
-                    onClick={() => setSelectedMode(mode.id)}
+                    onClick={() => { setSelectedMode(mode.id); setHasResults(false); }}
                     className="text-left p-4 rounded-[12px] transition-all"
                     style={
                       active
@@ -91,8 +105,10 @@ export default function SpyPage() {
               >
                 <Search className="h-4 w-4 shrink-0" style={{ color: "var(--fg-mute)" }} />
                 <input
+                  ref={inputRef}
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => { setQuery(e.target.value); setHasResults(false); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
                   className="flex-1 bg-transparent text-[14px] outline-none placeholder:opacity-50"
                   style={{ color: "var(--fg)" }}
                   placeholder={
@@ -104,13 +120,45 @@ export default function SpyPage() {
                 />
               </div>
               <button
-                className="px-5 py-3 rounded-[10px] font-semibold text-[13px] transition-all hover:brightness-110 whitespace-nowrap"
+                onClick={handleAnalyze}
+                className="px-5 py-3 rounded-[10px] font-semibold text-[13px] transition-all hover:brightness-110 whitespace-nowrap flex items-center gap-2"
                 style={{ background: "var(--violet-fg)", color: "white" }}
               >
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/20">{mode.credits} cr</span>
                 Analyser →
               </button>
             </div>
           </div>
+
+          {/* Results inline */}
+          {hasResults && (
+            <div className="mt-2 space-y-2">
+              <div className="h-px" style={{ background: "var(--line)" }} />
+              <p className="text-[11px] font-mono uppercase tracking-wider pt-2" style={{ color: "var(--violet-fg)" }}>
+                Résultats — {query}
+              </p>
+              {MOCK_RESULTS.map((r) => (
+                <div
+                  key={r.domain}
+                  className="flex items-center gap-4 px-4 py-3 rounded-[10px]"
+                  style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
+                >
+                  <p className="font-semibold text-[13px] flex-1" style={{ color: "var(--fg)" }}>{r.domain}</p>
+                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>Score <strong style={{ color: "var(--violet-fg)" }}>{r.score}</strong></span>
+                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>{r.keywords.toLocaleString()} kw</span>
+                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>{r.backlinks} backlinks</span>
+                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>{r.ads} pubs actives</span>
+                  <Link
+                    href="/marketing-os/ads"
+                    className="text-[11.5px] font-semibold px-3 py-1.5 rounded-md transition-all hover:brightness-110"
+                    style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)", color: "var(--violet-fg)" }}
+                  >
+                    Réagir
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Watch list */}
@@ -131,6 +179,7 @@ export default function SpyPage() {
           <div className="space-y-2">
             {WATCHLIST.map((item) => {
               const chip = priorityChip(item.priority);
+              const reactHref = item.priority === "high" ? "/marketing-os/ads" : "/marketing-os/spy";
               return (
                 <div
                   key={item.id}
@@ -151,8 +200,8 @@ export default function SpyPage() {
                   </span>
                   <span className="shrink-0 text-[11px] font-mono" style={{ color: "var(--fg-mute)" }}>{item.time}</span>
                   <Link
-                    href="/marketing-os/ads"
-                    className="shrink-0 text-[11.5px] font-medium px-3 py-1.5 rounded-md transition-all"
+                    href={reactHref}
+                    className="shrink-0 text-[11.5px] font-medium px-3 py-1.5 rounded-md transition-all hover:brightness-110"
                     style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)", color: "var(--violet-fg)" }}
                   >
                     Réagir

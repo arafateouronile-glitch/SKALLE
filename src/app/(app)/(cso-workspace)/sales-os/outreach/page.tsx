@@ -321,7 +321,9 @@ export default function OutreachPage() {
                     placeholder="Répondre..."
                   />
                   <button
-                    className="p-2 rounded-[8px] transition-all hover:brightness-110 shrink-0"
+                    onClick={() => setReplyText("")}
+                    disabled={!replyText.trim()}
+                    className="p-2 rounded-[8px] transition-all hover:brightness-110 shrink-0 disabled:opacity-40"
                     style={{ background: "var(--emerald-fg)", color: "white" }}
                   >
                     <Send className="h-4 w-4" />
@@ -348,9 +350,10 @@ export default function OutreachPage() {
               {SEQUENCES.map((seq) => {
                 const style = statusStyle(seq.status);
                 return (
-                  <div
+                  <button
                     key={seq.id}
-                    className="grid items-center gap-4 px-4 py-4 rounded-[12px] cursor-pointer transition-all hover:brightness-[0.97]"
+                    onClick={() => setActiveTab("inbox")}
+                    className="w-full grid items-center gap-4 px-4 py-4 rounded-[12px] cursor-pointer transition-all hover:brightness-[0.97] text-left"
                     style={{ gridTemplateColumns: "2.5fr 1fr 1fr 1fr 1fr", background: "var(--bg)", border: "1px solid var(--line)" }}
                   >
                     <span className="text-[13px] font-medium" style={{ color: "var(--fg)" }}>{seq.name}</span>
@@ -378,7 +381,7 @@ export default function OutreachPage() {
                     >
                       {seq.status}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
