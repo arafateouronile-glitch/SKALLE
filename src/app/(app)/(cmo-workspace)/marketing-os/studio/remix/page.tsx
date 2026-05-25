@@ -1,234 +1,255 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
-import { ArrowLeft, Search, Heart, MessageCircle, Repeat2, Sparkles, Copy, Check } from "lucide-react";
+import { ArrowLeft, Search, Heart, MessageCircle, Repeat2, Sparkles, Copy, Check, RefreshCw, AlertCircle } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Network = "linkedin" | "twitter" | "instagram" | "facebook";
-type Niche = string;
+type NetworkFilter = "linkedin" | "twitter" | "instagram" | "facebook";
 type EngagementMin = "500" | "1k" | "5k" | "10k" | "50k";
 type Period = "7j" | "30j" | "3 mois";
 type ContentType = "tous" | "texte" | "image" | "video" | "carrousel";
 type RemixFormat = "thread" | "post-court" | "carrousel" | "story" | "email";
+type SortBy = "viralScore" | "likes" | "recent";
 
-interface ViralPost {
-  id: number;
-  network: Network;
-  author: string;
-  handle: string;
-  company: string;
-  avatar: string;
+interface ApiPost {
+  id: string;
+  platform: "LINKEDIN" | "TWITTER" | "FACEBOOK" | "INSTAGRAM";
   content: string;
-  likes: string;
-  comments: string;
-  shares: string;
-  date: string;
-  type: ContentType;
-  niche: string;
+  authorName: string;
+  authorHandle: string | null;
+  authorAvatar: string | null;
+  likes: number;
+  comments: number;
+  shares: number | null;
+  views: number | null;
+  viralScore: number;
+  postUrl: string;
+  postedAt: string | null;
+  hookType: string;
+  niche: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NETWORKS: { id: Network; label: string; color: string; bg: string; border: string }[] = [
-  { id: "linkedin", label: "LinkedIn", color: "var(--violet-fg)", bg: "var(--violet-soft)", border: "var(--violet-line)" },
-  { id: "twitter", label: "Twitter / X", color: "var(--fg)", bg: "var(--line-strong)", border: "var(--line)" },
-  { id: "instagram", label: "Instagram", color: "var(--amber-fg)", bg: "var(--amber-soft)", border: "var(--amber-line)" },
-  { id: "facebook", label: "Facebook", color: "var(--cold-fg)", bg: "var(--cold-soft)", border: "var(--cold-line)" },
+const NETWORKS: { id: NetworkFilter; label: string; platform: string; color: string; bg: string; border: string }[] = [
+  { id: "linkedin",  label: "LinkedIn",     platform: "LINKEDIN",  color: "var(--violet-fg)", bg: "var(--violet-soft)", border: "var(--violet-fg)" },
+  { id: "twitter",   label: "Twitter / X",  platform: "TWITTER",   color: "var(--fg)",        bg: "var(--line-strong)", border: "var(--fg)" },
+  { id: "instagram", label: "Instagram",    platform: "INSTAGRAM", color: "var(--amber-fg)",  bg: "var(--amber-soft)", border: "var(--amber-fg)" },
+  { id: "facebook",  label: "Facebook",     platform: "FACEBOOK",  color: "var(--cold-fg)",   bg: "var(--cold-soft)",  border: "var(--cold-fg)" },
 ];
 
-const NICHES: Niche[] = ["B2B SaaS", "Marketing", "IA & Tech", "Finance", "RH & Recrutement", "Vente & Outreach", "Growth", "Entrepreneuriat"];
+const NICHES = ["B2B SaaS", "Marketing", "IA & Tech", "Finance", "RH & Recrutement", "Vente & Outreach", "Growth", "Entrepreneuriat"];
 
+const ENGAGEMENT_MAP: Record<EngagementMin, number> = { "500": 500, "1k": 1000, "5k": 5000, "10k": 10000, "50k": 50000 };
 const ENGAGEMENT_OPTIONS: { id: EngagementMin; label: string }[] = [
   { id: "500", label: "500+ likes" },
-  { id: "1k", label: "1k+ likes" },
-  { id: "5k", label: "5k+ likes" },
+  { id: "1k",  label: "1k+ likes" },
+  { id: "5k",  label: "5k+ likes" },
   { id: "10k", label: "10k+ likes" },
   { id: "50k", label: "50k+ likes" },
 ];
 
 const PERIODS: Period[] = ["7j", "30j", "3 mois"];
+const SORT_OPTIONS: { id: SortBy; label: string }[] = [
+  { id: "viralScore", label: "Viral score" },
+  { id: "likes",      label: "Likes" },
+  { id: "recent",     label: "Récents" },
+];
 
 const CONTENT_TYPES: { id: ContentType; label: string }[] = [
-  { id: "tous", label: "Tous" },
-  { id: "texte", label: "Texte" },
-  { id: "image", label: "Image" },
+  { id: "tous",      label: "Tous" },
+  { id: "texte",     label: "Texte" },
+  { id: "image",     label: "Image" },
   { id: "carrousel", label: "Carrousel" },
-  { id: "video", label: "Vidéo" },
+  { id: "video",     label: "Vidéo" },
 ];
 
 const REMIX_FORMATS: { id: RemixFormat; label: string; desc: string; credits: number }[] = [
-  { id: "thread", label: "Thread LinkedIn", desc: "5–8 tweets / posts enchaînés", credits: 6 },
-  { id: "post-court", label: "Post court", desc: "Format punchy < 300 mots", credits: 3 },
-  { id: "carrousel", label: "Carrousel", desc: "5–10 slides avec visuels", credits: 8 },
-  { id: "story", label: "Story / Reel", desc: "Script court + textes écrans", credits: 5 },
-  { id: "email", label: "Email newsletter", desc: "Adapté pour séquence email", credits: 4 },
+  { id: "thread",     label: "Thread LinkedIn", desc: "5–8 posts enchaînés", credits: 6 },
+  { id: "post-court", label: "Post court",       desc: "Punchy < 300 mots",  credits: 3 },
+  { id: "carrousel",  label: "Carrousel",        desc: "5–10 slides",        credits: 8 },
+  { id: "story",      label: "Story / Reel",     desc: "Script court",       credits: 5 },
+  { id: "email",      label: "Email newsletter", desc: "Séquence email",     credits: 4 },
 ];
 
-const MOCK_POSTS: ViralPost[] = [
-  {
-    id: 1, network: "linkedin", author: "Guillaume Moubeche", handle: "gmoubeche", company: "lemlist",
-    avatar: "GM", content: "I cold emailed 50 CEOs in one week. Here's what I learned that changed our entire sales strategy:\n\n1. Subject lines with their name convert 3× more\n2. The best time to send? Tuesday 8–9am\n3. Never pitch in the first email\n4. Follow up exactly 3 times, then move on\n\nWe went from 2% to 22% reply rate. Here's the exact framework we use...",
-    likes: "14.2k", comments: "847", shares: "2.1k", date: "il y a 3j", type: "texte", niche: "Vente & Outreach",
-  },
-  {
-    id: 2, network: "linkedin", author: "Thibault Louis", handle: "thibaultlouis", company: "Notion",
-    avatar: "TL", content: "Stop building features. Start solving problems.\n\nThe #1 mistake founders make: adding more features when growth slows.\n\nWhat actually works:\n→ Talk to 5 churned customers this week\n→ Map their exact pain point\n→ Build ONE thing that fixes it\n\nWe 3× our retention by removing 12 features and doubling down on 2.",
-    likes: "9.8k", comments: "623", shares: "1.4k", date: "il y a 5j", type: "texte", niche: "B2B SaaS",
-  },
-  {
-    id: 3, network: "twitter", author: "Lenny Rachitsky", handle: "lennysan", company: "Lenny's Newsletter",
-    avatar: "LR", content: "The best PMs I know all share one trait:\n\nThey obsess over the problem, not the solution.\n\n10 questions they ask before writing a single line of spec:\n\n1. Who exactly has this problem?\n2. How often does it occur?\n3. What do people do today instead?\n4. What's the cost of NOT solving it?\n...",
-    likes: "22.4k", comments: "1.2k", shares: "4.8k", date: "il y a 2j", type: "texte", niche: "Marketing",
-  },
-  {
-    id: 4, network: "twitter", author: "Alex Hormozi", handle: "AlexHormozi", company: "Acquisition.com",
-    avatar: "AH", content: "I went from $0 to $100M in under 10 years.\n\nThe only playbook you need:\n\n• Sell something people desperately want\n• Make the offer so good they feel stupid saying no\n• Do it consistently for longer than you think\n\nThere's no secret. Just relentless execution on boring fundamentals.",
-    likes: "51.7k", comments: "3.2k", shares: "8.9k", date: "il y a 1j", type: "texte", niche: "Entrepreneuriat",
-  },
-  {
-    id: 5, network: "instagram", author: "GrowthHackers", handle: "growthhackers.io", company: "GrowthHackers",
-    avatar: "GH", content: "Votre funnel perd 80% des visiteurs entre le 1er clic et l'achat. Voici les 5 points de friction que personne ne vous dit d'optimiser ↓\n\n[Slide 1] Le CTA au-dessus de la ligne de flottaison\n[Slide 2] La preuve sociale visible sans scroll\n[Slide 3] La friction du formulaire\n[Slide 4] La vitesse mobile\n[Slide 5] Le email de relance à J+1",
-    likes: "7.3k", comments: "412", shares: "989", date: "il y a 4j", type: "carrousel", niche: "Growth",
-  },
-  {
-    id: 6, network: "linkedin", author: "Camille Tyan", handle: "ctyan", company: "PayFit",
-    avatar: "CT", content: "On vient de lever €90M. Voici ce que j'aurais aimé savoir avant de pitcher 200 investisseurs :\n\n1. Les VCs ne financent pas des idées. Ils financent des équipes.\n2. La traction, c'est tout. Le reste c'est du bruit.\n3. Non, ils ne signent pas en 2 semaines.\n4. Le storytelling > les slides.\n5. Le meilleur moment pour lever, c'est quand vous n'en avez pas besoin.",
-    likes: "18.9k", comments: "1.4k", shares: "3.2k", date: "il y a 6j", type: "texte", niche: "Finance",
-  },
-];
-
-const REMIX_RESULTS: Record<RemixFormat, string> = {
-  thread: `🧵 Thread — version remixée pour votre audience :
-
-1/ [Hook] La plupart des équipes font ça à l'envers.
-
-2/ Voici ce qu'on a appris après 6 mois d'itération sur notre propre stratégie commerciale :
-
-3/ Le vrai problème n'est pas le volume. C'est la pertinence.
-
-4/ Quand on a arrêté d'envoyer 500 emails génériques et commencé à en envoyer 50 ultra-ciblés, notre taux de réponse a grimpé de 3× en 3 semaines.
-
-5/ La méthode en 4 étapes qu'on utilise maintenant :
-→ Identifier le signal d'achat
-→ Personnaliser sur l'actualité du prospect
-→ Proposer une valeur immédiate
-→ Relancer une seule fois, intelligemment
-
-6/ Résultat : €538k de pipeline sur 30 jours. Avec la même équipe, le même budget.
-
-7/ La différence ? L'IA qui fait le travail répétitif pendant que les commerciaux closent. /fin`,
-
-  "post-court": `La plupart des équipes B2B perdent 80% de leur potentiel commercial sur des tâches répétitives.
-
-Résultat : moins de 3h par semaine passées à vraiment vendre.
-
-On a inversé ça. L'IA prospecte, score et relance. Les commerciaux closent.
-
-18.4% de taux de réponse. ×14 ROI outreach. Ce mois.
-
-Vous travaillez encore à l'ancienne ?`,
-
-  carrousel: `[Slide 1] Titre : "Pourquoi votre pipeline stagne (et comment le débloquer)"
-
-[Slide 2] Le problème : 80% du temps commercial est gaspillé en prospection manuelle
-
-[Slide 3] Les 3 signaux d'achat que vous ratez chaque semaine
-
-[Slide 4] La méthode : détecter → scorer → contacter → relancer
-
-[Slide 5] Résultats clients : de 2% à 18% de taux de réponse en 3 semaines
-
-[Slide 6] Avant / Après : 40h/mois de prospection → 3h
-
-[Slide 7] Slide CTA : "Testez gratuitement — lien en bio"`,
-
-  story: `[Écran 1 — 3s] Texte : "Vous prospectez encore manuellement ?"
-
-[Écran 2 — 4s] Stat : "80% du temps commercial = tâches sans valeur"
-
-[Écran 3 — 4s] Transition : "On a résolu ça."
-
-[Écran 4 — 5s] Résultat : "18.4% taux de réponse / ×14 ROI"
-
-[Écran 5 — 4s] CTA : "Swipe up — démo gratuite"`,
-
-  email: `Objet : [Prénom], vous perdez €4 200/mois en prospection manuelle
-
----
-
-Bonjour [Prénom],
-
-J'ai vu que [Entreprise] recrute des commerciaux en ce moment — signe que vous cherchez à scaler votre pipeline.
-
-Problème que j'entends souvent : les commerciaux passent 80% de leur temps sur des tâches répétitives (prospection, scoring, relances) au lieu de vendre.
-
-On a construit SKALLE exactement pour ça.
-
-Résultats de nos clients ce mois : 18.4% de taux de réponse moyen, ×14 ROI outreach, €538k de pipeline sur 30 jours.
-
-15 minutes pour vous montrer comment ça marche sur votre cas précis ?
-
-→ [Lien calendrier]
-
-Bonne journée,
-[Votre nom]`,
+const NETWORK_LABEL: Record<string, string> = { LINKEDIN: "LI", TWITTER: "𝕏", INSTAGRAM: "IG", FACEBOOK: "FB" };
+const NETWORK_COLOR: Record<string, string> = {
+  LINKEDIN: "var(--violet-fg)", TWITTER: "var(--fg)",
+  INSTAGRAM: "var(--amber-fg)", FACEBOOK: "var(--cold-fg)",
 };
+
+function formatLikes(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function RemixPage() {
-  const [selectedNetworks, setSelectedNetworks] = useState<Network[]>(["linkedin"]);
-  const [selectedNiches, setSelectedNiches] = useState<Niche[]>([]);
-  const [engagement, setEngagement] = useState<EngagementMin>("1k");
-  const [period, setPeriod] = useState<Period>("30j");
-  const [contentType, setContentType] = useState<ContentType>("tous");
+  // Filters
+  const [selectedNetworks, setSelectedNetworks] = useState<NetworkFilter[]>(["linkedin"]);
+  const [selectedNiches, setSelectedNiches]     = useState<string[]>([]);
+  const [engagement, setEngagement]             = useState<EngagementMin>("500");
+  const [period, setPeriod]                     = useState<Period>("30j");
+  const [contentType, setContentType]           = useState<ContentType>("tous");
+  const [sortBy, setSortBy]                     = useState<SortBy>("viralScore");
 
-  const [searching, setSearching] = useState(false);
+  // Search state
+  const [searching, setSearching]   = useState(false);
+  const [scraping, setScraping]     = useState(false);
+  const [pollMsg, setPollMsg]       = useState("");
   const [hasResults, setHasResults] = useState(false);
+  const [posts, setPosts]           = useState<ApiPost[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [selectedPost, setSelectedPost] = useState<ViralPost | null>(null);
-  const [remixFormat, setRemixFormat] = useState<RemixFormat>("thread");
-  const [generating, setGenerating] = useState(false);
-  const [remixResult, setRemixResult] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  // Remix state
+  const [selectedPost, setSelectedPost] = useState<ApiPost | null>(null);
+  const [remixFormat, setRemixFormat]   = useState<RemixFormat>("post-court");
+  const [generating, setGenerating]     = useState(false);
+  const [remixResult, setRemixResult]   = useState<string | null>(null);
+  const [remixError, setRemixError]     = useState<string | null>(null);
+  const [copied, setCopied]             = useState(false);
 
-  function toggleNetwork(n: Network) {
+  useEffect(() => () => { if (pollingRef.current) clearInterval(pollingRef.current); }, []);
+
+  function toggleNetwork(n: NetworkFilter) {
     setSelectedNetworks((prev) =>
       prev.includes(n) ? (prev.length > 1 ? prev.filter((x) => x !== n) : prev) : [...prev, n]
     );
   }
-
-  function toggleNiche(n: Niche) {
-    setSelectedNiches((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+  function toggleNiche(n: string) {
+    setSelectedNiches((prev) => prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]);
   }
 
-  function handleSearch() {
+  function buildQueryString(): string {
+    const params = new URLSearchParams();
+    params.set("minLikes", String(ENGAGEMENT_MAP[engagement]));
+    params.set("sortBy", sortBy);
+    params.set("limit", "20");
+    if (selectedNiches.length === 1) params.set("niche", selectedNiches[0]);
+    return params.toString();
+  }
+
+  async function fetchPostsFromDB(): Promise<ApiPost[]> {
+    const platforms = selectedNetworks.map((n) => NETWORKS.find((x) => x.id === n)!.platform);
+    const results = await Promise.all(
+      platforms.map((p) =>
+        fetch(`/api/social/veille?platform=${p}&${buildQueryString()}`)
+          .then((r) => r.json() as Promise<{ posts: ApiPost[] }>)
+          .then((d) => d.posts ?? [])
+          .catch(() => [] as ApiPost[])
+      )
+    );
+    const merged = results.flat();
+    const seen = new Set<string>();
+    return merged.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }
+
+  async function handleSearch() {
+    if (pollingRef.current) clearInterval(pollingRef.current);
     setSearching(true);
     setHasResults(false);
     setSelectedPost(null);
     setRemixResult(null);
-    setTimeout(() => {
+    setSearchError(null);
+    setPollMsg("");
+
+    try {
+      // 1. Check DB first
+      const dbPosts = await fetchPostsFromDB();
+      if (dbPosts.length >= 3) {
+        setPosts(dbPosts);
+        setHasResults(true);
+        setSearching(false);
+        setTimeout(() => document.getElementById("results-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+        return;
+      }
+
+      // 2. Not enough in DB — trigger Apify scrape
+      setScraping(true);
+      setPollMsg("Lancement du scraping… résultats dans ~2 min");
+
+      const scrapeRes = await fetch("/api/social/veille/scrape", { method: "POST" });
+      if (!scrapeRes.ok) {
+        const err = await scrapeRes.json() as { error?: string };
+        throw new Error(err.error ?? "Échec du scraping");
+      }
+      const { runIds, queries } = await scrapeRes.json() as { runIds: Record<string, string | null>; queries: string[] };
+
+      let elapsed = 0;
+      pollingRef.current = setInterval(async () => {
+        elapsed += 6;
+        setPollMsg(`Scraping en cours… ${elapsed < 60 ? `~${120 - elapsed}s` : "encore quelques secondes"}`);
+
+        try {
+          const collectRes = await fetch("/api/social/veille/scrape?collect=1", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ runIds, queries }),
+          });
+          const collectData = await collectRes.json() as { status: string; saved?: number };
+
+          if (collectData.status === "done") {
+            clearInterval(pollingRef.current!);
+            const freshPosts = await fetchPostsFromDB();
+            setPosts(freshPosts);
+            setHasResults(true);
+            setSearching(false);
+            setScraping(false);
+            setPollMsg("");
+            setTimeout(() => document.getElementById("results-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+          }
+        } catch { /* ignore poll errors */ }
+
+        if (elapsed >= 180) {
+          clearInterval(pollingRef.current!);
+          setSearching(false);
+          setScraping(false);
+          setPollMsg("");
+          setSearchError("Le scraping a pris trop de temps. Réessayez dans quelques minutes.");
+        }
+      }, 6000);
+
+    } catch (e) {
+      setSearchError(e instanceof Error ? e.message : "Erreur inconnue");
       setSearching(false);
-      setHasResults(true);
-    }, 1400);
+      setScraping(false);
+    }
   }
 
-  function handleSelectPost(post: ViralPost) {
+  function handleSelectPost(post: ApiPost) {
     setSelectedPost(post);
     setRemixResult(null);
+    setRemixError(null);
     setTimeout(() => document.getElementById("remix-config")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
+    if (!selectedPost) return;
     setGenerating(true);
-    setTimeout(() => {
-      setGenerating(false);
-      setRemixResult(REMIX_RESULTS[remixFormat]);
+    setRemixError(null);
+    try {
+      const res = await fetch(`/api/social/veille/${selectedPost.id}/inspire`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        throw new Error(err.error ?? "Erreur de génération");
+      }
+      const data = await res.json() as { generatedPost: string };
+      setRemixResult(data.generatedPost);
       setTimeout(() => document.getElementById("remix-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-    }, 1100);
+    } catch (e) {
+      setRemixError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   function handleCopy() {
@@ -238,17 +259,7 @@ export default function RemixPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const filteredPosts = MOCK_POSTS.filter((p) => {
-    const networkMatch = selectedNetworks.includes(p.network);
-    const nicheMatch = selectedNiches.length === 0 || selectedNiches.includes(p.niche);
-    const typeMatch = contentType === "tous" || p.type === contentType;
-    return networkMatch && nicheMatch && typeMatch;
-  });
-
-  const networkLabel: Record<Network, string> = { linkedin: "LI", twitter: "𝕏", instagram: "IG", facebook: "FB" };
-  const networkColor: Record<Network, string> = {
-    linkedin: "var(--violet-fg)", twitter: "var(--fg)", instagram: "var(--amber-fg)", facebook: "var(--cold-fg)",
-  };
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -295,7 +306,7 @@ export default function RemixPage() {
                       className="px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all"
                       style={
                         active
-                          ? { background: n.bg, color: n.color, border: `2px solid ${n.color}` }
+                          ? { background: n.bg, color: n.color, border: `2px solid ${n.border}` }
                           : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }
                       }
                     >
@@ -308,7 +319,9 @@ export default function RemixPage() {
 
             {/* Niches */}
             <div>
-              <p className="text-[12px] font-semibold mb-2.5" style={{ color: "var(--fg-dim)" }}>Niche <span style={{ color: "var(--fg-mute)" }}>(laisser vide = toutes)</span></p>
+              <p className="text-[12px] font-semibold mb-2.5" style={{ color: "var(--fg-dim)" }}>
+                Niche <span style={{ color: "var(--fg-mute)" }}>(vide = toutes)</span>
+              </p>
               <div className="flex flex-wrap gap-2">
                 {NICHES.map((n) => {
                   const active = selectedNiches.includes(n);
@@ -330,106 +343,106 @@ export default function RemixPage() {
               </div>
             </div>
 
-            {/* Row: engagement + period + type */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Row: engagement + period + content type + sort */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
               <div>
-                <p className="text-[12px] font-semibold mb-2.5" style={{ color: "var(--fg-dim)" }}>Engagement minimum</p>
+                <p className="text-[12px] font-semibold mb-2" style={{ color: "var(--fg-dim)" }}>Engagement min</p>
                 <div className="flex flex-wrap gap-1.5">
                   {ENGAGEMENT_OPTIONS.map((e) => {
                     const active = engagement === e.id;
                     return (
-                      <button
-                        key={e.id}
-                        onClick={() => setEngagement(e.id)}
-                        className="px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-all"
-                        style={
-                          active
-                            ? { background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" }
-                            : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }
-                        }
-                      >
-                        {e.label}
-                      </button>
+                      <button key={e.id} onClick={() => setEngagement(e.id)}
+                        className="px-2.5 py-1.5 rounded-[8px] text-[11.5px] font-medium transition-all"
+                        style={active ? { background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" } : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }}
+                      >{e.label}</button>
                     );
                   })}
                 </div>
               </div>
-
               <div>
-                <p className="text-[12px] font-semibold mb-2.5" style={{ color: "var(--fg-dim)" }}>Période</p>
+                <p className="text-[12px] font-semibold mb-2" style={{ color: "var(--fg-dim)" }}>Période</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {PERIODS.map((p) => {
-                    const active = period === p;
-                    return (
-                      <button
-                        key={p}
-                        onClick={() => setPeriod(p)}
-                        className="px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-all"
-                        style={
-                          active
-                            ? { background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" }
-                            : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }
-                        }
-                      >
-                        {p}
-                      </button>
-                    );
-                  })}
+                  {PERIODS.map((p) => (
+                    <button key={p} onClick={() => setPeriod(p)}
+                      className="px-2.5 py-1.5 rounded-[8px] text-[11.5px] font-medium transition-all"
+                      style={period === p ? { background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" } : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }}
+                    >{p}</button>
+                  ))}
                 </div>
               </div>
-
               <div>
-                <p className="text-[12px] font-semibold mb-2.5" style={{ color: "var(--fg-dim)" }}>Type de contenu</p>
+                <p className="text-[12px] font-semibold mb-2" style={{ color: "var(--fg-dim)" }}>Type</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {CONTENT_TYPES.map((t) => {
-                    const active = contentType === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => setContentType(t.id)}
-                        className="px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-all"
-                        style={
-                          active
-                            ? { background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" }
-                            : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }
-                        }
-                      >
-                        {t.label}
-                      </button>
-                    );
-                  })}
+                  {CONTENT_TYPES.map((t) => (
+                    <button key={t.id} onClick={() => setContentType(t.id)}
+                      className="px-2.5 py-1.5 rounded-[8px] text-[11.5px] font-medium transition-all"
+                      style={contentType === t.id ? { background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" } : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }}
+                    >{t.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold mb-2" style={{ color: "var(--fg-dim)" }}>Trier par</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {SORT_OPTIONS.map((s) => (
+                    <button key={s.id} onClick={() => setSortBy(s.id)}
+                      className="px-2.5 py-1.5 rounded-[8px] text-[11.5px] font-medium transition-all"
+                      style={sortBy === s.id ? { background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" } : { background: "var(--bg)", color: "var(--fg-dim)", border: "1px solid var(--line)" }}
+                    >{s.label}</button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            <button
-              onClick={handleSearch}
-              disabled={searching}
-              className="flex items-center gap-2 px-6 py-3 rounded-[10px] font-semibold text-[13px] transition-all hover:brightness-110 disabled:opacity-70"
-              style={{ background: "var(--emerald-fg)", color: "white" }}
-            >
-              <Search className="h-4 w-4" />
-              {searching ? "Recherche en cours…" : "Trouver les posts viraux →"}
-            </button>
+            {/* Search button */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSearch}
+                disabled={searching}
+                className="flex items-center gap-2 px-6 py-3 rounded-[10px] font-semibold text-[13px] transition-all hover:brightness-110 disabled:opacity-70"
+                style={{ background: "var(--emerald-fg)", color: "white" }}
+              >
+                {scraping
+                  ? <RefreshCw className="h-4 w-4 animate-spin" />
+                  : <Search className="h-4 w-4" />
+                }
+                {searching
+                  ? (scraping ? "Scraping en cours…" : "Recherche…")
+                  : "Trouver les posts viraux →"
+                }
+              </button>
+              {pollMsg && (
+                <span className="text-[12px]" style={{ color: "var(--fg-mute)" }}>{pollMsg}</span>
+              )}
+            </div>
+
+            {searchError && (
+              <div
+                className="flex items-center gap-2 px-4 py-3 rounded-[10px] text-[13px]"
+                style={{ background: "var(--danger-soft)", border: "1px solid var(--danger-line)", color: "var(--danger-fg)" }}
+              >
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {searchError}
+              </div>
+            )}
           </div>
         </section>
 
         {/* ── Step 2 : Résultats ───────────────────────────────────────────── */}
         {hasResults && (
-          <section>
+          <section id="results-section">
             <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] mb-4" style={{ color: "var(--fg-mute)" }}>
               <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--emerald-fg)", color: "white" }}>2</span>
-              {filteredPosts.length} posts viraux trouvés — choisissez-en un à remixer
+              {posts.length} posts viraux — choisissez-en un à remixer
             </div>
 
-            {filteredPosts.length === 0 ? (
-              <div
-                className="rounded-[14px] p-8 text-center"
-                style={{ border: "1px dashed var(--line)" }}
-              >
-                <p className="text-[13px] mb-3" style={{ color: "var(--fg-mute)" }}>Aucun post pour ces filtres. Essayez d'élargir la sélection.</p>
+            {posts.length === 0 ? (
+              <div className="rounded-[14px] p-8 text-center" style={{ border: "1px dashed var(--line)" }}>
+                <p className="text-[13px] mb-3" style={{ color: "var(--fg-mute)" }}>
+                  Aucun post trouvé pour ces filtres. Essayez de baisser l'engagement minimum ou d'élargir les niches.
+                </p>
                 <button
-                  onClick={() => { setSelectedNiches([]); setContentType("tous"); }}
+                  onClick={() => { setEngagement("500"); setSelectedNiches([]); }}
                   className="text-[12px] font-semibold px-4 py-2 rounded-[8px]"
                   style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}
                 >
@@ -438,7 +451,7 @@ export default function RemixPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {filteredPosts.map((post) => {
+                {posts.map((post) => {
                   const isSelected = selectedPost?.id === post.id;
                   return (
                     <div
@@ -446,43 +459,53 @@ export default function RemixPage() {
                       className="rounded-[14px] p-5 flex flex-col gap-3 transition-all"
                       style={{
                         background: "var(--bg-card)",
-                        border: isSelected ? `2px solid var(--emerald-fg)` : "1px solid var(--line)",
+                        border: isSelected ? "2px solid var(--emerald-fg)" : "1px solid var(--line)",
                         boxShadow: "var(--card-shadow)",
                       }}
                     >
-                      {/* Header */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <div
                             className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
                             style={{ background: "var(--line-strong)", color: "var(--fg)" }}
                           >
-                            {post.avatar}
+                            {post.authorName.slice(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <p className="text-[12px] font-semibold" style={{ color: "var(--fg)" }}>{post.author}</p>
-                            <p className="text-[10.5px]" style={{ color: "var(--fg-mute)" }}>{post.company} · {post.date}</p>
+                            <p className="text-[12px] font-semibold" style={{ color: "var(--fg)" }}>{post.authorName}</p>
+                            <p className="text-[10.5px]" style={{ color: "var(--fg-mute)" }}>
+                              {post.niche ?? post.platform}
+                              {post.postedAt ? ` · ${new Date(post.postedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}` : ""}
+                            </p>
                           </div>
                         </div>
-                        <span
-                          className="text-[10px] font-bold px-2 py-0.5 rounded"
-                          style={{ background: "var(--bg)", color: networkColor[post.network], border: "1px solid var(--line)" }}
-                        >
-                          {networkLabel[post.network]}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                            style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}
+                          >
+                            ↑{post.viralScore}
+                          </span>
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                            style={{ background: "var(--bg)", color: NETWORK_COLOR[post.platform] ?? "var(--fg)", border: "1px solid var(--line)" }}
+                          >
+                            {NETWORK_LABEL[post.platform] ?? post.platform}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Content */}
                       <p className="text-[12.5px] leading-relaxed line-clamp-4" style={{ color: "var(--fg-dim)" }}>
                         {post.content}
                       </p>
 
-                      {/* Stats + CTA */}
                       <div className="flex items-center justify-between pt-2" style={{ borderTop: "1px solid var(--line)" }}>
                         <div className="flex items-center gap-4 text-[11px]" style={{ color: "var(--fg-mute)" }}>
-                          <span className="flex items-center gap-1"><Heart className="h-3 w-3" />{post.likes}</span>
-                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" />{post.comments}</span>
-                          <span className="flex items-center gap-1"><Repeat2 className="h-3 w-3" />{post.shares}</span>
+                          <span className="flex items-center gap-1"><Heart className="h-3 w-3" />{formatLikes(post.likes)}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" />{formatLikes(post.comments)}</span>
+                          {post.shares != null && (
+                            <span className="flex items-center gap-1"><Repeat2 className="h-3 w-3" />{formatLikes(post.shares)}</span>
+                          )}
                         </div>
                         <button
                           onClick={() => handleSelectPost(post)}
@@ -494,7 +517,7 @@ export default function RemixPage() {
                           }
                         >
                           <Sparkles className="h-3.5 w-3.5" />
-                          {isSelected ? "Sélectionné ✓" : "Remixer ce post →"}
+                          {isSelected ? "Sélectionné ✓" : "Remixer →"}
                         </button>
                       </div>
                     </div>
@@ -505,15 +528,14 @@ export default function RemixPage() {
           </section>
         )}
 
-        {/* ── Step 3 : Config remix ────────────────────────────────────────── */}
+        {/* ── Step 3 : Format remix ────────────────────────────────────────── */}
         {selectedPost && (
           <section id="remix-config">
             <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] mb-4" style={{ color: "var(--fg-mute)" }}>
               <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--emerald-fg)", color: "white" }}>3</span>
-              Choisir le format de remix
+              Choisir le format
             </div>
 
-            {/* Selected post recap */}
             <div
               className="rounded-[12px] p-4 mb-5 flex items-start gap-3"
               style={{ background: "var(--emerald-soft)", border: "1px solid var(--emerald-line)" }}
@@ -521,26 +543,21 @@ export default function RemixPage() {
               <Sparkles className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "var(--emerald-fg)" }} />
               <div>
                 <p className="text-[12px] font-semibold mb-0.5" style={{ color: "var(--emerald-fg)" }}>
-                  Post de {selectedPost.author} sélectionné — {selectedPost.likes} likes
+                  {selectedPost.authorName} — {formatLikes(selectedPost.likes)} likes · viral score {selectedPost.viralScore}
                 </p>
                 <p className="text-[11.5px] line-clamp-2" style={{ color: "var(--fg-dim)" }}>{selectedPost.content}</p>
               </div>
             </div>
 
-            {/* Format grid */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
               {REMIX_FORMATS.map((f) => {
                 const active = remixFormat === f.id;
                 return (
                   <button
                     key={f.id}
-                    onClick={() => { setRemixFormat(f.id); setRemixResult(null); }}
+                    onClick={() => { setRemixFormat(f.id); setRemixResult(null); setRemixError(null); }}
                     className="text-left p-4 rounded-[12px] transition-all hover:brightness-[0.97]"
-                    style={
-                      active
-                        ? { background: "var(--emerald-soft)", border: "2px solid var(--emerald-fg)" }
-                        : { background: "var(--bg-card)", border: "1px solid var(--line)" }
-                    }
+                    style={active ? { background: "var(--emerald-soft)", border: "2px solid var(--emerald-fg)" } : { background: "var(--bg-card)", border: "1px solid var(--line)" }}
                   >
                     <p className="text-[12px] font-semibold mb-1" style={{ color: active ? "var(--emerald-fg)" : "var(--fg)" }}>{f.label}</p>
                     <p className="text-[10.5px] leading-snug mb-2" style={{ color: "var(--fg-mute)" }}>{f.desc}</p>
@@ -562,8 +579,18 @@ export default function RemixPage() {
               style={{ background: "var(--emerald-fg)", color: "white" }}
             >
               <Sparkles className="h-4 w-4" />
-              {generating ? "Génération en cours…" : `Générer le ${REMIX_FORMATS.find(f => f.id === remixFormat)?.label} →`}
+              {generating ? "Génération Claude…" : `Générer le ${REMIX_FORMATS.find(f => f.id === remixFormat)?.label} →`}
             </button>
+
+            {remixError && (
+              <div
+                className="mt-3 flex items-center gap-2 px-4 py-3 rounded-[10px] text-[13px]"
+                style={{ background: "var(--danger-soft)", border: "1px solid var(--danger-line)", color: "var(--danger-fg)" }}
+              >
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {remixError}
+              </div>
+            )}
           </section>
         )}
 
@@ -583,7 +610,7 @@ export default function RemixPage() {
                   className="text-[11px] font-semibold px-2.5 py-1 rounded-[6px]"
                   style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}
                 >
-                  ✓ {REMIX_FORMATS.find(f => f.id === remixFormat)?.label} généré
+                  ✓ {REMIX_FORMATS.find(f => f.id === remixFormat)?.label} — adapté à votre marque
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -597,6 +624,14 @@ export default function RemixPage() {
                   >
                     {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                     {copied ? "Copié !" : "Copier"}
+                  </button>
+                  <button
+                    onClick={handleGenerate}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-all hover:brightness-[0.97]"
+                    style={{ background: "var(--bg)", color: "var(--fg-mute)", border: "1px solid var(--line)" }}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Regénérer
                   </button>
                   <Link
                     href="/marketing-os/studio"
