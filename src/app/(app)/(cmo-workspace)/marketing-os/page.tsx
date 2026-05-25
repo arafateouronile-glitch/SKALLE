@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PLAN_LIMITS } from "@/lib/credits";
-import { CMODashboardClient } from "@/components/modules/cmo-dashboard/dashboard-client";
+import { CMODashboardClientV2 } from "@/components/modules/cmo-dashboard/dashboard-client-v2";
 
 async function getCommandCenterData(userId: string) {
   const workspace = await prisma.workspace.findFirst({
@@ -102,7 +102,7 @@ export default async function DashboardPage() {
   const creditsMax = PLAN_LIMITS[planKey].monthlyCredits;
 
   return (
-    <CMODashboardClient
+    <CMODashboardClientV2
       firstName={firstName}
       plan={plan}
       credits={credits}
@@ -125,3 +125,4 @@ export default async function DashboardPage() {
     />
   );
 }
+

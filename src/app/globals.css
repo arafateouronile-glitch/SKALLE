@@ -105,6 +105,38 @@
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 
   --ease-apple: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ─── Skalle Semantic Tokens — Light (Soft Power) ──────────────────────── */
+  --bg: oklch(0.965 0.004 260);
+  --bg-elev: oklch(1 0 0);
+  --bg-card: oklch(1 0 0);
+  --bg-sidebar: oklch(0.99 0.003 260);
+  --line: oklch(0.21 0.03 260 / 0.08);
+  --line-strong: oklch(0.21 0.03 260 / 0.14);
+  --fg: oklch(0.21 0.03 260);
+  --fg-dim: oklch(0.42 0.02 260);
+  --fg-mute: oklch(0.55 0.02 260);
+
+  --emerald-fg:   oklch(0.50 0.17 158);
+  --emerald-soft: oklch(0.50 0.17 158 / 0.10);
+  --emerald-line: oklch(0.50 0.17 158 / 0.25);
+  --violet-fg:    oklch(0.52 0.20 295);
+  --violet-soft:  oklch(0.52 0.20 295 / 0.10);
+  --violet-line:  oklch(0.52 0.20 295 / 0.25);
+  --amber-fg:     oklch(0.62 0.18 75);
+  --amber-soft:   oklch(0.62 0.18 75 / 0.12);
+  --amber-line:   oklch(0.62 0.18 75 / 0.30);
+  --danger-fg:    oklch(0.58 0.22 22);
+  --danger-soft:  oklch(0.58 0.22 22 / 0.10);
+  --danger-line:  oklch(0.58 0.22 22 / 0.28);
+  --rose-fg:      oklch(0.55 0.18 350);
+  --rose-soft:    oklch(0.55 0.18 350 / 0.10);
+  --rose-line:    oklch(0.55 0.18 350 / 0.25);
+  --cold-fg:      oklch(0.55 0.12 230);
+  --cold-soft:    oklch(0.55 0.12 230 / 0.10);
+  --cold-line:    oklch(0.55 0.12 230 / 0.25);
+
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -8px rgb(0 0 0 / 0.06);
 }
 
 .dark {
@@ -152,6 +184,38 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+
+  /* ─── Skalle Semantic Tokens — Dark ──────────────────────────────────────── */
+  --bg: oklch(0.14 0.018 260);
+  --bg-elev: oklch(0.185 0.02 260);
+  --bg-card: oklch(0.185 0.02 260);
+  --bg-sidebar: oklch(0.165 0.018 260);
+  --line: oklch(0.98 0.01 260 / 0.07);
+  --line-strong: oklch(0.98 0.01 260 / 0.12);
+  --fg: oklch(0.97 0.005 260);
+  --fg-dim: oklch(0.72 0.015 260);
+  --fg-mute: oklch(0.55 0.018 260);
+
+  --emerald-fg:   oklch(0.74 0.17 158);
+  --emerald-soft: oklch(0.74 0.17 158 / 0.12);
+  --emerald-line: oklch(0.74 0.17 158 / 0.28);
+  --violet-fg:    oklch(0.70 0.18 295);
+  --violet-soft:  oklch(0.70 0.18 295 / 0.12);
+  --violet-line:  oklch(0.70 0.18 295 / 0.28);
+  --amber-fg:     oklch(0.78 0.16 75);
+  --amber-soft:   oklch(0.78 0.16 75 / 0.12);
+  --amber-line:   oklch(0.78 0.16 75 / 0.30);
+  --danger-fg:    oklch(0.78 0.18 22);
+  --danger-soft:  oklch(0.78 0.18 22 / 0.12);
+  --danger-line:  oklch(0.78 0.18 22 / 0.28);
+  --rose-fg:      oklch(0.72 0.18 350);
+  --rose-soft:    oklch(0.72 0.18 350 / 0.12);
+  --rose-line:    oklch(0.72 0.18 350 / 0.25);
+  --cold-fg:      oklch(0.68 0.14 230);
+  --cold-soft:    oklch(0.68 0.14 230 / 0.12);
+  --cold-line:    oklch(0.68 0.14 230 / 0.25);
+
+  --card-shadow: 0 1px 3px rgb(0 0 0 / 0.20), 0 8px 24px -8px rgb(0 0 0 / 0.30);
 }
 
 /* ─── Typographie Raffinée ───────────────────────────────────────────────── */

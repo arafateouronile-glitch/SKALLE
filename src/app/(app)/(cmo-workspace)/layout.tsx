@@ -1,8 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { Sidebar } from "@/components/modules/sidebar";
-import { Header } from "@/components/modules/header";
+import { AppSidebar } from "@/components/modules/app-sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { CreditsProvider } from "@/components/providers/credits-provider";
 import prisma from "@/lib/prisma";
@@ -92,10 +91,9 @@ export default async function CmoWorkspaceLayout({
 
   return (
     <CreditsProvider credits={credits} plan={plan}>
-      <div data-theme="cmo" className="min-h-screen" style={{ background: "oklch(0.14 0.018 260)", color: "oklch(0.97 0.005 260)" }}>
-        <Sidebar user={session.user} credits={credits} plan={plan} />
-        <div className="lg:pl-[15rem]">
-          <Header user={session.user} workspace="cmo" credits={credits} plan={plan} />
+      <div className="min-h-screen" style={{ background: "var(--bg)", color: "var(--fg)" }}>
+        <AppSidebar os="cmo" user={session.user} credits={credits} plan={plan} />
+        <div className="pl-[220px]">
           <main className="p-6 animate-stagger">{children}</main>
         </div>
         <Toaster />

@@ -1,11 +1,10 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { Header } from "@/components/modules/header";
+import { AppSidebar } from "@/components/modules/app-sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import prisma from "@/lib/prisma";
 import { Zap, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { SalesSidebar } from "@/components/modules/sales-sidebar";
 
 // ─── Access Gate ─────────────────────────────────────────────────────────────
 async function UpgradeToCso() {
@@ -83,10 +82,9 @@ export default async function CsoWorkspaceLayout({
   const plan = user?.plan ?? "FREE";
 
   return (
-    <div data-theme="cso" className="min-h-screen bg-slate-50 text-gray-900">
-      <SalesSidebar user={session.user} credits={credits} plan={plan} />
-      <div className="lg:pl-[15rem]">
-        <Header user={session.user} workspace="cso" credits={credits} plan={plan} />
+    <div className="min-h-screen" style={{ background: "var(--bg)", color: "var(--fg)" }}>
+      <AppSidebar os="cso" user={session.user} credits={credits} plan={plan} />
+      <div className="pl-[220px]">
         <main className="p-6 animate-stagger">{children}</main>
       </div>
       <Toaster />
