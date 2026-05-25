@@ -156,7 +156,47 @@ function encodeSSE(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-// ─── Route handler ────────────────────────────────────────────────────────────
+// ─── GET — read saved ICP ─────────────────────────────────────────────────────
+
+export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+
+  const workspace = await prisma.workspace.findFirst({
+    where: { userId: session.user.id },
+    select: { brandVoice: true },
+  });
+
+  const bv = (workspace?.brandVoice as Record<string, unknown>) ?? {};
+  const icp = (bv.icp as ICP | undefined) ?? null;
+  return NextResponse.json({ icp });
+}
+
+// ─── PATCH — save ICP only ────────────────────────────────────────────────────
+
+export async function PATCH(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+
+  const { icp } = await req.json() as { icp: ICP };
+  if (!icp) return NextResponse.json({ error: "icp requis" }, { status: 400 });
+
+  const workspace = await prisma.workspace.findFirst({
+    where: { userId: session.user.id },
+    select: { id: true, brandVoice: true },
+  });
+  if (!workspace) return NextResponse.json({ error: "Workspace introuvable" }, { status: 404 });
+
+  const bv = (workspace.brandVoice as Record<string, unknown>) ?? {};
+  await prisma.workspace.update({
+    where: { id: workspace.id },
+    data: { brandVoice: { ...bv, icp } as object },
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
+// ─── POST — generate batch ────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const session = await auth();

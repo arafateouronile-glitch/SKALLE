@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/modules/app-topbar";
@@ -202,6 +202,11 @@ export default function StudioPage() {
   function openWizard() {
     setWizardStep(1); setStreamedPosts([]); setGenDone(false);
     setGenError(null); setGenProgress(0); setGenStatus("");
+    // Pre-fill ICP from saved brandVoice
+    fetch("/api/social/batch-posts")
+      .then((r) => r.json() as Promise<{ icp?: ICP }>)
+      .then((d) => { if (d.icp) setICP(d.icp); })
+      .catch(() => {});
     setWizardOpen(true);
   }
 

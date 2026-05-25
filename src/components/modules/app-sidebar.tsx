@@ -18,6 +18,7 @@ import {
   HelpCircle,
   ArrowLeftRight,
   LogOut,
+  Users,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -32,11 +33,12 @@ interface AppSidebarProps {
 }
 
 const CMO_NAV = [
-  { id: "dashboard", name: "Dashboard", href: "/marketing-os", icon: LayoutDashboard, desc: "" },
-  { id: "studio", name: "Studio", href: "/marketing-os/studio", icon: Sparkles, desc: "Tout créer" },
-  { id: "spy", name: "Spy", href: "/marketing-os/spy", icon: Search, desc: "Veille concurrence" },
-  { id: "ads", name: "Ads", href: "/marketing-os/ads", icon: Zap, desc: "" },
-  { id: "insights", name: "Insights", href: "/marketing-os/insights", icon: TrendingUp, desc: "" },
+  { id: "dashboard", name: "Dashboard", href: "/marketing-os",         icon: LayoutDashboard, desc: "" },
+  { id: "studio",    name: "Studio",    href: "/marketing-os/studio",   icon: Sparkles,        desc: "Tout créer" },
+  { id: "persona",   name: "Persona",   href: "/marketing-os/persona",  icon: Users,           desc: "ICP client cible" },
+  { id: "spy",       name: "Spy",       href: "/marketing-os/spy",      icon: Search,          desc: "Veille concurrence" },
+  { id: "ads",       name: "Ads",       href: "/marketing-os/ads",      icon: Zap,             desc: "" },
+  { id: "insights",  name: "Insights",  href: "/marketing-os/insights", icon: TrendingUp,      desc: "" },
 ] as const;
 
 const CSO_NAV = [
