@@ -41,36 +41,140 @@ const SIGNAL_QUERIES: Array<{
   keywords: string;
   score: number;
 }> = [
+  // ── Financement ───────────────────────────────────────────────────────────
   {
     type: "FUNDING",
     keywords: "levée fonds OR funding OR série A OR série B OR investissement OR tour de table",
     score: 90,
   },
   {
+    type: "SERIES_C",
+    keywords: "série C OR série D OR late stage OR croissance OR growth round OR scale-up",
+    score: 95,
+  },
+  {
+    type: "IPO",
+    keywords: "introduction bourse OR IPO OR cotation OR entrée bourse OR valorisation",
+    score: 92,
+  },
+  // ── Recrutement & RH ─────────────────────────────────────────────────────
+  {
     type: "HIRING",
-    keywords: "recrute OR recrutement OR hiring OR offre emploi OR recherche profils",
+    keywords: "recrute OR recrutement OR hiring OR offre emploi OR recherche profils OR CDI",
     score: 70,
   },
   {
+    type: "LEADERSHIP_CHANGE",
+    keywords: "nouveau directeur OR nouveau CEO OR nommé OR nomme OR rejoint OR directeur général OR DG OR CTO OR VP Sales",
+    score: 85,
+  },
+  {
+    type: "LAYOFF",
+    keywords: "licenciements OR plan social OR réduction effectifs OR layoffs OR restructuration",
+    score: 70,
+  },
+  // ── Croissance & marché ───────────────────────────────────────────────────
+  {
     type: "EXPANSION",
-    keywords: "expansion OR ouverture OR international OR nouveau bureau OR nouveau marché OR lève",
+    keywords: "expansion OR ouverture OR international OR nouveau bureau OR nouveau marché",
     score: 75,
   },
+  {
+    type: "MARKET_ENTRY",
+    keywords: "nouveau segment OR entrée marché OR diversification OR nouvelle verticale OR pénètre",
+    score: 80,
+  },
+  // ── Produit & tech ────────────────────────────────────────────────────────
+  {
+    type: "PRODUCT_LAUNCH",
+    keywords: "lance OR lancé OR nouveau produit OR nouvelle fonctionnalité OR lancement OR release OR sortie",
+    score: 80,
+  },
+  {
+    type: "TECH_ADOPTION",
+    keywords: "adopte OR intègre OR migre OR déploie OR intelligence artificielle OR IA OR cloud OR SaaS OR plateforme",
+    score: 75,
+  },
+  // ── Corporate & deals ─────────────────────────────────────────────────────
   {
     type: "ACQUISITION",
     keywords: "acquisition OR rachat OR fusion OR partenariat OR lancement OR intègre",
     score: 80,
   },
+  {
+    type: "PARTNERSHIP",
+    keywords: "partenariat OR collaboration OR accord OR contrat OR alliance OR deal",
+    score: 72,
+  },
+  {
+    type: "CUSTOMER_WIN",
+    keywords: "nouveau client OR remporte OR sélectionné OR choisi OR contrat signé OR témoignage",
+    score: 75,
+  },
+  {
+    type: "REBRANDING",
+    keywords: "rebranding OR rebrand OR nouveau nom OR nouvelle identité OR repositionnement",
+    score: 65,
+  },
+  // ── Contexte externe ──────────────────────────────────────────────────────
+  {
+    type: "REGULATION",
+    keywords: "réglementation OR conformité OR RGPD OR directive OR loi OR compliance OR obligation légale",
+    score: 70,
+  },
+  {
+    type: "PRICING_CHANGE",
+    keywords: "nouveau tarif OR hausse prix OR baisse prix OR offre spéciale OR repricing OR forfait",
+    score: 65,
+  },
+  // ── Visibilité & événements ───────────────────────────────────────────────
+  {
+    type: "AWARD",
+    keywords: "lauréat OR prix OR récompense OR award OR classement OR palmarès OR trophée",
+    score: 60,
+  },
+  {
+    type: "CONFERENCE",
+    keywords: "conférence OR keynote OR speaker OR présente OR salon OR forum OR événement OR webinar",
+    score: 55,
+  },
+  {
+    type: "NEWS",
+    keywords: "annonce OR communiqué OR actualité OR presse OR médias OR interview OR parle de",
+    score: 58,
+  },
 ];
 
-async function searchNews(query: string): Promise<SerperNewsItem[]> {
+// ─── Classification rules ────────────────────────────────────────────────────
+// Each entry = list of keywords to match against title+snippet (OR logic)
+const CLASSIFICATION_RULES: Array<{
+  type: SignalType;
+  keywords: string[];
+  score: number;
+}> = SIGNAL_QUERIES.map(({ type, keywords, score }) => ({
+  type,
+  score,
+  keywords: keywords.split(" OR ").map((k) => k.trim().toLowerCase()),
+}));
+
+function classifyNewsItem(item: SerperNewsItem): { type: SignalType; score: number } | null {
+  const text = `${item.title ?? ""} ${item.snippet ?? ""}`.toLowerCase();
+  for (const rule of CLASSIFICATION_RULES) {
+    if (rule.keywords.some((kw) => text.includes(kw))) {
+      return { type: rule.type, score: rule.score };
+    }
+  }
+  return null;
+}
+
+async function searchNews(query: string, num = 5): Promise<SerperNewsItem[]> {
   const key = process.env.SERPER_API_KEY;
   if (!key) return [];
 
   const res = await fetch("https://google.serper.dev/news", {
     method: "POST",
     headers: { "X-API-KEY": key, "Content-Type": "application/json" },
-    body: JSON.stringify({ q: query, gl: "fr", hl: "fr", num: 3 }),
+    body: JSON.stringify({ q: query, gl: "fr", hl: "fr", num }),
     signal: AbortSignal.timeout(8_000),
   });
 
@@ -84,29 +188,33 @@ function isRelevant(item: SerperNewsItem, company: string): boolean {
   return lower.includes(company.toLowerCase().slice(0, 6));
 }
 
+// One broad query per company → classify locally (1 API call instead of 19)
 export async function scanCompanySignals(
   companyName: string
 ): Promise<DetectedSignal[]> {
-  const results = await Promise.allSettled(
-    SIGNAL_QUERIES.map(async ({ type, keywords, score }) => {
-      const items = await searchNews(`"${companyName}" ${keywords}`);
-      return items
-        .filter((item) => isRelevant(item, companyName))
-        .slice(0, 2)
-        .map(
-          (item): DetectedSignal => ({
-            type,
-            companyName,
-            title: item.title,
-            description: item.snippet,
-            sourceUrl: item.link,
-            score,
-          })
-        );
-    })
-  );
+  const items = await searchNews(`"${companyName}"`, 10);
+  const relevant = items.filter((item) => isRelevant(item, companyName));
 
-  return results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+  const signals: DetectedSignal[] = [];
+  const usedTypes = new Set<SignalType>();
+
+  for (const item of relevant) {
+    const classification = classifyNewsItem(item);
+    if (!classification) continue;
+    // One signal per type per company scan (deduplicate locally)
+    if (usedTypes.has(classification.type)) continue;
+    usedTypes.add(classification.type);
+    signals.push({
+      type: classification.type,
+      companyName,
+      title: item.title,
+      description: item.snippet,
+      sourceUrl: item.link,
+      score: classification.score,
+    });
+  }
+
+  return signals;
 }
 
 export async function scanWorkspaceSignals(

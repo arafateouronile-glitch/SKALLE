@@ -16,6 +16,17 @@ import {
   DollarSign,
   Rocket,
   UserSearch,
+  Package,
+  UserCog,
+  Cpu,
+  TrendingDown,
+  Paintbrush,
+  MapPin,
+  Trophy,
+  ShieldCheck,
+  Tag,
+  CalendarDays,
+  Star,
 } from "lucide-react";
 import { FindContactsDialog } from "./find-contacts-dialog";
 import { toast } from "sonner";
@@ -90,6 +101,84 @@ const SIGNAL_META: Record<
     icon: <Rocket className="h-3.5 w-3.5" />,
     description: "Vient d'être créée dans ton secteur cible — premier à approcher",
   },
+  PRODUCT_LAUNCH: {
+    label: "Lancement produit",
+    color: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    icon: <Package className="h-3.5 w-3.5" />,
+    description: "Nouveau produit = nouveau budget alloué",
+  },
+  LEADERSHIP_CHANGE: {
+    label: "Nouveau dirigeant",
+    color: "bg-purple-500/15 text-purple-400 border-purple-500/30",
+    icon: <UserCog className="h-3.5 w-3.5" />,
+    description: "Nouveau décideur = nouvelle fenêtre d'opportunité",
+  },
+  TECH_ADOPTION: {
+    label: "Adoption tech",
+    color: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
+    icon: <Cpu className="h-3.5 w-3.5" />,
+    description: "En transformation digitale — ouvert aux nouveaux outils",
+  },
+  SERIES_C: {
+    label: "Série C / Late stage",
+    color: "bg-emerald-600/15 text-emerald-300 border-emerald-600/30",
+    icon: <DollarSign className="h-3.5 w-3.5" />,
+    description: "Fonds importants disponibles — ticket plus élevé possible",
+  },
+  IPO: {
+    label: "IPO / Bourse",
+    color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+    icon: <TrendingUp className="h-3.5 w-3.5" />,
+    description: "Entrée en bourse = budget considérable libéré",
+  },
+  LAYOFF: {
+    label: "Licenciements",
+    color: "bg-red-500/15 text-red-400 border-red-500/30",
+    icon: <TrendingDown className="h-3.5 w-3.5" />,
+    description: "Restructuration — cherche à optimiser les coûts",
+  },
+  REBRANDING: {
+    label: "Rebranding",
+    color: "bg-pink-500/15 text-pink-400 border-pink-500/30",
+    icon: <Paintbrush className="h-3.5 w-3.5" />,
+    description: "En mode transformation — réceptif aux nouveaux partenaires",
+  },
+  MARKET_ENTRY: {
+    label: "Nouveau marché",
+    color: "bg-teal-500/15 text-teal-400 border-teal-500/30",
+    icon: <MapPin className="h-3.5 w-3.5" />,
+    description: "S'attaque à un nouveau segment — a besoin d'outils",
+  },
+  CUSTOMER_WIN: {
+    label: "Nouveau client majeur",
+    color: "bg-lime-500/15 text-lime-400 border-lime-500/30",
+    icon: <Trophy className="h-3.5 w-3.5" />,
+    description: "En croissance commerciale — peut se permettre d'investir",
+  },
+  REGULATION: {
+    label: "Réglementation",
+    color: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
+    icon: <ShieldCheck className="h-3.5 w-3.5" />,
+    description: "Nouvelles obligations légales = besoin de conformité",
+  },
+  PRICING_CHANGE: {
+    label: "Changement tarif",
+    color: "bg-amber-600/15 text-amber-300 border-amber-600/30",
+    icon: <Tag className="h-3.5 w-3.5" />,
+    description: "Révision de prix = revue de budget en cours",
+  },
+  CONFERENCE: {
+    label: "Conférence / Événement",
+    color: "bg-violet-400/15 text-violet-300 border-violet-400/30",
+    icon: <CalendarDays className="h-3.5 w-3.5" />,
+    description: "Speaker ou participant — bon icebreaker de contact",
+  },
+  AWARD: {
+    label: "Prix / Récompense",
+    color: "bg-yellow-400/15 text-yellow-300 border-yellow-400/30",
+    icon: <Star className="h-3.5 w-3.5" />,
+    description: "Reconnaissance publique — moment idéal pour féliciter et contacter",
+  },
 };
 
 const SCORE_COLOR: Record<string, string> = {
@@ -119,12 +208,34 @@ function formatDate(iso: string) {
 
 const FILTERS: Array<{ value: SignalType | "ALL"; label: string }> = [
   { value: "ALL", label: "Tous" },
-  { value: "NEW_COMPANY", label: "Nouvelles entreprises" },
+  // Financement
   { value: "FUNDING", label: "Levées" },
+  { value: "SERIES_C", label: "Série C+" },
+  { value: "IPO", label: "IPO" },
+  // Recrutement & RH
   { value: "HIRING", label: "Recrutement" },
+  { value: "LEADERSHIP_CHANGE", label: "Nouveau dirigeant" },
+  { value: "LAYOFF", label: "Licenciements" },
+  // Croissance
   { value: "EXPANSION", label: "Expansion" },
+  { value: "MARKET_ENTRY", label: "Nouveau marché" },
+  // Produit & tech
+  { value: "PRODUCT_LAUNCH", label: "Lancement produit" },
+  { value: "TECH_ADOPTION", label: "Adoption tech" },
+  // Corporate
   { value: "ACQUISITION", label: "Acquisitions" },
   { value: "PARTNERSHIP", label: "Partenariats" },
+  { value: "CUSTOMER_WIN", label: "Nouveau client" },
+  { value: "REBRANDING", label: "Rebranding" },
+  // Contexte
+  { value: "REGULATION", label: "Réglementation" },
+  { value: "PRICING_CHANGE", label: "Tarif" },
+  // Visibilité
+  { value: "AWARD", label: "Récompenses" },
+  { value: "CONFERENCE", label: "Événements" },
+  { value: "NEWS", label: "Actualité" },
+  // Prospection
+  { value: "NEW_COMPANY", label: "Nouvelles entreprises" },
 ];
 
 export function IntentSignalsPanel({ workspaceId }: Props) {
