@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { Sparkles, FileText, Image, RotateCcw, Calendar, Plus } from "lucide-react";
 
@@ -52,6 +53,7 @@ const CALENDAR_EVENTS = [
 ];
 
 export default function StudioPage() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<Tab>("articles");
   const [prompt, setPrompt] = useState("");
@@ -193,7 +195,10 @@ export default function StudioPage() {
                   key={tpl.id}
                   className="text-left p-4 rounded-[12px] transition-all hover:-translate-y-0.5 hover:brightness-[0.97]"
                   style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
-                  onClick={() => { setPrompt(tpl.title); setActiveTab(tpl.tab); inputRef.current?.focus(); }}
+                  onClick={() => {
+                    if (tpl.id === "remix") { router.push("/marketing-os/studio/remix"); return; }
+                    setPrompt(tpl.title); setActiveTab(tpl.tab); inputRef.current?.focus();
+                  }}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <Icon className="h-4 w-4" style={{ color: "var(--emerald-fg)" }} />
