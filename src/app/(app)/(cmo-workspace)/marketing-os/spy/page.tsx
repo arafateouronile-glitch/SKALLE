@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
-import { Search, Zap, TrendingUp, Link2 } from "lucide-react";
+import { Search } from "lucide-react";
 
 const MODES = [
   { id: "competitor", title: "Un concurrent", desc: "Analyse SEO, pubs actives, mots-clés", credits: 4 },
@@ -149,12 +150,13 @@ export default function SpyPage() {
                     {item.priority}
                   </span>
                   <span className="shrink-0 text-[11px] font-mono" style={{ color: "var(--fg-mute)" }}>{item.time}</span>
-                  <button
+                  <Link
+                    href="/marketing-os/ads"
                     className="shrink-0 text-[11.5px] font-medium px-3 py-1.5 rounded-md transition-all"
                     style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)", color: "var(--violet-fg)" }}
                   >
                     Réagir
-                  </button>
+                  </Link>
                 </div>
               );
             })}

@@ -297,12 +297,13 @@ export function CMODashboardClientV2({
               )}
 
               <div className="flex items-center gap-3">
-                <button
+                <a
+                  href="#decisions"
                   className="px-5 py-2.5 rounded-lg font-semibold text-[13px] transition-all hover:brightness-110"
                   style={{ background: "var(--emerald-fg)", color: "white" }}
                 >
                   Examiner les {pendingDecisions.length} décisions →
-                </button>
+                </a>
                 <button
                   className="px-5 py-2.5 rounded-lg font-medium text-[13px] transition-all hover:bg-black/[0.04]"
                   style={{ background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line-strong)", color: "var(--fg)" }}
@@ -418,7 +419,7 @@ export function CMODashboardClientV2({
         <div className="grid grid-cols-12 gap-5">
 
           {/* Left — Decisions Brief (7 cols) */}
-          <div className="col-span-12 lg:col-span-7 space-y-3">
+          <div id="decisions" className="col-span-12 lg:col-span-7 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.16em]" style={{ color: "var(--fg-mute)" }}>

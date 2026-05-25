@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 type Accent = "emerald" | "violet" | "amber" | "danger";
 
@@ -9,6 +9,7 @@ interface AppTopBarProps {
   subtitle?: string;
   breadcrumb?: string;
   cta?: string;
+  ctaHref?: string;
   ctaIcon?: React.ReactNode;
   onCta?: () => void;
   accent?: Accent;
@@ -20,11 +21,16 @@ export function AppTopBar({
   subtitle,
   breadcrumb,
   cta,
+  ctaHref,
   ctaIcon,
   onCta,
   accent = "emerald",
   children,
 }: AppTopBarProps) {
+  const ctaClass =
+    "px-4 py-2 rounded-lg font-semibold text-[12.5px] flex items-center gap-2 transition-all hover:brightness-110 shrink-0";
+  const ctaStyle = { background: `var(--${accent}-fg)`, color: "white" };
+
   return (
     <header
       className="h-14 shrink-0 px-7 flex items-center gap-4 sticky top-0 z-30"
@@ -61,17 +67,17 @@ export function AppTopBar({
       {children}
 
       {cta && (
-        <button
-          onClick={onCta}
-          className="px-4 py-2 rounded-lg font-semibold text-[12.5px] flex items-center gap-2 transition-all hover:brightness-110 shrink-0"
-          style={{
-            background: `var(--${accent}-fg)`,
-            color: "white",
-          }}
-        >
-          {ctaIcon ?? <span className="font-mono">+</span>}
-          {cta}
-        </button>
+        ctaHref ? (
+          <Link href={ctaHref} className={ctaClass} style={ctaStyle}>
+            {ctaIcon ?? <span className="font-mono">+</span>}
+            {cta}
+          </Link>
+        ) : (
+          <button onClick={onCta} className={ctaClass} style={ctaStyle}>
+            {ctaIcon ?? <span className="font-mono">+</span>}
+            {cta}
+          </button>
+        )
       )}
     </header>
   );

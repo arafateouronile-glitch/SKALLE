@@ -307,15 +307,16 @@ export function CSODashboardClientV2({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <button
+                        <Link
+                          href="/sales-os/outreach"
                           className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md transition-all hover:brightness-110"
                           style={{ background: "var(--violet-fg)", color: "white" }}
                         >
                           <Send className="h-3.5 w-3.5" />
                           ✦ Envoyer le DM
-                        </button>
+                        </Link>
                         <Link
-                          href="/sales-os/outreach"
+                          href="/sales-os/leads"
                           className="text-[12px] font-medium px-3 py-1.5 rounded-md transition-all hover:bg-black/[0.04]"
                           style={{ background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
                         >

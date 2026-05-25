@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { Search, Download } from "lucide-react";
 
@@ -149,13 +150,14 @@ export default function HuntPage() {
                   {MOCK_RESULTS.length} leads détectés
                 </h2>
               </div>
-              <button
+              <Link
+                href="/sales-os/leads"
                 className="flex items-center gap-2 px-4 py-2 rounded-[8px] text-[12px] font-semibold transition-all hover:brightness-110"
                 style={{ background: "var(--amber-fg)", color: "white" }}
               >
                 <Download className="h-3.5 w-3.5" />
                 Importer tout ({MOCK_RESULTS.length})
-              </button>
+              </Link>
             </div>
 
             <div className="space-y-2">
@@ -203,18 +205,20 @@ export default function HuntPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0">
-                    <button
+                    <Link
+                      href="/sales-os/leads"
                       className="px-3 py-1.5 rounded-md text-[11.5px] font-medium transition-all"
                       style={{ background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
                     >
                       Voir
-                    </button>
-                    <button
+                    </Link>
+                    <Link
+                      href="/sales-os/leads"
                       className="px-3 py-1.5 rounded-md text-[11.5px] font-semibold transition-all hover:brightness-110"
                       style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }}
                     >
                       Importer
-                    </button>
+                    </Link>
                   </div>
                 </div>
               ))}

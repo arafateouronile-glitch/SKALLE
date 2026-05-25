@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { Zap, Bot } from "lucide-react";
 
@@ -89,6 +90,7 @@ export default function LeadsPage() {
         title="Leads"
         breadcrumb="sales-os / leads"
         cta="Importer"
+        ctaHref="/sales-os/hunt"
         accent="violet"
       />
 
@@ -176,9 +178,10 @@ export default function LeadsPage() {
 
                     <div className="space-y-2">
                       {leads.map((lead) => (
-                        <div
+                        <Link
                           key={lead.id}
-                          className="rounded-[12px] p-3 transition-all hover:-translate-y-0.5 cursor-pointer"
+                          href="/sales-os/outreach"
+                          className="block rounded-[12px] p-3 transition-all hover:-translate-y-0.5 cursor-pointer"
                           style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
                         >
                           <div className="flex items-center gap-2 mb-2">
@@ -207,7 +210,7 @@ export default function LeadsPage() {
                           <div className="mt-2 pt-2 text-[10px]" style={{ borderTop: "1px solid var(--line)", color: "var(--fg-mute)" }}>
                             via {lead.source}
                           </div>
-                        </div>
+                        </Link>
                       ))}
 
                       {leads.length === 0 && (
@@ -242,8 +245,9 @@ export default function LeadsPage() {
               {MOCK_LEADS.map((lead, i) => {
                 const colLabel = KANBAN_COLS.find((c) => c.id === lead.col)?.label ?? lead.col;
                 return (
-                  <div
+                  <Link
                     key={lead.id}
+                    href="/sales-os/outreach"
                     className="grid items-center gap-4 px-4 py-3 rounded-[10px] cursor-pointer hover:brightness-[0.97] transition-all"
                     style={{
                       gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr 1fr",
@@ -269,7 +273,7 @@ export default function LeadsPage() {
                     </span>
                     <span className="text-[12px] font-mono font-bold" style={{ color: scoreColor(lead.score) }}>{lead.score}</span>
                     <span className="text-[12px]" style={{ color: "var(--fg-mute)" }}>{lead.source}</span>
-                  </div>
+                  </Link>
                 );
               })}
             </div>

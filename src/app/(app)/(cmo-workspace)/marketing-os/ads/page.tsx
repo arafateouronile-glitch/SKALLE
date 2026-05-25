@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
-import { Zap, RotateCcw, TrendingUp } from "lucide-react";
+import { Zap, RotateCcw } from "lucide-react";
 import { Sparkline } from "@/components/ui/sparkline";
 
 const FRAMEWORKS = [
@@ -33,6 +34,7 @@ export default function AdsPage() {
         title="Ads"
         breadcrumb="marketing-os / ads"
         cta="Nouvelle campagne"
+        ctaHref="/marketing-os/ads"
         accent="amber"
       />
 
@@ -151,13 +153,14 @@ export default function AdsPage() {
                   </div>
                 </div>
                 <p className="text-[13px] italic mb-4" style={{ color: "var(--fg-dim)" }}>{ad.hook}</p>
-                <button
+                <Link
+                  href="/marketing-os/ads"
                   className="w-full flex items-center justify-center gap-2 py-2 rounded-md text-[12px] font-medium transition-all hover:brightness-110"
                   style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   ↻ Remixer
-                </button>
+                </Link>
               </div>
             ))}
           </div>

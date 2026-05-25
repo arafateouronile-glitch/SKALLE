@@ -141,6 +141,7 @@ export default function OutreachPage() {
         title="Outreach"
         breadcrumb="sales-os / outreach"
         cta="Nouvelle séquence"
+        onCta={() => setActiveTab("sequences")}
         accent="emerald"
       />
 
