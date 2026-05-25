@@ -63,6 +63,7 @@ const sections: NavSection[] = [
     label: "Command Center",
     items: [
       { name: "Dashboard", href: "/sales-os", icon: LayoutDashboard },
+      { name: "CSO Agent", href: "/sales-os/agent", icon: Brain },
     ],
   },
   {
@@ -85,12 +86,6 @@ const sections: NavSection[] = [
         icon: FlaskConical,
         indent: true,
       },
-    ],
-  },
-  {
-    label: "Agent CSO",
-    items: [
-      { name: "CSO Agent", href: "/sales-os/agent", icon: Brain },
     ],
   },
   {
