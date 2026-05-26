@@ -248,6 +248,8 @@ export default function StudioPage() {
   const [genDone,       setGenDone]       = useState(false);
   const [genError,      setGenError]      = useState<string | null>(null);
   const [copiedIdx,     setCopiedIdx]     = useState<number | null>(null);
+  const [detailPost,    setDetailPost]    = useState<Creation | null>(null);
+  const [copiedDetail,  setCopiedDetail]  = useState(false);
 
   // ── Studio helpers ──────────────────────────────────────────────────────────
 
@@ -582,12 +584,19 @@ export default function StudioPage() {
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 {filtered.map((item) => (
-                  <div key={item.id}
+                  <div key={String(item.id)}
+                    onClick={() => setDetailPost(item)}
                     className="rounded-[14px] p-4 transition-all hover:-translate-y-0.5 cursor-pointer"
                     style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}>
-                    <div className="h-24 rounded-[10px] mb-3 flex items-center justify-center"
+                    <div className="h-24 rounded-[10px] mb-3 overflow-hidden flex items-start p-3"
                       style={{ background: "linear-gradient(135deg, var(--emerald-soft), var(--violet-soft))" }}>
-                      <FileText className="h-8 w-8 opacity-30" style={{ color: "var(--emerald-fg)" }} />
+                      {item.content ? (
+                        <p className="text-[10.5px] leading-relaxed line-clamp-4 opacity-70" style={{ color: "var(--fg)" }}>
+                          {item.content}
+                        </p>
+                      ) : (
+                        <FileText className="h-8 w-8 opacity-30 m-auto" style={{ color: "var(--emerald-fg)" }} />
+                      )}
                     </div>
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-[13px] font-semibold leading-snug flex-1" style={{ color: "var(--fg)" }}>{item.title}</p>
@@ -604,6 +613,97 @@ export default function StudioPage() {
           </section>
         )}
       </div>
+
+      {/* ── Post detail panel ───────────────────────────────────────────────── */}
+      {detailPost && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setDetailPost(null)} />
+          <div
+            className="fixed right-0 top-0 bottom-0 z-50 flex flex-col overflow-hidden"
+            style={{
+              width: "clamp(340px, 44vw, 620px)",
+              background: "var(--bg-card)",
+              borderLeft: "1px solid var(--line)",
+              boxShadow: "-8px 0 40px rgba(0,0,0,0.15)",
+            }}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between px-6 py-4 shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded"
+                    style={{ background: "var(--violet-soft)", color: "var(--violet-fg)" }}>
+                    {detailPost.network ?? detailPost.type}
+                  </span>
+                  {detailPost.hookType && (
+                    <span className="text-[10px] px-2 py-0.5 rounded"
+                      style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}>
+                      {HOOK_LABELS[detailPost.hookType] ?? detailPost.hookType}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded"
+                    style={{ background: `var(--${detailPost.statusColor}-soft)`, color: `var(--${detailPost.statusColor}-fg)` }}>
+                    {detailPost.status}
+                  </span>
+                </div>
+                <p className="text-[15px] font-semibold leading-snug pr-4" style={{ color: "var(--fg)" }}>
+                  {detailPost.title}
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: "var(--fg-mute)" }}>{detailPost.type} · {detailPost.date}</p>
+              </div>
+              <button
+                onClick={() => setDetailPost(null)}
+                className="shrink-0 p-1.5 rounded-[8px] transition-all hover:brightness-[0.97]"
+                style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
+              >
+                <X className="h-4 w-4" style={{ color: "var(--fg-mute)" }} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              {detailPost.content ? (
+                <div
+                  className="rounded-[12px] p-5 text-[13.5px] leading-relaxed whitespace-pre-wrap"
+                  style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                >
+                  {detailPost.content}
+                </div>
+              ) : (
+                <div className="rounded-[12px] p-8 text-center" style={{ border: "1px dashed var(--line)" }}>
+                  <FileText className="h-8 w-8 mx-auto mb-3 opacity-20" style={{ color: "var(--fg-mute)" }} />
+                  <p className="text-[13px]" style={{ color: "var(--fg-mute)" }}>Contenu non disponible pour cette création.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 px-6 py-4 flex items-center gap-3" style={{ borderTop: "1px solid var(--line)" }}>
+              {detailPost.content && (
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(detailPost.content!);
+                    setCopiedDetail(true);
+                    setTimeout(() => setCopiedDetail(false), 2000);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-[8px] text-[12.5px] font-semibold transition-all hover:brightness-110 flex-1"
+                  style={{ background: copiedDetail ? "var(--emerald-soft)" : "var(--emerald-fg)", color: copiedDetail ? "var(--emerald-fg)" : "white", border: copiedDetail ? "1px solid var(--emerald-line)" : "none" }}
+                >
+                  {copiedDetail ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copiedDetail ? "Copié !" : "Copier le post"}
+                </button>
+              )}
+              <button
+                onClick={() => setDetailPost(null)}
+                className="px-4 py-2.5 rounded-[8px] text-[12.5px] font-medium"
+                style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── 30 Posts Wizard ─────────────────────────────────────────────────── */}
       {wizardOpen && (

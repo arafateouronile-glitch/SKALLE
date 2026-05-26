@@ -113,6 +113,8 @@ model Workspace {
   intentSignals             IntentSignal[]
   linkedInAutomationConfig  LinkedInAutomationConfig?
   linkedInReplies           LinkedInReply[]
+  cmoObjectives             CMOObjective[]
+  cmoProposals              CMOProposal[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -1381,4 +1383,53 @@ model IntentSignal {
   @@index([companyName])
   @@index([type])
   @@index([detectedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CMO AGENT — Objectifs + File de propositions à valider
+// ═══════════════════════════════════════════════════════════════════════════
+
+model CMOObjective {
+  id          String        @id @default(cuid())
+  workspaceId String
+  type        String        // CONTENT | AUDIENCE | LEADS | SEO
+  period      String        // DAILY | WEEKLY | MONTHLY | CUSTOM
+  title       String
+  description String?
+  target      Json          // { metric: string, value: number, unit: string }
+  status      String        @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED
+  startDate   DateTime      @default(now())
+  endDate     DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  proposals   CMOProposal[]
+
+  @@index([workspaceId])
+  @@index([status])
+  @@index([type])
+}
+
+model CMOProposal {
+  id           String       @id @default(cuid())
+  workspaceId  String
+  objectiveId  String?
+  type         String       // GENERATE_POSTS | GENERATE_ARTICLE | SCHEDULE_POSTS | ANALYZE | ADJUST_STRATEGY
+  title        String
+  description  String
+  agentReason  String?
+  payload      Json         // params for execution
+  status       String       @default("PENDING") // PENDING | APPROVED | REJECTED | IN_PROGRESS | DONE | FAILED
+  userFeedback String?
+  result       Json?
+  creditsEst   Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  objective    CMOObjective? @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([status])
+  @@index([objectiveId])
+  @@index([createdAt])
 }
