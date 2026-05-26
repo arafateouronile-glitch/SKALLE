@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 interface SparklineProps {
   data: number[];
   color?: "emerald" | "violet" | "amber" | "danger" | "cold";
@@ -33,7 +35,8 @@ export function Sparkline({ data, color = "emerald", height = 36, width = 120 }:
   const fill = `${d} L${pts[pts.length - 1][0]},${h} L${pts[0][0]},${h} Z`;
 
   const c = COLOR_MAP[color] ?? COLOR_MAP.emerald;
-  const gradId = `spark-${color}-${Math.random().toString(36).slice(2, 6)}`;
+  const uid = useId();
+  const gradId = `spark-${color}-${uid.replace(/:/g, "")}`;
   const [lastX, lastY] = pts[pts.length - 1];
 
   return (
