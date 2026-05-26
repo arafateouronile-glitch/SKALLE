@@ -19,6 +19,7 @@ import {
   ArrowLeftRight,
   LogOut,
   Users,
+  Bot,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -34,6 +35,7 @@ interface AppSidebarProps {
 
 const CMO_NAV = [
   { id: "dashboard", name: "Dashboard", href: "/marketing-os",         icon: LayoutDashboard, desc: "" },
+  { id: "cmo-agent", name: "Agent CMO", href: "/marketing-os/cmo-agent", icon: Bot,             desc: "Objectifs & auto" },
   { id: "studio",    name: "Studio",    href: "/marketing-os/studio",   icon: Sparkles,        desc: "Tout créer" },
   { id: "persona",   name: "Persona",   href: "/marketing-os/persona",  icon: Users,           desc: "ICP client cible" },
   { id: "spy",       name: "Spy",       href: "/marketing-os/spy",      icon: Search,          desc: "Veille concurrence" },
