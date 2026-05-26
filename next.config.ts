@@ -45,8 +45,6 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       // ─── Sprint 4 : ancien CMO tools → nouvelles pages unifiées ────────────
-      { source: "/marketing-os/seo-factory", destination: "/marketing-os/studio", permanent: true },
-      { source: "/marketing-os/seo-factory/:path*", destination: "/marketing-os/studio", permanent: true },
       { source: "/marketing-os/discovery", destination: "/marketing-os/spy", permanent: true },
       { source: "/marketing-os/discovery/:path*", destination: "/marketing-os/spy", permanent: true },
       { source: "/marketing-os/analytics", destination: "/marketing-os/insights", permanent: true },

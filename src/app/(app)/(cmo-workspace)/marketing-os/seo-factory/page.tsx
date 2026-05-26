@@ -1,31 +1,11 @@
 "use client";
 
-/**
- * SEO Factory - Redesigned UI
- *
- * Fonctionnalites:
- * 1. Audit SEO instantane et avance
- * 2. Generation d'article unique avec preview
- * 3. Generation en masse (bulk)
- * 4. Liste des articles avec filtres, recherche, pagination
- * 5. Statistiques et analytics
- */
-
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +23,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   FileText,
   Search,
   Upload,
@@ -59,10 +45,8 @@ import {
   Trash2,
   Copy,
   Download,
-  Filter,
   TrendingUp,
   Calendar,
-  Clock,
   BookOpen,
   Target,
   ExternalLink,
@@ -76,7 +60,6 @@ import {
   Gauge,
   Network,
   Link2,
-  Settings,
   Globe,
   Users,
   Flag,
@@ -92,14 +75,19 @@ import {
   duplicateArticle,
   exportArticle,
   getBatchJobProgress,
-  getWorkspacePosts,
   runSEOIntelligence,
   getSEOIntelligenceReport,
   listSeoAudits,
   updateSeoAudit,
   type SeoAuditListItem,
 } from "@/actions/seo";
-import { getSeoSetup, saveSeoSetup, type SeoPublicationStrategy, type SeoContentMode, type SeoSiteType } from "@/actions/seo-setup";
+import {
+  getSeoSetup,
+  saveSeoSetup,
+  type SeoPublicationStrategy,
+  type SeoContentMode,
+  type SeoSiteType,
+} from "@/actions/seo-setup";
 import { publishPostToCMS } from "@/actions/cms";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -108,13 +96,26 @@ import { useCreditsContext } from "@/components/providers/credits-provider";
 import { VoiceToText } from "@/components/voice/voice-to-text";
 import { analyzeTechnicalSEO } from "@/actions/seo-technical";
 import { generateContentCluster, type ContentCluster } from "@/actions/content-cluster";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { SeoStrategyTab } from "@/components/modules/seo-strategy-tab";
+
+// Design token helpers
+const E = { fg: "var(--emerald-fg)", soft: "var(--emerald-soft)", line: "var(--emerald-line)" };
+const V = { fg: "var(--violet-fg)", soft: "var(--violet-soft)", line: "var(--violet-line)" };
+const A = { fg: "var(--amber-fg)", soft: "var(--amber-soft)", line: "var(--amber-line)" };
+const D = { fg: "var(--danger-fg)", soft: "var(--danger-soft)", line: "var(--danger-line)" };
+
+const CARD: React.CSSProperties = {
+  background: "var(--bg-elev)",
+  border: "1px solid var(--line)",
+  borderRadius: 14,
+  boxShadow: "0 1px 2px rgb(0 0 0 / 0.04), 0 6px 20px -8px rgb(0 0 0 / 0.05)",
+};
+
+const CARD_SOFT: React.CSSProperties = {
+  background: "oklch(0.985 0.005 260)",
+  border: "1px solid var(--line)",
+  borderRadius: 12,
+};
 
 interface AuditReport {
   score: number;
@@ -143,29 +144,40 @@ interface Article {
   updatedAt: Date;
 }
 
+type ActiveTab = "articles" | "create" | "analyze" | "settings";
+type CreateMode = "single" | "bulk" | "cluster";
+type AnalyzeMode = "audit" | "tech" | "intel";
+
 export default function SEOFactoryPage() {
   const { isDepleted } = useCreditsContext();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
-  // Audit SEO
+  // ── Nav state
+  const [activeTab, setActiveTab] = useState<ActiveTab>("articles");
+  const [createMode, setCreateMode] = useState<CreateMode>("single");
+  const [analyzeMode, setAnalyzeMode] = useState<AnalyzeMode>("audit");
+  const [analyzeUrl, setAnalyzeUrl] = useState("");
+
+  // ── Audit SEO
   const [auditUrl, setAuditUrl] = useState("");
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
 
-  // Generation unique
+  // ── Generation unique
   const [singleKeyword, setSingleKeyword] = useState("");
+  const [singleBrief, setSingleBrief] = useState("");
+  const [singleLength, setSingleLength] = useState<"court" | "standard" | "long">("standard");
   const [isGeneratingSingle, setIsGeneratingSingle] = useState(false);
-  const [generatedArticle, setGeneratedArticle] = useState<Article | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState<string>("");
 
-  // Generation bulk
+  // ── Generation bulk
   const [keywords, setKeywords] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [batchJobId, setBatchJobId] = useState<string | null>(null);
 
-  // Liste articles
+  // ── Liste articles
   const [articles, setArticles] = useState<Article[]>([]);
   const [isLoadingArticles, setIsLoadingArticles] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -174,7 +186,7 @@ export default function SEOFactoryPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalArticles, setTotalArticles] = useState(0);
 
-  // SEO Intelligence
+  // ── SEO Intelligence
   const [intelligenceUrl, setIntelligenceUrl] = useState("");
   const [isRunningIntelligence, setIsRunningIntelligence] = useState(false);
   const [intelligenceReport, setIntelligenceReport] = useState<any | null>(null);
@@ -187,20 +199,20 @@ export default function SEOFactoryPage() {
   const [editedSwot, setEditedSwot] = useState<string>("");
   const [isSavingAudit, setIsSavingAudit] = useState(false);
 
-  // SEO Technical Score
+  // ── SEO Technical
   const [technicalUrl, setTechnicalUrl] = useState("");
   const [isTechAuditing, setIsTechAuditing] = useState(false);
   const [technicalReport, setTechnicalReport] = useState<import("@/actions/seo-technical").TechnicalReport | null>(null);
 
-  // Topic Cluster
+  // ── Topic Cluster
   const [clusterKeyword, setClusterKeyword] = useState("");
   const [clusterContext, setClusterContext] = useState("");
   const [isGeneratingCluster, setIsGeneratingCluster] = useState(false);
   const [cluster, setCluster] = useState<ContentCluster | null>(null);
   const [clusterBatchId, setClusterBatchId] = useState<string | null>(null);
 
-  // SEO Setup (prérequis)
-  const [seoSetupDone, setSeoSetupDone] = useState<boolean | null>(null); // null = loading
+  // ── SEO Setup
+  const [seoSetupDone, setSeoSetupDone] = useState<boolean | null>(null);
   const [setupDomainUrl, setSetupDomainUrl] = useState("");
   const [setupFrequency, setSetupFrequency] = useState<SeoPublicationStrategy["frequency"]>("2/week");
   const [setupLanguage, setSetupLanguage] = useState<SeoPublicationStrategy["language"]>("fr");
@@ -212,7 +224,6 @@ export default function SEOFactoryPage() {
   const [setupBusinessActivity, setSetupBusinessActivity] = useState("");
   const [isSavingSetup, setIsSavingSetup] = useState(false);
 
-  // Charger le workspace au montage
   useEffect(() => {
     getUserWorkspace().then((result) => {
       if (result.success && result.workspaceId) {
@@ -221,37 +232,26 @@ export default function SEOFactoryPage() {
     });
   }, []);
 
-  // Charger les mots-clés depuis localStorage ou query params
   useEffect(() => {
-    // Vérifier query params (depuis Strategy)
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
-      const keywordParam = urlParams.get('keyword');
+      const keywordParam = urlParams.get("keyword");
       if (keywordParam) {
         setSingleKeyword(keywordParam);
-        // Basculer vers l'onglet de génération unique
-        setTimeout(() => {
-          const tabs = document.querySelector('[value="generate-single"]') as HTMLElement;
-          tabs?.click();
-        }, 100);
+        setActiveTab("create");
+        setCreateMode("single");
       }
-
-      // Vérifier localStorage (depuis Keywords)
-      const exported = localStorage.getItem('skalle_exported_keywords');
+      const exported = localStorage.getItem("skalle_exported_keywords");
       if (exported && !keywords.trim()) {
         setKeywords(exported);
-        toast.success('Mots-clés importés depuis Keywords !');
-        localStorage.removeItem('skalle_exported_keywords');
-        // Basculer vers l'onglet de génération bulk
-        setTimeout(() => {
-          const tabs = document.querySelector('[value="generate-bulk"]') as HTMLElement;
-          tabs?.click();
-        }, 100);
+        toast.success("Mots-clés importés depuis Keywords !");
+        localStorage.removeItem("skalle_exported_keywords");
+        setActiveTab("create");
+        setCreateMode("bulk");
       }
     }
   }, []);
 
-  // Charger la config SEO quand workspaceId est dispo
   useEffect(() => {
     if (!workspaceId) return;
     getSeoSetup(workspaceId).then((result) => {
@@ -278,35 +278,35 @@ export default function SEOFactoryPage() {
     });
   }, [workspaceId]);
 
-  // Charger les articles quand workspaceId change
   useEffect(() => {
-    if (workspaceId) {
-      loadArticles();
-    }
+    if (workspaceId) loadArticles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, currentPage, statusFilter]);
 
+  useEffect(() => {
+    if (workspaceId) loadAuditHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
   const loadArticles = async () => {
     if (!workspaceId) return;
-
     setIsLoadingArticles(true);
     try {
       const result = await listArticles({
         workspaceId,
-        status: statusFilter !== "all" ? statusFilter as any : undefined,
+        status: statusFilter !== "all" ? (statusFilter as any) : undefined,
         page: currentPage,
         perPage: 20,
         sortBy: "createdAt",
         sortOrder: "desc",
       });
-
       if (result.success && result.data) {
         setArticles(result.data.items as Article[]);
         setTotalPages(result.data.totalPages);
         setTotalArticles(result.data.total);
       }
-    } catch (error) {
-      console.error("Error loading articles:", error);
+    } catch {
+      console.error("Error loading articles");
     } finally {
       setIsLoadingArticles(false);
     }
@@ -315,23 +315,14 @@ export default function SEOFactoryPage() {
   const loadAuditHistory = async () => {
     if (!workspaceId) return;
     const result = await listSeoAudits(workspaceId, 20);
-    if (result.success && result.data) {
-      setAuditHistory(result.data);
-    }
+    if (result.success && result.data) setAuditHistory(result.data);
   };
-
-  // Charger l'historique des audits quand workspaceId change
-  useEffect(() => {
-    if (workspaceId) loadAuditHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
 
   const handleLoadAudit = async (auditId: string) => {
     if (!workspaceId) return;
     const result = await getSEOIntelligenceReport(workspaceId, auditId);
     if (result.success && result.data) {
       const audit = result.data;
-      // Reconstitue le rapport en fusionnant les champs structurés avec le rapport complet
       const report = audit.report ?? {};
       const merged = {
         ...report,
@@ -368,10 +359,7 @@ export default function SEOFactoryPage() {
     setIsSavingAudit(true);
     try {
       const quickWins = editedQuickWins.split("\n").filter(Boolean).map((kw) => ({
-        keyword: kw.trim(),
-        difficulty: "medium" as const,
-        opportunity: kw.trim(),
-        estimatedImpact: 3,
+        keyword: kw.trim(), difficulty: "medium" as const, opportunity: kw.trim(), estimatedImpact: 3,
       }));
       const technicalActions = editedTechnicalActions.split("\n").filter(Boolean).map((line) => {
         const match = line.match(/^\[(high|medium|low)\]\s*(.+)/i);
@@ -383,17 +371,12 @@ export default function SEOFactoryPage() {
         };
       });
       const semanticGap = editedSemanticGaps.split("\n").filter(Boolean).map((topic) => ({
-        topic: topic.trim(),
-        competitors: [],
-        recommendation: topic.trim(),
+        topic: topic.trim(), competitors: [], recommendation: topic.trim(),
       }));
       let swot = { strengths: [], weaknesses: [], opportunities: [], threats: [] };
       try { swot = JSON.parse(editedSwot); } catch {}
-
       const result = await updateSeoAudit(workspaceId, selectedAuditId, { quickWins, technicalActions, semanticGap, swot });
       if (result.success) {
-        // Mettre à jour le rapport en mémoire
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setIntelligenceReport((prev: any) => ({
           ...prev,
           strategy: { ...prev?.strategy, quickWins, swot },
@@ -416,16 +399,11 @@ export default function SEOFactoryPage() {
     if (!workspaceId || !intelligenceReport) return;
     const quickWins = (intelligenceReport.strategy?.quickWins ?? []) as Array<{ keyword?: string }>;
     const marketInsights = (intelligenceReport.marketInsights ?? []) as Array<{ keyword?: string }>;
-    const keywordList: string[] = [
+    const keywordList = [
       ...quickWins.map((w) => w.keyword ?? "").filter(Boolean),
       ...marketInsights.slice(0, 5).map((k) => k.keyword ?? "").filter(Boolean),
     ].filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 30);
-
-    if (keywordList.length === 0) {
-      toast.error("Aucun mot-clé trouvé dans l'analyse");
-      return;
-    }
-
+    if (keywordList.length === 0) { toast.error("Aucun mot-clé trouvé dans l'analyse"); return; }
     setIsGenerating(true);
     try {
       const result = await startBulkGeneration(workspaceId, keywordList);
@@ -433,7 +411,6 @@ export default function SEOFactoryPage() {
         setBatchJobId(result.batchJobId);
         setKeywords(keywordList.join("\n"));
         toast.success(`${keywordList.length} articles en cours de génération !`);
-        // Polling
         const interval = setInterval(async () => {
           if (result.batchJobId) {
             const progress = await getBatchJobProgress(result.batchJobId);
@@ -466,20 +443,15 @@ export default function SEOFactoryPage() {
     if (!setupTargetAudience.trim()) return toast.error("Décrivez votre audience cible");
     if (setupGoals.length === 0) return toast.error("Choisissez au moins un objectif");
     if (pillars.length === 0) return toast.error("Ajoutez au moins un pilier de contenu");
-
     setIsSavingSetup(true);
     try {
       const result = await saveSeoSetup(workspaceId, {
         domainUrl: setupDomainUrl.trim(),
         strategy: {
-          frequency: setupFrequency,
-          language: setupLanguage,
-          targetAudience: setupTargetAudience.trim(),
-          goals: setupGoals,
-          contentPillars: pillars,
-          contentMode: setupContentMode,
-          siteType: setupSiteType,
-          businessActivity: setupBusinessActivity.trim(),
+          frequency: setupFrequency, language: setupLanguage,
+          targetAudience: setupTargetAudience.trim(), goals: setupGoals,
+          contentPillars: pillars, contentMode: setupContentMode,
+          siteType: setupSiteType, businessActivity: setupBusinessActivity.trim(),
         },
       });
       if (result.success) {
@@ -496,21 +468,13 @@ export default function SEOFactoryPage() {
   };
 
   const toggleGoal = (goal: string) =>
-    setSetupGoals((prev) =>
-      prev.includes(goal) ? prev.filter((g) => g !== goal) : [...prev, goal]
-    );
+    setSetupGoals((prev) => prev.includes(goal) ? prev.filter((g) => g !== goal) : [...prev, goal]);
 
   const handleGenerateCluster = async () => {
-    if (!clusterKeyword.trim()) {
-      toast.error("Veuillez entrer un mot-clé pilier");
-      return;
-    }
+    if (!clusterKeyword.trim()) { toast.error("Veuillez entrer un mot-clé pilier"); return; }
     setIsGeneratingCluster(true);
     try {
-      const result = await generateContentCluster(
-        clusterKeyword,
-        clusterContext || undefined
-      );
+      const result = await generateContentCluster(clusterKeyword, clusterContext || undefined);
       if (result.success && result.data) {
         setCluster(result.data);
         setClusterBatchId(result.batchJobId ?? null);
@@ -525,14 +489,31 @@ export default function SEOFactoryPage() {
     }
   };
 
-  const handleTechnicalAudit = async () => {
-    if (!technicalUrl.trim()) {
-      toast.error("Veuillez entrer une URL");
-      return;
+  const handleAudit = async (urlOverride?: string) => {
+    const url = urlOverride ?? auditUrl;
+    if (!url || !workspaceId) { toast.error("Veuillez entrer une URL"); return; }
+    setIsAuditing(true);
+    try {
+      const result = await runSEOAudit(workspaceId, url);
+      if (result.success && result.data) {
+        setAuditReport(result.data);
+        toast.success("Audit terminé !");
+      } else {
+        toast.error(result.error || "Erreur lors de l'audit");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsAuditing(false);
     }
+  };
+
+  const handleTechnicalAudit = async (urlOverride?: string) => {
+    const url = urlOverride ?? technicalUrl;
+    if (!url.trim()) { toast.error("Veuillez entrer une URL"); return; }
     setIsTechAuditing(true);
     try {
-      const result = await analyzeTechnicalSEO(technicalUrl);
+      const result = await analyzeTechnicalSEO(url);
       if (result.success && result.data) {
         setTechnicalReport(result.data);
         toast.success("Analyse technique terminée !");
@@ -546,43 +527,43 @@ export default function SEOFactoryPage() {
     }
   };
 
-  const handleAudit = async () => {
-    if (!auditUrl || !workspaceId) {
-      toast.error("Veuillez entrer une URL");
-      return;
-    }
-
-    setIsAuditing(true);
+  const handleRunIntelligence = async (urlOverride?: string) => {
+    const url = urlOverride ?? intelligenceUrl;
+    if (!url || !workspaceId) { toast.error("Veuillez entrer une URL"); return; }
+    setIsRunningIntelligence(true);
     try {
-      const result = await runSEOAudit(workspaceId, auditUrl);
+      const result = await runSEOIntelligence(workspaceId, url);
       if (result.success && result.data) {
-        setAuditReport(result.data);
-        toast.success("Audit termine !");
+        setIntelligenceReport(result.data);
+        setIsEditingAudit(false);
+        toast.success("Analyse SEO Intelligence terminée !");
+        const history = await listSeoAudits(workspaceId, 20);
+        if (history.success && history.data) {
+          setAuditHistory(history.data);
+          setSelectedAuditId(history.data[0]?.id ?? null);
+        }
       } else {
-        toast.error(result.error || "Erreur lors de l'audit");
+        toast.error(result.error || "Erreur lors de l'analyse");
       }
     } catch {
       toast.error("Une erreur est survenue");
     } finally {
-      setIsAuditing(false);
+      setIsRunningIntelligence(false);
     }
   };
 
   const handleSingleGeneration = async () => {
-    if (!singleKeyword.trim() || !workspaceId) {
-      toast.error("Veuillez entrer un mot-cle");
-      return;
-    }
-
+    if (!singleKeyword.trim() || !workspaceId) { toast.error("Veuillez entrer un mot-clé"); return; }
     setIsGeneratingSingle(true);
     try {
       const result = await generateSingleArticle(workspaceId, singleKeyword.trim());
       if (result.success && result.data) {
-        toast.success(`Article "${result.data.title}" genere avec succes !`);
+        toast.success(`Article "${result.data.title}" généré avec succès !`);
         setSingleKeyword("");
-        loadArticles(); // Recharger la liste
+        setSingleBrief("");
+        loadArticles();
       } else {
-        toast.error(result.error || "Erreur lors de la generation");
+        toast.error(result.error || "Erreur lors de la génération");
       }
     } catch {
       toast.error("Une erreur est survenue");
@@ -593,45 +574,26 @@ export default function SEOFactoryPage() {
 
   const handleBulkGeneration = async () => {
     if (!workspaceId) return;
-
-    const keywordList = keywords
-      .split("\n")
-      .map((k) => k.trim())
-      .filter((k) => k.length > 0);
-
-    if (keywordList.length === 0) {
-      toast.error("Veuillez entrer au moins un mot-cle");
-      return;
-    }
-
-    if (keywordList.length > 300) {
-      toast.error("Maximum 300 mots-cles par lot");
-      return;
-    }
-
+    const keywordList = keywords.split("\n").map((k) => k.trim()).filter((k) => k.length > 0);
+    if (keywordList.length === 0) { toast.error("Veuillez entrer au moins un mot-clé"); return; }
+    if (keywordList.length > 300) { toast.error("Maximum 300 mots-clés par lot"); return; }
     setIsGenerating(true);
     setGenerationProgress(0);
-
     try {
       const result = await startBulkGeneration(workspaceId, keywordList);
       if (result.success && result.batchJobId) {
         setBatchJobId(result.batchJobId);
-        toast.success(`Generation lancee pour ${keywordList.length} articles`);
-
-        // Polling pour le progres
+        toast.success(`Génération lancée pour ${keywordList.length} articles`);
         const interval = setInterval(async () => {
           if (result.batchJobId) {
             const progress = await getBatchJobProgress(result.batchJobId);
             if (progress.success && progress.data) {
-              const percentage = Math.round(
-                (progress.data.completed / progress.data.totalItems) * 100
-              );
-              setGenerationProgress(percentage);
-
+              const pct = Math.round((progress.data.completed / progress.data.totalItems) * 100);
+              setGenerationProgress(pct);
               if (progress.data.status === "COMPLETED" || progress.data.status === "FAILED") {
                 clearInterval(interval);
                 setIsGenerating(false);
-                loadArticles(); // Recharger la liste
+                loadArticles();
               }
             }
           }
@@ -648,73 +610,49 @@ export default function SEOFactoryPage() {
 
   const handlePreview = async (articleId: string) => {
     if (!workspaceId) return;
-
     try {
       const result = await getArticle(workspaceId, articleId);
       if (result.success && result.data) {
-        const article = result.data as any;
-        setPreviewContent(article.content || "");
+        setPreviewContent((result.data as any).content || "");
         setPreviewOpen(true);
       }
-    } catch (error) {
+    } catch {
       toast.error("Erreur lors du chargement de l'article");
     }
   };
 
   const handleDelete = async (articleId: string) => {
     if (!workspaceId) return;
-
-    if (!confirm("Etes-vous sur de vouloir supprimer cet article ?")) return;
-
+    if (!confirm("Êtes-vous sûr de vouloir supprimer cet article ?")) return;
     try {
       const result = await deleteArticle(workspaceId, articleId);
-      if (result.success) {
-        toast.success("Article supprime");
-        loadArticles();
-      } else {
-        toast.error(result.error || "Erreur lors de la suppression");
-      }
-    } catch (error) {
-      toast.error("Une erreur est survenue");
-    }
+      if (result.success) { toast.success("Article supprimé"); loadArticles(); }
+      else toast.error(result.error || "Erreur lors de la suppression");
+    } catch { toast.error("Une erreur est survenue"); }
   };
 
   const handleDuplicate = async (articleId: string) => {
     if (!workspaceId) return;
-
     try {
       const result = await duplicateArticle(workspaceId, articleId);
-      if (result.success && result.data) {
-        toast.success(`Article "${result.data.title}" duplique`);
-        loadArticles();
-      } else {
-        toast.error(result.error || "Erreur lors de la duplication");
-      }
-    } catch (error) {
-      toast.error("Une erreur est survenue");
-    }
+      if (result.success && result.data) { toast.success(`Article dupliqué`); loadArticles(); }
+      else toast.error(result.error || "Erreur lors de la duplication");
+    } catch { toast.error("Une erreur est survenue"); }
   };
 
   const handleExport = async (articleId: string, format: "html" | "markdown") => {
     if (!workspaceId) return;
-
     try {
       const result = await exportArticle(workspaceId, articleId, format);
       if (result.success && result.data) {
         const blob = new Blob([result.data.content], { type: "text/plain" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = result.data.filename;
-        a.click();
+        a.href = url; a.download = result.data.filename; a.click();
         URL.revokeObjectURL(url);
-        toast.success("Article exporte");
-      } else {
-        toast.error(result.error || "Erreur lors de l'export");
-      }
-    } catch (error) {
-      toast.error("Une erreur est survenue");
-    }
+        toast.success("Article exporté");
+      } else toast.error(result.error || "Erreur lors de l'export");
+    } catch { toast.error("Une erreur est survenue"); }
   };
 
   const handlePublishWordPress = async (articleId: string) => {
@@ -722,1811 +660,1170 @@ export default function SEOFactoryPage() {
       const result = await publishPostToCMS(articleId);
       if (result.success) {
         toast.success("Article publié sur WordPress !");
-        if (result.link) {
-          window.open(result.link, "_blank");
-        }
+        if (result.link) window.open(result.link, "_blank");
         loadArticles();
-      } else {
-        toast.error(result.error ?? "Erreur lors de la publication");
-      }
-    } catch {
-      toast.error("Une erreur est survenue");
-    }
+      } else toast.error(result.error ?? "Erreur lors de la publication");
+    } catch { toast.error("Une erreur est survenue"); }
   };
 
-  const getScoreColor = (score: number | null) => {
-    if (!score) return "text-gray-500";
-    if (score >= 80) return "text-emerald-600";
-    if (score >= 60) return "text-amber-500";
-    return "text-red-500";
+  const handleLaunchAnalysis = () => {
+    if (analyzeMode === "audit") handleAudit(analyzeUrl);
+    else if (analyzeMode === "tech") handleTechnicalAudit(analyzeUrl);
+    else handleRunIntelligence(analyzeUrl);
   };
 
-  const getScoreBg = (score: number) => {
-    if (score >= 80) return "from-emerald-500 to-teal-500";
-    if (score >= 60) return "from-amber-400 to-orange-500";
-    return "from-red-500 to-rose-500";
-  };
+  const isAnalyzing = isAuditing || isTechAuditing || isRunningIntelligence;
 
-  const getScoreRingColor = (score: number) => {
-    if (score >= 80) return "stroke-emerald-500";
-    if (score >= 60) return "stroke-amber-500";
-    return "stroke-red-500";
+  // Score colors
+  const scoreColor = (s: number | null) => {
+    if (!s) return "var(--fg-mute)";
+    if (s >= 80) return E.fg;
+    if (s >= 60) return A.fg;
+    return D.fg;
   };
-
-  const getScoreBarColor = (score: number) => {
-    if (score >= 80) return "bg-emerald-500";
-    if (score >= 60) return "bg-amber-500";
-    return "bg-red-500";
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, { color: string; label: string }> = {
-      DRAFT: { color: "bg-gray-100 text-gray-600 border-gray-200", label: "Brouillon" },
-      SCHEDULED: { color: "bg-blue-50 text-blue-600 border-blue-200", label: "Programme" },
-      PUBLISHED: { color: "bg-emerald-50 text-emerald-600 border-emerald-200", label: "Publie" },
-      FAILED: { color: "bg-red-50 text-red-600 border-red-200", label: "Echec" },
-    };
-    const variant = variants[status] || variants.DRAFT;
-    return <Badge variant="outline" className={variant.color}>{variant.label}</Badge>;
-  };
-
-  const filteredArticles = articles.filter((article) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        article.title?.toLowerCase().includes(query) ||
-        article.excerpt?.toLowerCase().includes(query) ||
-        article.keywords.some((k) => k.toLowerCase().includes(query))
-      );
-    }
-    return true;
+  const scoreBarStyle = (s: number): React.CSSProperties => ({
+    width: `${s}%`,
+    background: s >= 80 ? E.fg : s >= 60 ? A.fg : D.fg,
   });
 
-  // Computed stats for articles
+  // Article status
+  const STATUS_MAP: Record<string, { label: string; color: typeof E }> = {
+    PUBLISHED: { label: "Publié", color: E },
+    DRAFT: { label: "Brouillon", color: V },
+    SCHEDULED: { label: "Programmé", color: A },
+    FAILED: { label: "Échec", color: D },
+  };
+  const getStatus = (s: string) => STATUS_MAP[s] ?? STATUS_MAP.DRAFT;
+
+  // Computed
   const publishedCount = articles.filter((a) => a.status === "PUBLISHED").length;
-  const avgSeoScore = articles.length > 0
-    ? Math.round(
-        articles.reduce((sum, a) => sum + (a.seoScore || 0), 0) /
-          articles.filter((a) => a.seoScore !== null).length || 0
-      )
-    : 0;
+  const draftCount = articles.filter((a) => a.status === "DRAFT").length;
+  const avgSeoScore =
+    articles.length > 0
+      ? Math.round(
+          articles.reduce((sum, a) => sum + (a.seoScore || 0), 0) /
+            (articles.filter((a) => a.seoScore !== null).length || 1)
+        )
+      : 0;
   const keywordCount = keywords.split("\n").filter((k) => k.trim()).length;
+
+  const filteredArticles = articles.filter((article) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      article.title?.toLowerCase().includes(q) ||
+      article.excerpt?.toLowerCase().includes(q) ||
+      article.keywords.some((k) => k.toLowerCase().includes(q))
+    );
+  });
 
   if (!workspaceId) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+        <Loader2 className="h-8 w-8 animate-spin" style={{ color: E.fg }} />
       </div>
     );
   }
 
+  const tabs: { id: ActiveTab; label: string; icon: string; count?: number; warning?: boolean }[] = [
+    { id: "articles", label: "Mes articles", icon: "▤", count: totalArticles > 0 ? totalArticles : undefined },
+    { id: "create", label: "Créer", icon: "✶" },
+    { id: "analyze", label: "Analyser", icon: "⌕" },
+    { id: "settings", label: "Réglages", icon: "⛭", warning: seoSetupDone === false },
+  ];
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Credit depleted banner */}
       {isDepleted && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-center justify-between gap-4">
-          <p className="text-sm font-medium text-red-800">
+        <div className="rounded-xl p-4 flex items-center justify-between gap-4"
+          style={{ background: D.soft, border: `1px solid ${D.line}` }}>
+          <p className="text-sm font-medium" style={{ color: D.fg }}>
             Vous n&apos;avez plus de crédits. Les actions de génération sont désactivées.
           </p>
-          <Button asChild size="sm" className="bg-red-600 hover:bg-red-700 shrink-0">
+          <Button asChild size="sm" style={{ background: D.fg, color: "white" }}>
             <Link href="/marketing-os/settings">Passer à un plan supérieur</Link>
           </Button>
         </div>
       )}
-      {/* ─── Header ─── */}
-      <div
-        className="relative overflow-hidden rounded-2xl p-8"
-        style={{
-          background: "linear-gradient(180deg, oklch(0.185 0.02 260 / 0.85), oklch(0.165 0.02 260 / 0.85))",
-          border: "1px solid oklch(0.98 0.01 260 / 0.07)",
-          backdropFilter: "blur(14px)",
-        }}
-      >
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: "linear-gradient(oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px), linear-gradient(90deg, oklch(0.98 0.01 260 / 0.035) 1px, transparent 1px)",
-            backgroundSize: "28px 28px",
-          }}
-        />
-        <div
-          className="absolute pointer-events-none"
-          style={{ top: -120, right: -100, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, oklch(0.74 0.17 158 / 0.12), transparent 60%)", filter: "blur(30px)" }}
-        />
-        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <div>
-            <div className="flex items-center gap-2 text-[11px] font-mono uppercase mb-3" style={{ letterSpacing: "0.18em", color: "oklch(0.55 0.02 260)" }}>
-              <span className="inline-block rounded-full" style={{ width: 6, height: 6, background: "oklch(0.74 0.17 158)", animation: "pulse-dot 1.8s ease-out infinite" }} />
-              Marketing OS · SEO
-            </div>
-            <h1 className="font-extrabold leading-tight mb-2" style={{ fontSize: 40, letterSpacing: "-0.022em", fontFamily: "var(--font-space-grotesk), system-ui" }}>
-              <span style={{ background: "linear-gradient(135deg, oklch(0.85 0.15 158), oklch(0.70 0.16 175))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                SEO Factory
-              </span>
-            </h1>
-            <p style={{ color: "oklch(0.63 0.018 260)", fontSize: 15, maxWidth: 480 }}>
-              Auditez vos pages, analysez la concurrence et générez des articles
-              optimisés en masse avec l&apos;IA.
-            </p>
-          </div>
 
-          {/* Stats counters */}
-          <div className="flex items-center gap-4 shrink-0">
-            {[
-              { label: "Articles", value: totalArticles, accent: "oklch(0.97 0.005 260)" },
-              { label: "Publiés", value: publishedCount, accent: "oklch(0.74 0.17 158)" },
-              { label: "Score SEO", value: avgSeoScore || "--", accent: "oklch(0.74 0.17 158)" },
-            ].map((s) => (
-              <div
-                key={s.label}
-                className="text-center px-4 py-3 rounded-xl"
-                style={{ background: "oklch(0.18 0.02 260 / 0.55)", border: "1px solid oklch(0.98 0.01 260 / 0.07)" }}
-              >
-                <div className="font-bold tabular-nums" style={{ fontSize: 28, color: s.accent, fontFamily: "var(--font-space-grotesk), system-ui", letterSpacing: "-0.02em" }}>{s.value}</div>
-                <div className="text-[10px] font-mono uppercase mt-0.5" style={{ letterSpacing: "0.14em", color: "oklch(0.55 0.02 260)" }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10.5px] font-mono uppercase tracking-[0.15em] mb-1" style={{ color: "var(--fg-mute)" }}>
+            marketing-os · studio
+          </p>
+          <h1 className="font-display text-[28px] font-bold leading-tight" style={{ color: "var(--fg)" }}>
+            SEO Factory
+          </h1>
+          <p className="text-[13px] mt-1" style={{ color: "var(--fg-mute)" }}>
+            Auditez vos pages, analysez la concurrence et générez des articles optimisés avec l&apos;IA.
+          </p>
+        </div>
+        {/* KPI mini row */}
+        <div className="flex items-center gap-3 shrink-0">
+          {[
+            { label: "Articles", value: totalArticles },
+            { label: "Publiés", value: publishedCount },
+            { label: "Score SEO", value: avgSeoScore || "—" },
+          ].map((s) => (
+            <div key={s.label} className="text-center px-4 py-2.5 rounded-xl" style={CARD}>
+              <p className="font-display text-[22px] font-bold tabular leading-none" style={{ color: E.fg }}>{s.value}</p>
+              <p className="text-[10px] font-mono uppercase mt-1" style={{ color: "var(--fg-mute)" }}>{s.label}</p>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ─── Tabs ─── */}
-      <Tabs defaultValue={seoSetupDone === false ? "setup" : "articles"} className="space-y-6">
-        <TabsList className="inline-flex h-12 items-center gap-1 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/60 shadow-sm p-1.5">
-          {/* Configuration tab — always first */}
-          <TabsTrigger
-            value="setup"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+      {/* FactoryTabs */}
+      <div className="flex items-center gap-1 p-1 rounded-xl w-fit"
+        style={{ background: "oklch(0.21 0.03 260 / 0.025)", border: "1px solid var(--line)" }}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className="px-4 py-2 rounded-lg text-[13px] font-medium flex items-center gap-2 transition-all"
+            style={
+              activeTab === t.id
+                ? { background: E.soft, color: E.fg, border: `1px solid ${E.line}` }
+                : { color: "var(--fg-dim)", border: "1px solid transparent" }
+            }
           >
-            <Settings className="h-4 w-4 mr-2" />
-            Configuration
-            {seoSetupDone === false && (
-              <span className="ml-2 inline-flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-            )}
-            {seoSetupDone === true && (
-              <CheckCircle className="ml-2 h-3.5 w-3.5 text-emerald-400" />
-            )}
-          </TabsTrigger>
-          <TabsTrigger
-            value="articles"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-          >
-            <FileText className="h-4 w-4 mr-2" />
-            Mes Articles
-            {totalArticles > 0 && (
-              <span className="ml-2 inline-flex items-center justify-center h-5 min-w-[20px] rounded-full bg-white/20 text-xs font-semibold px-1.5">
-                {totalArticles}
+            <span className="font-mono text-[14px]">{t.icon}</span>
+            {t.label}
+            {t.count !== undefined && (
+              <span
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                style={{
+                  background: activeTab === t.id ? E.fg : "oklch(0.21 0.03 260 / 0.06)",
+                  color: activeTab === t.id ? "white" : "var(--fg-mute)",
+                }}
+              >
+                {t.count}
               </span>
             )}
-          </TabsTrigger>
-          <TabsTrigger
-            value="generate-single"
-            disabled={!seoSetupDone}
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Generer un Article
-          </TabsTrigger>
-          <TabsTrigger
-            value="generate-bulk"
-            disabled={!seoSetupDone}
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Sparkles className="h-4 w-4 mr-2" />
-            Generation Bulk
-          </TabsTrigger>
-          <TabsTrigger
-            value="intelligence"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-          >
-            <Brain className="h-4 w-4 mr-2" />
-            Intelligence
-          </TabsTrigger>
-          <TabsTrigger
-            value="audit"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-          >
-            <BarChart3 className="h-4 w-4 mr-2" />
-            Audit SEO
-          </TabsTrigger>
-          <TabsTrigger
-            value="technical"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-          >
-            <Gauge className="h-4 w-4 mr-2" />
-            Santé Technique
-          </TabsTrigger>
-          <TabsTrigger
-            value="cluster"
-            disabled={!seoSetupDone}
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Network className="h-4 w-4 mr-2" />
-            Topic Cluster
-          </TabsTrigger>
-          <TabsTrigger
-            value="strategy"
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-600 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-          >
-            <Brain className="h-4 w-4 mr-2" />
-            Stratégie
-          </TabsTrigger>
-        </TabsList>
+            {t.warning && (
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: A.fg }} />
+            )}
+          </button>
+        ))}
+      </div>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            SETUP TAB — Prérequis avant rédaction
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="setup" className="space-y-6">
-          <div className="max-w-2xl space-y-6">
-            {/* Header */}
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <Settings className="h-5 w-5 text-emerald-600" />
-                Configuration SEO
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Renseignez votre site et établissez votre stratégie de publication avant de commencer la rédaction d&apos;articles.
-              </p>
-            </div>
-
-            {/* Step 0 — Content Mode */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-emerald-600" />
-                  Étape 1 — Type de contenu à générer
-                </CardTitle>
-                <CardDescription>
-                  Choisissez le mode qui correspond à votre stratégie. Il détermine la structure, le ton et les règles SEO appliqués à chaque article.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {([
-                    {
-                      mode: "article" as SeoContentMode,
-                      icon: "📝",
-                      label: "Mode Article",
-                      badge: "Standard",
-                      badgeColor: "bg-emerald-100 text-emerald-700",
-                      description: "Articles SEO complets, structurés et optimisés Google. Maillage interne, sources externes, FAQ et CTA naturels.",
-                    },
-                    {
-                      mode: "affiliation" as SeoContentMode,
-                      icon: "🔗",
-                      label: "Mode Affiliation",
-                      badge: "Conversion",
-                      badgeColor: "bg-orange-100 text-orange-700",
-                      description: "Comparatifs, guides d'achat et avis produits qui convertissent. Tableaux pros/cons, liens d'affiliation optimisés, trust signals.",
-                    },
-                    {
-                      mode: "ecommerce" as SeoContentMode,
-                      icon: "🛒",
-                      label: "Mode E-commerce",
-                      badge: "Ventes",
-                      badgeColor: "bg-blue-100 text-blue-700",
-                      description: "Fiches produits uniques et optimisées. Schema Product, liens vers page produit/panier, descriptions conversion-focused.",
-                    },
-                    {
-                      mode: "discovery" as SeoContentMode,
-                      icon: "🔥",
-                      label: "Mode Discovery",
-                      badge: "Viral",
-                      badgeColor: "bg-pink-100 text-pink-700",
-                      description: "Sujets émergents et tendances pour Google Discover. Angles inédits, titres accrocheurs, contenu visuel et partage social.",
-                    },
-                    {
-                      mode: "local" as SeoContentMode,
-                      icon: "📍",
-                      label: "Mode Local",
-                      badge: "SEO Local",
-                      badgeColor: "bg-violet-100 text-violet-700",
-                      description: "Articles optimisés par ville, département ou région. Schema LocalBusiness, requêtes «près de chez moi», citations locales.",
-                    },
-                  ] as const).map(({ mode, icon, label, badge, badgeColor, description }) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setSetupContentMode(mode)}
-                      className={`relative text-left rounded-xl border-2 p-4 transition-all hover:shadow-md ${
-                        setupContentMode === mode
-                          ? "border-emerald-500 bg-emerald-50 shadow-sm"
-                          : "border-gray-200 bg-white hover:border-gray-300"
-                      }`}
-                    >
-                      {setupContentMode === mode && (
-                        <CheckCircle className="absolute top-3 right-3 h-4 w-4 text-emerald-500" />
-                      )}
-                      <div className="text-2xl mb-2">{icon}</div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-sm text-gray-900">{label}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeColor}`}>{badge}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 leading-relaxed">{description}</p>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Step 1b — Business context */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Target className="h-4 w-4 text-emerald-600" />
-                  Étape 2 — Votre activité et type de site
-                </CardTitle>
-                <CardDescription>
-                  Ces informations calibrent le contenu généré : un SaaS B2B ne parle pas comme un blog d&apos;affiliation.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {/* Business activity */}
-                <div className="space-y-2">
-                  <Label htmlFor="setup-activity">
-                    Décrivez votre activité / offre principale
-                  </Label>
-                  <Input
-                    id="setup-activity"
-                    placeholder="Ex : Logiciel CRM pour PME, Boutique de vêtements bio, Agence SEO freelance…"
-                    value={setupBusinessActivity}
-                    onChange={(e) => setSetupBusinessActivity(e.target.value)}
-                  />
-                  <p className="text-xs text-gray-400">
-                    Soyez précis : vos produits, prestations, ou le type de contenu que vous relayez.
-                  </p>
-                </div>
-
-                {/* Site type selector */}
-                <div className="space-y-3">
-                  <Label>Type de site</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {([
-                      { value: "saas", icon: "💻", label: "SaaS / App", desc: "Logiciel, outil, plateforme" },
-                      { value: "ecommerce", icon: "🛍️", label: "E-commerce", desc: "Boutique en ligne, produits physiques ou digitaux" },
-                      { value: "services", icon: "🤝", label: "Services / Agence", desc: "Prestation, consulting, freelance" },
-                      { value: "blog_affiliation", icon: "✍️", label: "Blog / Affiliation", desc: "Contenu éditorial, liens affilés, pas de produits propres" },
-                      { value: "media", icon: "📰", label: "Média / Presse", desc: "Actualités, magazine en ligne, news" },
-                      { value: "local_business", icon: "📍", label: "Commerce local", desc: "Restaurant, artisan, cabinet, magasin physique" },
-                      { value: "marketplace", icon: "🏪", label: "Marketplace", desc: "Plateforme multi-vendeurs, annonces" },
-                      { value: "portfolio", icon: "🎨", label: "Portfolio / Vitrine", desc: "CV en ligne, site vitrine sans vente" },
-                    ] as const).map(({ value, icon, label, desc }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setSetupSiteType(value as SeoSiteType)}
-                        className={`text-left rounded-lg border-2 p-3 transition-all hover:shadow-sm ${
-                          setupSiteType === value
-                            ? "border-emerald-500 bg-emerald-50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
-                        }`}
-                      >
-                        {setupSiteType === value && (
-                          <CheckCircle className="float-right h-3.5 w-3.5 text-emerald-500 mt-0.5" />
-                        )}
-                        <div className="text-lg mb-1">{icon}</div>
-                        <div className="font-semibold text-xs text-gray-900 leading-tight">{label}</div>
-                        <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">{desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Step 2 — Site URL */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-emerald-600" />
-                  Étape 3 — URL de votre site
-                </CardTitle>
-                <CardDescription>
-                  Skalle analysera votre site pour calibrer le contenu généré.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <Label htmlFor="setup-domain">URL du site (ex&nbsp;: https://monsite.com)</Label>
-                  <Input
-                    id="setup-domain"
-                    type="url"
-                    placeholder="https://monsite.com"
-                    value={setupDomainUrl}
-                    onChange={(e) => setSetupDomainUrl(e.target.value)}
-                    className="font-mono text-sm"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Step 2 — Publication strategy */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Flag className="h-4 w-4 text-emerald-600" />
-                  Étape 4 — Stratégie de publication
-                </CardTitle>
-                <CardDescription>
-                  Définissez la fréquence, la langue et les objectifs de votre stratégie SEO.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {/* Frequency + Language row */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Fréquence de publication</Label>
-                    <Select
-                      value={setupFrequency}
-                      onValueChange={(v) => setSetupFrequency(v as SeoPublicationStrategy["frequency"])}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1/week">1 article / semaine</SelectItem>
-                        <SelectItem value="2/week">2 articles / semaine</SelectItem>
-                        <SelectItem value="3/week">3 articles / semaine</SelectItem>
-                        <SelectItem value="daily">1 article / jour</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Langue des articles</Label>
-                    <Select
-                      value={setupLanguage}
-                      onValueChange={(v) => setSetupLanguage(v as SeoPublicationStrategy["language"])}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="fr">Français</SelectItem>
-                        <SelectItem value="en">English</SelectItem>
-                        <SelectItem value="es">Español</SelectItem>
-                        <SelectItem value="de">Deutsch</SelectItem>
-                        <SelectItem value="pt">Português</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Target audience */}
-                <div className="space-y-2">
-                  <Label htmlFor="setup-audience" className="flex items-center gap-1.5">
-                    <Users className="h-3.5 w-3.5 text-gray-400" />
-                    Audience cible
-                  </Label>
-                  <Textarea
-                    id="setup-audience"
-                    placeholder="Ex : PME françaises cherchant à automatiser leur prospection commerciale"
-                    value={setupTargetAudience}
-                    onChange={(e) => setSetupTargetAudience(e.target.value)}
-                    rows={2}
-                  />
-                </div>
-
-                {/* Goals */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5">
-                    <Target className="h-3.5 w-3.5 text-gray-400" />
-                    Objectifs SEO
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { value: "organic_traffic", label: "Trafic organique" },
-                      { value: "lead_gen", label: "Génération de leads" },
-                      { value: "brand_awareness", label: "Notoriété" },
-                      { value: "conversion", label: "Conversion" },
-                      { value: "thought_leadership", label: "Expertise métier" },
-                    ].map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => toggleGoal(value)}
-                        className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
-                          setupGoals.includes(value)
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white text-gray-600 border-gray-200 hover:border-emerald-400"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Content pillars */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5">
-                    <Columns3 className="h-3.5 w-3.5 text-gray-400" />
-                    Piliers de contenu (thèmes principaux)
-                  </Label>
-                  <div className="space-y-2">
-                    {setupPillars.map((pillar, i) => (
-                      <Input
-                        key={i}
-                        placeholder={`Pilier ${i + 1} (ex : Automatisation marketing)`}
-                        value={pillar}
-                        onChange={(e) => {
-                          const next = [...setupPillars];
-                          next[i] = e.target.value;
-                          setSetupPillars(next);
-                        }}
-                      />
-                    ))}
-                    {setupPillars.length < 6 && (
-                      <button
-                        type="button"
-                        className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
-                        onClick={() => setSetupPillars([...setupPillars, ""])}
-                      >
-                        <Plus className="h-3 w-3" />
-                        Ajouter un pilier
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Save button */}
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={handleSaveSetup}
-                disabled={isSavingSetup}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                {isSavingSetup ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sauvegarde…</>
-                ) : (
-                  <><CheckCircle className="h-4 w-4 mr-2" />Valider la configuration</>
-                )}
-              </Button>
-              {seoSetupDone && (
-                <span className="text-sm text-emerald-600 flex items-center gap-1.5">
-                  <CheckCircle className="h-4 w-4" />
-                  Configuration active — la rédaction est débloquée
-                </span>
-              )}
-            </div>
+      {/* ══════════════════════════════════════════
+          TAB: Mes articles
+      ══════════════════════════════════════════ */}
+      {activeTab === "articles" && (
+        <div className="space-y-5">
+          {/* KPI strip */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: "Articles", value: totalArticles, color: E.fg },
+              { label: "Publiés", value: publishedCount, color: E.fg },
+              { label: "Score SEO moyen", value: avgSeoScore || "—", color: E.fg },
+              { label: "Brouillons", value: draftCount, color: V.fg },
+            ].map((k) => (
+              <div key={k.label} className="p-4 rounded-xl" style={CARD}>
+                <p className="text-[10.5px] font-mono uppercase tracking-[0.16em]" style={{ color: "var(--fg-mute)" }}>
+                  {k.label}
+                </p>
+                <p className="font-display text-[26px] font-bold tabular mt-2 leading-none" style={{ color: k.color }}>
+                  {k.value}
+                </p>
+              </div>
+            ))}
           </div>
-        </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            ARTICLES TAB
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="articles" className="space-y-6">
-          {/* Stats bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="flex items-center gap-3 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/60 shadow-sm p-4 hover:shadow-md transition-shadow">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100">
-                <FileText className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Total articles</p>
-                <p className="text-xl font-bold text-gray-900">{totalArticles}</p>
-              </div>
+          {/* Search + filter chips */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg flex-1 max-w-sm"
+              style={{ background: "var(--bg-elev)", border: "1px solid var(--line)" }}>
+              <span className="font-mono text-[14px]" style={{ color: "var(--fg-mute)" }}>⌕</span>
+              <input
+                className="flex-1 bg-transparent outline-none text-[13px]"
+                style={{ color: "var(--fg)" }}
+                placeholder="Rechercher un article, un mot-clé..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-            <div className="flex items-center gap-3 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/60 shadow-sm p-4 hover:shadow-md transition-shadow">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100">
-                <TrendingUp className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Score SEO moyen</p>
-                <p className="text-xl font-bold text-gray-900">{avgSeoScore || "--"}/100</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/60 shadow-sm p-4 hover:shadow-md transition-shadow">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Publies</p>
-                <p className="text-xl font-bold text-gray-900">{publishedCount}</p>
-              </div>
+            <div className="flex items-center gap-2">
+              {[
+                { value: "all", label: `Tous · ${totalArticles}` },
+                { value: "PUBLISHED", label: `Publiés · ${publishedCount}` },
+                { value: "DRAFT", label: `Brouillons · ${draftCount}` },
+                { value: "SCHEDULED", label: "Programmés" },
+              ].map((chip) => (
+                <button
+                  key={chip.value}
+                  onClick={() => { setStatusFilter(chip.value); setCurrentPage(1); }}
+                  className="px-3 py-1.5 rounded-md text-[12px] font-medium transition-all"
+                  style={
+                    statusFilter === chip.value
+                      ? { background: E.soft, color: E.fg, border: `1px solid ${E.line}` }
+                      : { background: "var(--bg-elev)", color: "var(--fg-dim)", border: "1px solid var(--line)" }
+                  }
+                >
+                  {chip.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Filters & Search */}
-          <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex gap-4 items-center">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="Rechercher un article..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-white/80 border-gray-200 text-gray-900 focus:border-emerald-500 focus:ring-emerald-500/20"
-                  />
-                </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[180px] bg-white/80 border-gray-200 text-gray-900 focus:border-emerald-500">
-                    <Filter className="h-4 w-4 mr-2 text-gray-400" />
-                    <SelectValue placeholder="Statut" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tous les statuts</SelectItem>
-                    <SelectItem value="DRAFT">Brouillon</SelectItem>
-                    <SelectItem value="SCHEDULED">Programme</SelectItem>
-                    <SelectItem value="PUBLISHED">Publie</SelectItem>
-                    <SelectItem value="FAILED">Echec</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Articles Grid */}
+          {/* Articles table */}
           {isLoadingArticles ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3">
-              <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-              <p className="text-sm text-gray-500">Chargement des articles...</p>
+              <Loader2 className="h-8 w-8 animate-spin" style={{ color: E.fg }} />
+              <p className="text-sm" style={{ color: "var(--fg-mute)" }}>Chargement des articles...</p>
             </div>
           ) : filteredArticles.length === 0 ? (
-            <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-              <CardContent className="p-16 text-center">
-                <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100">
-                  <FileText className="h-10 w-10 text-emerald-300" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                  Aucun article trouve
-                </h3>
-                <p className="text-sm text-gray-500 max-w-sm mx-auto">
-                  {searchQuery
-                    ? "Aucun resultat pour votre recherche. Essayez d'autres termes."
-                    : "Vous n'avez pas encore genere d'article. Commencez par generer votre premier article SEO."}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              {filteredArticles.map((article) => (
-                <Card
-                  key={article.id}
-                  className="group bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden"
+            <div className="py-20 text-center rounded-xl" style={CARD}>
+              <FileText className="h-10 w-10 mx-auto mb-4" style={{ color: "var(--fg-mute)", opacity: 0.4 }} />
+              <p className="font-semibold" style={{ color: "var(--fg)" }}>Aucun article trouvé</p>
+              <p className="text-[13px] mt-1" style={{ color: "var(--fg-mute)" }}>
+                {searchQuery
+                  ? "Essayez d'autres termes."
+                  : "Commencez par créer votre premier article SEO."}
+              </p>
+              {!searchQuery && (
+                <button
+                  onClick={() => { setActiveTab("create"); setCreateMode("single"); }}
+                  className="mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold"
+                  style={{ background: E.fg, color: "white" }}
                 >
-                  {/* Gradient thumbnail placeholder */}
-                  <div className="h-2 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-400" />
-
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        {/* Title + Status */}
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          {getStatusBadge(article.status)}
-                          {article.seoScore !== null && (
-                            <Badge
-                              variant="outline"
-                              className={`${
-                                article.seoScore >= 80
-                                  ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                                  : article.seoScore >= 60
-                                  ? "bg-amber-50 text-amber-600 border-amber-200"
-                                  : "bg-red-50 text-red-600 border-red-200"
-                              }`}
-                            >
-                              SEO {article.seoScore}
-                            </Badge>
-                          )}
-                        </div>
-
-                        <h3 className="text-base font-semibold text-gray-900 leading-snug mb-1.5 line-clamp-2 group-hover:text-emerald-700 transition-colors">
+                  ✶ Créer un article
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-xl overflow-hidden" style={CARD}>
+              {/* Table header */}
+              <div
+                className="grid grid-cols-12 gap-3 px-5 py-2.5 text-[10px] font-mono uppercase tracking-wider"
+                style={{ background: "oklch(0.21 0.03 260 / 0.02)", color: "var(--fg-mute)", borderBottom: "1px solid var(--line)" }}
+              >
+                <div className="col-span-5">Article</div>
+                <div className="col-span-1 text-center">Score</div>
+                <div className="col-span-1 text-right">Mots</div>
+                <div className="col-span-2">Statut</div>
+                <div className="col-span-2">Date</div>
+                <div className="col-span-1 text-right"></div>
+              </div>
+              {filteredArticles.map((article, i) => {
+                const st = getStatus(article.status);
+                return (
+                  <div
+                    key={article.id}
+                    className="grid grid-cols-12 gap-3 px-5 py-3 items-center text-[12.5px] transition-all hover:bg-black/[0.015]"
+                    style={{ borderTop: i > 0 ? "1px solid var(--line)" : "none" }}
+                  >
+                    <div className="col-span-5 flex items-center gap-3 min-w-0">
+                      <div
+                        className="h-8 w-8 rounded-md flex items-center justify-center shrink-0"
+                        style={{ background: st.color.soft, color: st.color.fg, border: `1px solid ${st.color.line}` }}
+                      >
+                        <span className="font-mono text-[11px]">▤</span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate" style={{ color: "var(--fg)" }}>
                           {article.title || "Sans titre"}
-                        </h3>
-
-                        {article.excerpt && (
-                          <p className="text-gray-500 text-sm mb-3 line-clamp-2 leading-relaxed">
-                            {article.excerpt}
+                        </p>
+                        {article.keywords[0] && (
+                          <p className="text-[10.5px] mt-0.5 truncate" style={{ color: "var(--fg-mute)" }}>
+                            <span className="font-mono">›</span> {article.keywords[0]}
                           </p>
                         )}
-
-                        {/* SEO Score circular mini + meta info */}
-                        <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
-                          {article.wordCount && (
-                            <span className="flex items-center gap-1.5">
-                              <BookOpen className="h-3.5 w-3.5" />
-                              {article.wordCount} mots
-                            </span>
-                          )}
-                          {article.readabilityScore !== null && (
-                            <span className="flex items-center gap-1.5">
-                              <TrendingUp className="h-3.5 w-3.5" />
-                              {article.readabilityScore}/100
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5" />
-                            {new Date(article.createdAt).toLocaleDateString("fr-FR")}
-                          </span>
-                        </div>
-
-                        {/* Keywords */}
-                        {article.keywords.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {article.keywords.slice(0, 4).map((keyword, i) => (
-                              <Badge
-                                key={i}
-                                variant="outline"
-                                className="bg-emerald-50/80 text-emerald-700 border-emerald-200 text-xs font-normal"
-                              >
-                                {keyword}
-                              </Badge>
-                            ))}
-                            {article.keywords.length > 4 && (
-                              <Badge
-                                variant="outline"
-                                className="bg-gray-50 text-gray-500 border-gray-200 text-xs font-normal"
-                              >
-                                +{article.keywords.length - 4}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Score ring + Dropdown */}
-                      <div className="flex flex-col items-center gap-2 shrink-0">
-                        {article.seoScore !== null && (
-                          <div className="relative h-14 w-14">
-                            <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
-                              <circle
-                                cx="28"
-                                cy="28"
-                                r="24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                                className="text-gray-100"
-                              />
-                              <circle
-                                cx="28"
-                                cy="28"
-                                r="24"
-                                fill="none"
-                                strokeWidth="4"
-                                strokeLinecap="round"
-                                strokeDasharray={`${(article.seoScore / 100) * 150.8} 150.8`}
-                                className={getScoreRingColor(article.seoScore)}
-                              />
-                            </svg>
-                            <span className={`absolute inset-0 flex items-center justify-center text-xs font-bold ${getScoreColor(article.seoScore)}`}>
-                              {article.seoScore}
-                            </span>
-                          </div>
-                        )}
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="bg-white/90 backdrop-blur-xl border-gray-200/60 shadow-lg">
-                            <DropdownMenuItem
-                              onClick={() => handlePreview(article.id)}
-                              className="text-gray-700 focus:bg-emerald-50 focus:text-emerald-700"
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              Previsualiser
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDuplicate(article.id)}
-                              className="text-gray-700 focus:bg-emerald-50 focus:text-emerald-700"
-                            >
-                              <Copy className="h-4 w-4 mr-2" />
-                              Dupliquer
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleExport(article.id, "markdown")}
-                              className="text-gray-700 focus:bg-emerald-50 focus:text-emerald-700"
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              Exporter (MD)
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleExport(article.id, "html")}
-                              className="text-gray-700 focus:bg-emerald-50 focus:text-emerald-700"
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              Exporter (HTML)
-                            </DropdownMenuItem>
-                            {article.status !== "PUBLISHED" && (
-                              <DropdownMenuItem
-                                onClick={() => handlePublishWordPress(article.id)}
-                                className="text-gray-700 focus:bg-emerald-50 focus:text-emerald-700"
-                              >
-                                <ExternalLink className="h-4 w-4 mr-2" />
-                                Publier sur WordPress
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(article.id)}
-                              className="text-red-500 focus:bg-red-50 focus:text-red-600"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Supprimer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    <div className="col-span-1 text-center">
+                      {article.seoScore !== null ? (
+                        <span
+                          className="font-display text-[16px] font-bold tabular"
+                          style={{ color: scoreColor(article.seoScore) }}
+                        >
+                          {article.seoScore}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-mute)" }}>—</span>
+                      )}
+                    </div>
+                    <div className="col-span-1 text-right font-mono tabular text-[11.5px]" style={{ color: "var(--fg-dim)" }}>
+                      {article.wordCount || "—"}
+                    </div>
+                    <div className="col-span-2">
+                      <span
+                        className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded inline-block"
+                        style={{ background: st.color.soft, color: st.color.fg, border: `1px solid ${st.color.line}` }}
+                      >
+                        {st.label}
+                      </span>
+                    </div>
+                    <div className="col-span-2 text-[11px] font-mono" style={{ color: "var(--fg-mute)" }}>
+                      {new Date(article.createdAt).toLocaleDateString("fr-FR")}
+                    </div>
+                    <div className="col-span-1 text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="font-mono text-[14px] px-2 py-1 rounded transition-all hover:bg-black/[0.04]"
+                            style={{ color: "var(--fg-mute)" }}>⋯</button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handlePreview(article.id)}>
+                            <Eye className="h-4 w-4 mr-2" />Prévisualiser
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDuplicate(article.id)}>
+                            <Copy className="h-4 w-4 mr-2" />Dupliquer
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleExport(article.id, "markdown")}>
+                            <Download className="h-4 w-4 mr-2" />Exporter (MD)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleExport(article.id, "html")}>
+                            <Download className="h-4 w-4 mr-2" />Exporter (HTML)
+                          </DropdownMenuItem>
+                          {article.status !== "PUBLISHED" && (
+                            <DropdownMenuItem onClick={() => handlePublishWordPress(article.id)}>
+                              <ExternalLink className="h-4 w-4 mr-2" />Publier WordPress
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => handleDelete(article.id)} className="text-red-500 focus:text-red-600">
+                            <Trash2 className="h-4 w-4 mr-2" />Supprimer
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-2">
-              <p className="text-sm text-gray-500">
-                Page {currentPage} sur {totalPages} &middot; {totalArticles} articles au total
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
+            <div className="flex items-center justify-between text-[11.5px]" style={{ color: "var(--fg-mute)" }}>
+              <span>Affichage page {currentPage} sur {totalPages} · {totalArticles} articles</span>
+              <div className="flex items-center gap-1">
+                <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="border-gray-200 text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200"
-                >
-                  Precedent
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
+                  className="px-2.5 py-1 rounded text-[11px] disabled:opacity-40"
+                  style={{ background: "var(--bg-elev)", border: "1px solid var(--line)" }}
+                >‹</button>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p)}
+                    className="px-2.5 py-1 rounded text-[11px] font-semibold"
+                    style={p === currentPage
+                      ? { background: E.fg, color: "white" }
+                      : { background: "var(--bg-elev)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                  >{p}</button>
+                ))}
+                <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="border-gray-200 text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200"
-                >
-                  Suivant
-                </Button>
+                  className="px-2.5 py-1 rounded text-[11px] disabled:opacity-40"
+                  style={{ background: "var(--bg-elev)", border: "1px solid var(--line)" }}
+                >›</button>
               </div>
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-            GENERATE SINGLE TAB
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="generate-single" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main generation card */}
-            <div className="lg:col-span-2 space-y-6">
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-sm">
-                      <Plus className="h-5 w-5 text-white" />
+      {/* ══════════════════════════════════════════
+          TAB: Créer
+      ══════════════════════════════════════════ */}
+      {activeTab === "create" && (
+        <div className="space-y-5">
+          {/* Mode picker */}
+          <div className="p-6 rounded-xl" style={CARD}>
+            <p className="text-[11px] font-mono uppercase tracking-[0.18em] mb-3" style={{ color: E.fg }}>
+              Comment voulez-vous créer ?
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {(
+                [
+                  { id: "single" as const, icon: "▤", label: "1 article", desc: "Un mot-clé → 1 500 mots optimisés", cost: "8 cr.", time: "~3 min" },
+                  { id: "bulk" as const, icon: "≡", label: "Génération en masse", desc: "CSV de mots-clés → série en background", cost: "8/article", time: "Async" },
+                  { id: "cluster" as const, icon: "✦", label: "Topic Cluster", desc: "Pillar + 8 articles satellites siloed", cost: "60 cr.", time: "~15 min" },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setCreateMode(m.id)}
+                  className="p-4 rounded-xl text-left transition-all hover:translate-y-[-1px]"
+                  style={
+                    createMode === m.id
+                      ? { background: E.soft, border: `1px solid ${E.line}` }
+                      : { background: "var(--bg-elev)", border: "1px solid var(--line)" }
+                  }
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="h-10 w-10 rounded-lg flex items-center justify-center text-[18px]"
+                      style={{ background: createMode === m.id ? "white" : E.soft, color: E.fg, border: `1px solid ${E.line}` }}>
+                      <span className="font-mono">{m.icon}</span>
                     </div>
-                    <div>
-                      <CardTitle className="text-gray-900">Generer un Article Unique</CardTitle>
-                      <CardDescription className="text-gray-500">
-                        Creez un article SEO optimise pour un mot-cle specifique
-                      </CardDescription>
+                    <div className="text-right">
+                      <p className="text-[10px] font-mono uppercase" style={{ color: "var(--fg-mute)" }}>{m.time}</p>
+                      <p className="text-[11px] font-mono font-bold mt-0.5" style={{ color: E.fg }}>{m.cost}</p>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <Label className="text-gray-700 font-medium">
-                        Mot-cle principal
-                      </Label>
-                      <VoiceToText
-                        onTranscribed={(text) => setSingleKeyword(text)}
-                        disabled={isDepleted}
-                        label="Dicter"
-                      />
-                    </div>
-                    <Input
-                      placeholder="ex: marketing digital pour PME — ou dictez votre idee"
-                      value={singleKeyword}
-                      onChange={(e) => setSingleKeyword(e.target.value)}
-                      className="bg-white/80 border-gray-200 text-gray-900 focus:border-emerald-500 focus:ring-emerald-500/20 h-12 text-base"
-                    />
-                    <p className="text-xs text-gray-400 mt-2">
-                      Utilisez des mots-cles longue traine (3-5 mots) ou dictez votre idee pour un article
-                    </p>
-                  </div>
-
-                  {/* Keyword suggestion presets */}
-                  <div>
-                    <Label className="text-gray-500 mb-2 block text-xs uppercase tracking-wider font-medium">
-                      Suggestions rapides
-                    </Label>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "strategie SEO 2025",
-                        "content marketing B2B",
-                        "optimisation taux conversion",
-                        "marketing automation PME",
-                        "referencement local Google",
-                      ].map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          type="button"
-                          onClick={() => setSingleKeyword(suggestion)}
-                          className="px-3 py-1.5 text-xs rounded-full border border-gray-200 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleSingleGeneration}
-                    disabled={isGeneratingSingle || !singleKeyword.trim() || isDepleted}
-                    title={isDepleted ? "Crédits épuisés. Passez à un plan supérieur dans Paramètres." : undefined}
-                    className="w-full h-12 text-base font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-sm"
-                  >
-                    {isGeneratingSingle ? (
-                      <>
-                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        Generation en cours...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-5 w-5 mr-2" />
-                        Generer l&apos;article
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Preview side panel */}
-            <div className="space-y-6">
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-emerald-600" />
-                    Apercu de l&apos;article
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center">
-                    {singleKeyword.trim() ? (
-                      <div className="space-y-3 text-left">
-                        <div className="h-3 w-3/4 rounded-full bg-gradient-to-r from-emerald-200 to-teal-200" />
-                        <div className="space-y-1.5">
-                          <div className="h-2 w-full rounded-full bg-gray-200" />
-                          <div className="h-2 w-5/6 rounded-full bg-gray-200" />
-                          <div className="h-2 w-4/6 rounded-full bg-gray-200" />
-                        </div>
-                        <div className="pt-2">
-                          <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200 text-xs">
-                            {singleKeyword}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-gray-400 pt-2">
-                          L&apos;article sera genere avec titre, introduction, sections H2/H3,
-                          images et conclusion optimises pour le mot-cle &quot;{singleKeyword}&quot;.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <FileText className="h-8 w-8 text-gray-300 mx-auto" />
-                        <p className="text-xs text-gray-400">
-                          Saisissez un mot-cle pour voir l&apos;apercu
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Advanced options */}
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-amber-500" />
-                    Options avancees
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-500">Ton</span>
-                      <span className="text-gray-700 font-medium">Professionnel</span>
-                    </div>
-                    <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-500">Longueur</span>
-                      <span className="text-gray-700 font-medium">~1500 mots</span>
-                    </div>
-                    <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-500">Images</span>
-                      <span className="text-gray-700 font-medium">Incluses</span>
-                    </div>
-                    <div className="flex items-center justify-between py-2">
-                      <span className="text-gray-500">Sources</span>
-                      <span className="text-gray-700 font-medium">Automatiques</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    Les parametres avances sont geres par votre Brand Voice configuree.
-                  </p>
-                </CardContent>
-              </Card>
+                  <p className="font-display text-[15px] font-semibold mt-3" style={{ color: "var(--fg)" }}>{m.label}</p>
+                  <p className="text-[11.5px] mt-0.5" style={{ color: "var(--fg-mute)" }}>{m.desc}</p>
+                </button>
+              ))}
             </div>
           </div>
-        </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            GENERATE BULK TAB
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="generate-bulk" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-sm">
-                      <Zap className="h-5 w-5 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-gray-900">Generation en Masse</CardTitle>
-                      <CardDescription className="text-gray-500">
-                        Generez jusqu&apos;a 300 articles SEO optimises en un seul clic
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-5">
+          {/* Single mode */}
+          {createMode === "single" && (
+            <div className="p-6 rounded-xl" style={CARD}>
+              <div className="grid grid-cols-12 gap-5">
+                <div className="col-span-7 space-y-4">
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <Label className="text-gray-700 font-medium">
-                        Mots-cles (un par ligne)
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            const exported = localStorage.getItem('skalle_exported_keywords');
-                            if (exported) {
-                              const currentKeywords = keywords.trim();
-                              const newKeywords = currentKeywords 
-                                ? `${currentKeywords}\n${exported}`
-                                : exported;
-                              setKeywords(newKeywords);
-                              toast.success('Mots-clés importés depuis Keywords !');
-                              localStorage.removeItem('skalle_exported_keywords');
-                            } else {
-                              toast.info('Aucun mot-clé exporté trouvé. Exportez d\'abord depuis la page Keywords.');
-                            }
-                          }}
-                          className="text-xs border-emerald-200 text-emerald-600 hover:bg-emerald-50"
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Importer depuis Keywords
-                        </Button>
-                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                          keywordCount > 300
-                            ? "bg-red-50 text-red-600"
-                            : keywordCount > 0
-                            ? "bg-emerald-50 text-emerald-600"
-                            : "bg-gray-100 text-gray-500"
-                        }`}>
-                          <Target className="h-3 w-3" />
-                          {keywordCount}/300
-                        </div>
-                      </div>
+                      <label className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>
+                        Mot-clé principal
+                      </label>
+                      <VoiceToText onTranscribed={(text) => setSingleKeyword(text)} disabled={isDepleted} label="Dicter" />
                     </div>
-                    <Textarea
-                      placeholder={"marketing digital\nSEO local\nstrategie content marketing\n..."}
-                      value={keywords}
-                      onChange={(e) => setKeywords(e.target.value)}
-                      rows={12}
-                      className="bg-white/80 border-gray-200 text-gray-900 font-mono text-sm focus:border-emerald-500 focus:ring-emerald-500/20"
+                    <div className="flex items-center gap-2 p-1 rounded-xl"
+                      style={{ background: "white", border: "1px solid var(--line-strong)" }}>
+                      <span className="ml-3 font-mono text-[16px]" style={{ color: E.fg }}>◎</span>
+                      <input
+                        className="flex-1 bg-transparent outline-none py-2.5 text-[14px]"
+                        style={{ color: "var(--fg)" }}
+                        placeholder="Ex : crm ia b2b"
+                        value={singleKeyword}
+                        onChange={(e) => setSingleKeyword(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleSingleGeneration()}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>
+                      Brief additionnel (optionnel)
+                    </label>
+                    <textarea
+                      className="mt-2 w-full p-3 rounded-lg outline-none text-[13px] resize-none"
+                      style={{ background: "white", border: "1px solid var(--line)", minHeight: 80, color: "var(--fg)" }}
+                      placeholder="Angle, public visé, mots à éviter..."
+                      value={singleBrief}
+                      onChange={(e) => setSingleBrief(e.target.value)}
                     />
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>Longueur</label>
+                      <div className="mt-2 flex gap-1 p-1 rounded-lg" style={{ background: "white", border: "1px solid var(--line)" }}>
+                        {(["court", "standard", "long"] as const).map((l) => (
+                          <button
+                            key={l}
+                            onClick={() => setSingleLength(l)}
+                            className="flex-1 px-2 py-1.5 rounded text-[11.5px] font-medium transition-all"
+                            style={
+                              singleLength === l
+                                ? { background: E.soft, color: E.fg }
+                                : { color: "var(--fg-dim)" }
+                            }
+                          >
+                            {l === "court" ? "Court 800" : l === "standard" ? "Standard 1 500" : "Long 2 500"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>Ton</label>
+                      <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "white", border: "1px solid var(--line)" }}>
+                        <span className="text-[13px] flex-1" style={{ color: "var(--fg)" }}>Pédagogique</span>
+                        <span className="font-mono text-[11px]" style={{ color: "var(--fg-mute)" }}>▾</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SERP preview panel */}
+                <div className="col-span-5">
+                  <p className="text-[11px] font-mono uppercase tracking-wider mb-2" style={{ color: "var(--fg-mute)" }}>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: E.fg }} />
+                    Analyse en temps réel
+                  </p>
+                  <div className="p-4 space-y-3 rounded-xl" style={CARD_SOFT}>
+                    <div className="space-y-1.5 text-[12px]">
+                      <div className="flex items-baseline justify-between">
+                        <span style={{ color: "var(--fg-mute)" }}>Volume estimé</span>
+                        <span className="font-display text-[18px] font-bold tabular" style={{ color: "var(--fg)" }}>
+                          {singleKeyword ? "~4.4k" : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span style={{ color: "var(--fg-mute)" }}>Difficulté</span>
+                        <span className="font-semibold" style={{ color: singleKeyword ? A.fg : "var(--fg-mute)" }}>
+                          {singleKeyword ? "32 / 100" : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span style={{ color: "var(--fg-mute)" }}>CPC moyen</span>
+                        <span className="font-semibold tabular" style={{ color: "var(--fg)" }}>
+                          {singleKeyword ? "€2.40" : "—"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="pt-3 border-t" style={{ borderColor: "var(--line)" }}>
+                      <p className="text-[10px] font-mono uppercase tracking-wider mb-1.5" style={{ color: "var(--fg-mute)" }}>
+                        Recommandation IA
+                      </p>
+                      <p className="text-[11.5px] leading-snug" style={{ color: "var(--fg-dim)" }}>
+                        {singleKeyword
+                          ? `Visez 1 500–2 000 mots avec intention commerciale-informative. Couvrez le "pourquoi" avant le "comment".`
+                          : "Entrez un mot-clé pour voir les recommandations."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-4 border-t flex items-center justify-between" style={{ borderColor: "var(--line)" }}>
+                <p className="text-[11.5px]" style={{ color: "var(--fg-mute)" }}>
+                  Coût total : <strong style={{ color: E.fg }}>8 crédits</strong> · Temps estimé : <strong style={{ color: "var(--fg)" }}>~3 min</strong>
+                </p>
+                <button
+                  onClick={handleSingleGeneration}
+                  disabled={isGeneratingSingle || !singleKeyword.trim() || isDepleted}
+                  className="px-5 py-2 rounded-lg text-[12.5px] font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  style={{ background: E.fg, color: "white" }}
+                >
+                  {isGeneratingSingle ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Génération...</>
+                  ) : (
+                    <><span className="font-mono">✦</span> Générer l&apos;article →</>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bulk mode */}
+          {createMode === "bulk" && (
+            <div className="p-6 rounded-xl" style={CARD}>
+              <div className="grid grid-cols-12 gap-5">
+                <div className="col-span-7 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>
+                      Liste de mots-clés
+                    </label>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded"
+                      style={{
+                        background: keywordCount > 300 ? D.soft : keywordCount > 0 ? E.soft : "oklch(0.21 0.03 260 / 0.04)",
+                        color: keywordCount > 300 ? D.fg : keywordCount > 0 ? E.fg : "var(--fg-mute)",
+                      }}>
+                      {keywordCount}/300
+                    </span>
+                  </div>
+                  <textarea
+                    className="w-full p-3 rounded-lg outline-none text-[12.5px] font-mono"
+                    style={{ background: "white", border: "1px solid var(--line)", minHeight: 200, color: "var(--fg)" }}
+                    placeholder={"Un mot-clé par ligne...\ncrm ia b2b\nlead scoring automatique\nprospection linkedin 2026"}
+                    value={keywords}
+                    onChange={(e) => setKeywords(e.target.value)}
+                  />
+                  <div className="flex items-center gap-2">
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="border-gray-200 text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200"
-                        >
-                          <Upload className="h-4 w-4 mr-2" />
-                          Importer CSV
-                        </Button>
+                        <button className="px-3 py-1.5 rounded-md text-[12px] font-medium flex items-center gap-1.5"
+                          style={{ background: "var(--bg-elev)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}>
+                          <Upload className="h-3.5 w-3.5" /> Importer CSV
+                        </button>
                       </DialogTrigger>
-                      <DialogContent className="bg-white/90 backdrop-blur-xl border-gray-200/60 shadow-lg">
+                      <DialogContent>
                         <DialogHeader>
-                          <DialogTitle className="text-gray-900">
-                            Importer un fichier CSV
-                          </DialogTitle>
-                          <DialogDescription className="text-gray-500">
-                            Importez une liste de mots-cles depuis un fichier CSV
-                          </DialogDescription>
+                          <DialogTitle>Importer un fichier CSV</DialogTitle>
+                          <DialogDescription>Importez une liste de mots-clés depuis un fichier CSV</DialogDescription>
                         </DialogHeader>
                         <div className="py-4">
-                          <Input
-                            type="file"
-                            accept=".csv"
-                            className="bg-white/80 border-gray-200 text-gray-900"
-                          />
+                          <Input type="file" accept=".csv" />
                         </div>
                       </DialogContent>
                     </Dialog>
-
-                    <Button
-                      onClick={handleBulkGeneration}
-                      disabled={isGenerating || !keywords.trim() || isDepleted}
-                      title={isDepleted ? "Crédits épuisés. Passez à un plan supérieur dans Paramètres." : undefined}
-                      className="flex-1 h-11 font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-sm"
-                    >
-                      {isGenerating ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-4 w-4 mr-2" />
-                      )}
-                      Lancer la generation
-                    </Button>
-                  </div>
-
-                  {/* Animated progress */}
-                  {isGenerating && (
-                    <div className="mt-4 rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/80 border border-emerald-100 p-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                          <span className="text-sm font-medium text-gray-700">
-                            Generation en cours...
-                          </span>
-                        </div>
-                        <span className="text-sm font-bold text-emerald-600">
-                          {generationProgress}%
-                        </span>
-                      </div>
-                      <div className="h-3 rounded-full bg-white/80 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500 ease-out"
-                          style={{ width: `${generationProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Tips sidebar */}
-            <div className="space-y-6">
-              {/* Warning Google HCU */}
-              <Card className="bg-amber-50/80 backdrop-blur-sm border-amber-200/80 shadow-sm overflow-hidden">
-                <div className="h-1 w-full bg-gradient-to-r from-amber-400 to-orange-400" />
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold text-amber-800 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    Attention — Google Helpful Content
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    <li className="flex items-start gap-2">
-                      <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-800 leading-relaxed">
-                        Ne publiez <strong>pas 300 articles d&apos;un coup</strong>. Google pénalise les pics de contenu IA massif (Helpful Content Update).
-                      </p>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-800 leading-relaxed">
-                        Publiez <strong>5 à 10 articles par semaine</strong> maximum pour un site existant, 2-3 pour un nouveau site.
-                      </p>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-800 leading-relaxed">
-                        <strong>Relisez et enrichissez</strong> chaque article avant publication : ajoutez des exemples concrets, chiffres, et votre expertise.
-                      </p>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-800 leading-relaxed">
-                        Utilisez la génération bulk pour <strong>préparer votre pipeline</strong>, pas pour publier en masse immédiatement.
-                      </p>
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-                <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-500" />
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                    <Lightbulb className="h-4 w-4 text-amber-500" />
-                    Conseils
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-4">
-                    <li className="flex items-start gap-3">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 shrink-0 mt-0.5">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      </div>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        Utilisez des mots-cles longue traine (3-5 mots) pour de meilleurs resultats
-                      </p>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 shrink-0 mt-0.5">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      </div>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        Configurez votre Brand Voice pour un ton coherent
-                      </p>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 shrink-0 mt-0.5">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      </div>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        Les articles sont generes avec sources et images
-                      </p>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 shrink-0 mt-0.5">
-                        <XCircle className="h-4 w-4 text-red-400" />
-                      </div>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        Evitez les mots-cles trop generiques (ex: &quot;marketing&quot;)
-                      </p>
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ═══════════════════════════════════════════════════════════════
-            SEO INTELLIGENCE TAB
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="intelligence" className="space-y-6">
-          {/* Search card */}
-          <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-            <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-400" />
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-sm">
-                  <Brain className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <CardTitle className="text-gray-900">SEO Intelligence & Competitive Analysis</CardTitle>
-                  <CardDescription className="text-gray-500">
-                    Analyse complete de votre site, identification des concurrents et generation d&apos;une strategie SEO personnalisee
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label className="text-gray-700 mb-2 block font-medium">
-                  URL de votre site a analyser
-                </Label>
-                <div className="flex gap-3">
-                  <div className="relative flex-1">
-                    <ExternalLink className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      placeholder="https://votre-site.com"
-                      value={intelligenceUrl}
-                      onChange={(e) => setIntelligenceUrl(e.target.value)}
-                      className="pl-10 bg-white/80 border-gray-200 text-gray-900 focus:border-emerald-500 focus:ring-emerald-500/20 h-11"
-                    />
-                  </div>
-                  <Button
-                    onClick={async () => {
-                      if (!intelligenceUrl || !workspaceId) {
-                        toast.error("Veuillez entrer une URL");
-                        return;
-                      }
-
-                      setIsRunningIntelligence(true);
-                      try {
-                        const result = await runSEOIntelligence(workspaceId, intelligenceUrl);
-                        if (result.success && result.data) {
-                          setIntelligenceReport(result.data);
-                          setIsEditingAudit(false);
-                          toast.success("Analyse SEO Intelligence terminée !");
-                          // Refresh history and select the new audit
-                          const history = await listSeoAudits(workspaceId, 20);
-                          if (history.success && history.data) {
-                            setAuditHistory(history.data);
-                            setSelectedAuditId(history.data[0]?.id ?? null);
-                          }
-                        } else {
-                          toast.error(result.error || "Erreur lors de l'analyse");
-                        }
-                      } catch {
-                        toast.error("Une erreur est survenue");
-                      } finally {
-                        setIsRunningIntelligence(false);
-                      }
-                    }}
-                    disabled={isRunningIntelligence || !intelligenceUrl.trim()}
-                    className="h-11 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-sm"
-                  >
-                    {isRunningIntelligence ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Analyse...
-                      </>
-                    ) : (
-                      <>
-                        <Brain className="h-4 w-4 mr-2" />
-                        Lancer l&apos;analyse
-                      </>
-                    )}
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  L&apos;analyse peut prendre 1-2 minutes. Elle va scraper votre site, identifier vos concurrents et generer une strategie SEO complete.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Historique des analyses */}
-          {auditHistory.length > 0 && (
-            <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-emerald-600" />
-                  Analyses précédentes ({auditHistory.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2 flex-wrap">
-                  {auditHistory.map((audit) => (
                     <button
-                      key={audit.id}
-                      onClick={() => handleLoadAudit(audit.id)}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all hover:shadow-sm ${
-                        selectedAuditId === audit.id
-                          ? "border-emerald-400 bg-emerald-50 text-emerald-700 font-medium"
-                          : "border-gray-200 bg-white text-gray-600 hover:border-emerald-200 hover:bg-emerald-50/40"
-                      }`}
+                      onClick={() => {
+                        const exported = localStorage.getItem("skalle_exported_keywords");
+                        if (exported) {
+                          setKeywords((prev) => prev.trim() ? `${prev}\n${exported}` : exported);
+                          toast.success("Mots-clés importés depuis Keywords !");
+                          localStorage.removeItem("skalle_exported_keywords");
+                        } else {
+                          toast.info("Aucun mot-clé exporté trouvé.");
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-md text-[12px] font-medium"
+                      style={{ background: "var(--bg-elev)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
                     >
-                      <Globe className="h-3 w-3 shrink-0" />
-                      <span className="max-w-[120px] truncate">{audit.url.replace(/^https?:\/\//, "")}</span>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] px-1.5 py-0 ${
-                          audit.globalScore >= 70 ? "bg-emerald-50 text-emerald-600 border-emerald-200" :
-                          audit.globalScore >= 50 ? "bg-amber-50 text-amber-600 border-amber-200" :
-                          "bg-red-50 text-red-600 border-red-200"
-                        }`}
-                      >
-                        {audit.globalScore}
-                      </Badge>
-                      <span className="text-gray-400">{new Date(audit.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</span>
+                      ⇄ Depuis Keywords
                     </button>
-                  ))}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="col-span-5">
+                  <p className="text-[11px] font-mono uppercase tracking-wider mb-2" style={{ color: "var(--fg-mute)" }}>Résumé</p>
+                  <div className="p-4 space-y-3 rounded-xl" style={CARD_SOFT}>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>Articles à générer</span>
+                      <span className="font-display text-[24px] font-bold tabular" style={{ color: "var(--fg)" }}>{keywordCount}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>Coût total</span>
+                      <span className="font-display text-[18px] font-bold tabular" style={{ color: E.fg }}>{keywordCount * 8} cr.</span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>Temps estimé</span>
+                      <span className="font-display text-[14px] font-semibold" style={{ color: "var(--fg)" }}>~{Math.ceil(keywordCount * 3)} min</span>
+                    </div>
+                    <p className="text-[11px] pt-2 border-t" style={{ color: "var(--fg-mute)", borderColor: "var(--line)" }}>
+                      Générés en background. Vous serez notifié dès que chaque article est prêt.
+                    </p>
+                  </div>
+
+                  {/* Google HCU warning */}
+                  <div className="mt-3 p-3 rounded-xl" style={{ background: A.soft, border: `1px solid ${A.line}` }}>
+                    <p className="text-[11px] font-semibold mb-1" style={{ color: A.fg }}>⚠ Google Helpful Content</p>
+                    <p className="text-[11px]" style={{ color: "var(--fg-dim)" }}>
+                      Publiez 5–10 articles/semaine max. Relisez et enrichissez chaque article avant publication.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress */}
+              {isGenerating && (
+                <div className="mt-4 rounded-xl p-4" style={{ background: E.soft, border: `1px solid ${E.line}` }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full animate-pulse" style={{ background: E.fg }} />
+                      <span className="text-[12px] font-medium" style={{ color: E.fg }}>Génération en cours...</span>
+                    </div>
+                    <span className="text-[12px] font-bold" style={{ color: E.fg }}>{generationProgress}%</span>
+                  </div>
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: "white" }}>
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${generationProgress}%`, background: E.fg }} />
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-5 pt-4 border-t flex justify-end" style={{ borderColor: "var(--line)" }}>
+                <button
+                  onClick={handleBulkGeneration}
+                  disabled={isGenerating || !keywords.trim() || isDepleted}
+                  className="px-5 py-2 rounded-lg text-[12.5px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: E.fg, color: "white" }}
+                >
+                  {isGenerating ? "Génération en cours..." : `Lancer la génération (${keywordCount}) →`}
+                </button>
+              </div>
+            </div>
           )}
 
-          {/* Intelligence Results */}
-          {intelligenceReport && (
-            <div className="space-y-6">
-              {/* Barre d'actions : valider / corriger / générer */}
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-3">
-                <div className="flex items-center gap-2 text-sm text-gray-700">
-                  <CheckCircle className="h-4 w-4 text-emerald-500" />
-                  <span>Analyse chargée — validez, corrigez, puis générez vos articles.</span>
+          {/* Cluster mode */}
+          {createMode === "cluster" && (
+            <div className="p-6 rounded-xl space-y-5" style={CARD}>
+              <div>
+                <label className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>
+                  Sujet pilier
+                </label>
+                <div className="mt-2 flex items-center gap-2 p-1 rounded-xl"
+                  style={{ background: "white", border: "1px solid var(--line-strong)" }}>
+                  <span className="ml-3 font-mono text-[16px]" style={{ color: E.fg }}>✦</span>
+                  <input
+                    className="flex-1 bg-transparent outline-none py-2.5 text-[14px]"
+                    style={{ color: "var(--fg)" }}
+                    placeholder="Ex : prospection b2b automatisée"
+                    value={clusterKeyword}
+                    onChange={(e) => setClusterKeyword(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>
+                  Secteur / contexte (optionnel)
+                </label>
+                <input
+                  className="mt-2 w-full px-3 py-2.5 rounded-lg outline-none text-[13px]"
+                  style={{ background: "white", border: "1px solid var(--line)", color: "var(--fg)" }}
+                  placeholder="Ex : SaaS B2B, e-commerce, RH..."
+                  value={clusterContext}
+                  onChange={(e) => setClusterContext(e.target.value)}
+                />
+              </div>
+
+              {/* Cluster architecture preview */}
+              {cluster ? (
+                <div className="p-5 rounded-xl space-y-4" style={CARD_SOFT}>
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-full flex items-center justify-center font-bold text-[16px]"
+                      style={{ background: E.fg, color: "white" }}>P</div>
+                    <div className="flex-1">
+                      <p className="font-display text-[14px] font-semibold" style={{ color: "var(--fg)" }}>{cluster.pillarTitle}</p>
+                      <p className="text-[11px]" style={{ color: "var(--fg-mute)" }}>Article pilier · couverture sémantique exhaustive</p>
+                    </div>
+                    {clusterBatchId && (
+                      <span className="text-[11px] px-2 py-0.5 rounded font-mono" style={{ background: E.soft, color: E.fg, border: `1px solid ${E.line}` }}>
+                        ✓ Génération en cours
+                      </span>
+                    )}
+                  </div>
+                  <div className="ml-6 pl-6 grid grid-cols-2 gap-2" style={{ borderLeft: `2px solid ${E.line}` }}>
+                    {cluster.supportingKeywords.map((sat, i) => (
+                      <div key={i} className="flex items-center gap-2 py-1.5">
+                        <span className="h-2 w-2 rounded-full shrink-0" style={{ background: E.fg, opacity: 0.5 }} />
+                        <span className="text-[12px] truncate" style={{ color: "var(--fg-dim)" }}>{sat.keyword}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 rounded-xl" style={CARD_SOFT}>
+                  <p className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-mute)" }}>
+                    Architecture du cluster (aperçu IA)
+                  </p>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-10 w-10 rounded-full flex items-center justify-center font-bold"
+                      style={{ background: E.fg, color: "white" }}>P</div>
+                    <div>
+                      <p className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>Pillar Page · sujet principal exhaustif</p>
+                      <p className="text-[11px]" style={{ color: "var(--fg-mute)" }}>3 000–4 000 mots · maillage automatique</p>
+                    </div>
+                  </div>
+                  <div className="ml-6 pl-6 grid grid-cols-2 gap-1.5" style={{ borderLeft: `2px solid ${E.line}` }}>
+                    {["Satellite 1 — intention informative", "Satellite 2 — comparatif", "Satellite 3 — guide pratique", "Satellite 4 — cas d'usage", "Satellite 5 — outils & ressources", "Satellite 6 — FAQ avancée"].map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 py-1">
+                        <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: E.fg, opacity: 0.4 }} />
+                        <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t flex items-center justify-between" style={{ borderColor: "var(--line)" }}>
+                <p className="text-[11.5px]" style={{ color: "var(--fg-mute)" }}>
+                  <strong style={{ color: E.fg }}>60 crédits</strong> · 1 pillar + 8 articles · maillage automatique
+                </p>
+                <button
+                  onClick={handleGenerateCluster}
+                  disabled={isGeneratingCluster || !clusterKeyword.trim()}
+                  className="px-5 py-2 rounded-lg text-[12.5px] font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: E.fg, color: "white" }}
+                >
+                  {isGeneratingCluster ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Génération...</>
+                  ) : (
+                    <><span className="font-mono">✦</span> Générer le cluster →</>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          TAB: Analyser
+      ══════════════════════════════════════════ */}
+      {activeTab === "analyze" && (
+        <div className="space-y-5">
+          {/* Mode picker + URL input */}
+          <div className="p-6 rounded-xl space-y-5" style={CARD}>
+            <p className="text-[11px] font-mono uppercase tracking-[0.18em]" style={{ color: E.fg }}>
+              Qu&apos;est-ce que vous voulez analyser ?
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {(
+                [
+                  { id: "audit" as const, icon: "▤", label: "Audit page", desc: "On-page : titre, meta, balises, contenu", cost: "2 cr." },
+                  { id: "tech" as const, icon: "⚙", label: "Santé technique", desc: "Vitesse, mobile, Core Web Vitals, crawl", cost: "3 cr." },
+                  { id: "intel" as const, icon: "✦", label: "Intelligence", desc: "Quick wins, gaps sémantiques, SWOT, concurrents", cost: "8 cr." },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setAnalyzeMode(m.id)}
+                  className="p-3.5 rounded-xl text-left transition-all"
+                  style={
+                    analyzeMode === m.id
+                      ? { background: E.soft, border: `1px solid ${E.line}` }
+                      : { background: "var(--bg-elev)", border: "1px solid var(--line)" }
+                  }
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="h-9 w-9 rounded-lg flex items-center justify-center text-[15px]"
+                      style={{ background: analyzeMode === m.id ? "white" : E.soft, color: E.fg, border: `1px solid ${E.line}` }}>
+                      <span className="font-mono">{m.icon}</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded font-bold"
+                      style={{ background: "oklch(0.21 0.03 260 / 0.04)", color: "var(--fg-mute)" }}>{m.cost}</span>
+                  </div>
+                  <p className="font-display text-[13.5px] font-semibold" style={{ color: "var(--fg)" }}>{m.label}</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--fg-mute)" }}>{m.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {/* URL input */}
+            <div className="flex items-center gap-2 p-1 rounded-xl"
+              style={{ background: "white", border: "1px solid var(--line-strong)" }}>
+              <span className="ml-3 font-mono text-[16px]" style={{ color: E.fg }}>⌕</span>
+              <input
+                className="flex-1 bg-transparent outline-none py-2.5 text-[14px]"
+                style={{ color: "var(--fg)" }}
+                placeholder="URL de la page ou du domaine à analyser..."
+                value={analyzeUrl}
+                onChange={(e) => setAnalyzeUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLaunchAnalysis()}
+              />
+              <button
+                onClick={handleLaunchAnalysis}
+                disabled={isAnalyzing || !analyzeUrl.trim()}
+                className="px-4 py-2 rounded-lg font-semibold text-[13px] mr-1 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                style={{ background: E.fg, color: "white" }}
+              >
+                {isAnalyzing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Lancer l'analyse →"
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Audit results */}
+          {analyzeMode === "audit" && auditReport && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-12 gap-4">
+                {/* Score gauge */}
+                <div className="col-span-4 p-6 rounded-xl" style={CARD}>
+                  <p className="text-[10.5px] font-mono uppercase tracking-[0.16em]" style={{ color: "var(--fg-mute)" }}>Score SEO global</p>
+                  <div className="mt-4 flex items-center justify-center">
+                    <div className="relative h-40 w-40">
+                      <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="oklch(0.21 0.03 260 / 0.06)" strokeWidth="8" />
+                        <circle cx="50" cy="50" r="42" fill="none" stroke={scoreColor(auditReport.score)} strokeWidth="8"
+                          strokeDasharray={`${auditReport.score * 2.64} ${100 * 2.64}`} strokeLinecap="round" />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <p className="font-display text-[44px] font-bold tabular leading-none"
+                          style={{ color: scoreColor(auditReport.score) }}>{auditReport.score}</p>
+                        <p className="text-[10px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>/ 100</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Issues */}
+                <div className="col-span-8 p-6 rounded-xl" style={CARD}>
+                  <p className="text-[10.5px] font-mono uppercase tracking-[0.16em] mb-4" style={{ color: "var(--fg-mute)" }}>Scores détaillés</p>
+                  <div className="space-y-4">
+                    {[
+                      { name: "Titre", data: auditReport.title },
+                      { name: "Meta description", data: auditReport.metaDescription },
+                      { name: "Titres (H1-H3)", data: auditReport.headings },
+                      { name: "Images", data: auditReport.images },
+                      { name: "Liens", data: auditReport.links },
+                      { name: "Contenu", data: auditReport.content },
+                    ].map((item) => (
+                      <div key={item.name}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[12.5px] font-medium" style={{ color: "var(--fg)" }}>{item.name}</span>
+                          <span className="text-[12px] font-bold" style={{ color: scoreColor(item.data.score) }}>
+                            {item.data.score}/100
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0.21 0.03 260 / 0.06)" }}>
+                          <div className="h-full rounded-full transition-all duration-700" style={scoreBarStyle(item.data.score)} />
+                        </div>
+                        {item.data.issues.length > 0 && (
+                          <div className="mt-1 space-y-0.5 pl-2">
+                            {item.data.issues.slice(0, 2).map((issue, i) => (
+                              <p key={i} className="text-[10.5px]" style={{ color: "var(--fg-mute)" }}>
+                                · {issue}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Technical results */}
+          {analyzeMode === "tech" && technicalReport && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-6 rounded-xl text-center" style={CARD}>
+                  <p className="font-display text-[56px] font-black leading-none"
+                    style={{ color: technicalReport.performanceScore >= 90 ? E.fg : technicalReport.performanceScore >= 50 ? A.fg : D.fg }}>
+                    {technicalReport.performanceScore}
+                  </p>
+                  <p className="text-[12px] mt-2" style={{ color: "var(--fg-mute)" }}>Score Performance</p>
+                  <span className="mt-2 inline-block text-[10px] font-mono px-2 py-0.5 rounded uppercase tracking-wider"
+                    style={{
+                      background: technicalReport.overallCategory === "FAST" ? E.soft : technicalReport.overallCategory === "AVERAGE" ? A.soft : D.soft,
+                      color: technicalReport.overallCategory === "FAST" ? E.fg : technicalReport.overallCategory === "AVERAGE" ? A.fg : D.fg,
+                    }}>
+                    {technicalReport.overallCategory === "FAST" ? "Rapide" : technicalReport.overallCategory === "AVERAGE" ? "Moyen" : "Lent"}
+                  </span>
+                </div>
+                <div className="col-span-2 p-6 rounded-xl" style={CARD}>
+                  <p className="text-[10.5px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-mute)" }}>Core Web Vitals</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["lcp", "tbt", "cls", "fcp", "speedIndex", "ttfb"] as const).map((key) => {
+                      const vital = technicalReport.vitals[key];
+                      const c = vital.status === "good" ? E : vital.status === "needs-improvement" ? A : D;
+                      return (
+                        <div key={key} className="p-2.5 rounded-lg" style={{ background: c.soft, border: `1px solid ${c.line}` }}>
+                          <p className="text-[10px] font-mono uppercase font-bold" style={{ color: "var(--fg-mute)" }}>{key.toUpperCase()}</p>
+                          <p className="text-[13px] font-bold mt-0.5" style={{ color: c.fg }}>{vital.value}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              {technicalReport.opportunities.length > 0 && (
+                <div className="p-6 rounded-xl" style={CARD}>
+                  <p className="text-[10.5px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-mute)" }}>
+                    Opportunités d&apos;optimisation
+                  </p>
+                  <div className="space-y-2">
+                    {technicalReport.opportunities.map((opp, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-lg"
+                        style={{ background: A.soft, border: `1px solid ${A.line}` }}>
+                        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: A.fg }} />
+                        <div>
+                          <p className="text-[12.5px] font-medium" style={{ color: "var(--fg)" }}>{opp.title}</p>
+                          {opp.savings && <p className="text-[11px] mt-0.5" style={{ color: A.fg }}>Économie : {opp.savings}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="p-6 rounded-xl" style={CARD}>
+                <p className="text-[10.5px] font-mono uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: E.fg }}>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: E.fg }} />
+                  Analyse IA & Recommandations
+                </p>
+                <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--fg)" }}>
+                  {technicalReport.aiRecommendations}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Intelligence results */}
+          {analyzeMode === "intel" && intelligenceReport && (
+            <div className="space-y-4">
+              {/* Action bar */}
+              <div className="flex items-center justify-between gap-3 p-4 rounded-xl"
+                style={{ background: E.soft, border: `1px solid ${E.line}` }}>
+                <div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--fg)" }}>
+                  <CheckCircle className="h-4 w-4" style={{ color: E.fg }} />
+                  Analyse chargée — validez, corrigez, puis générez vos articles.
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {/* History */}
+                  {auditHistory.length > 0 && (
+                    <Select value={selectedAuditId ?? ""} onValueChange={handleLoadAudit}>
+                      <SelectTrigger className="h-8 text-xs w-[180px]">
+                        <SelectValue placeholder="Analyses précédentes" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {auditHistory.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.url.replace(/^https?:\/\//, "").slice(0, 30)} · {a.globalScore}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {!isEditingAudit ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
-                      onClick={handleStartEditAudit}
-                      disabled={!selectedAuditId}
-                    >
-                      <Edit className="h-3.5 w-3.5 mr-1.5" />
-                      Corriger l&apos;analyse
+                    <Button size="sm" variant="outline" className="h-8" onClick={handleStartEditAudit} disabled={!selectedAuditId}>
+                      <Edit className="h-3.5 w-3.5 mr-1.5" />Corriger
                     </Button>
                   ) : (
                     <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8"
-                        onClick={() => setIsEditingAudit(false)}
-                      >
-                        Annuler
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
-                        onClick={handleSaveAuditCorrections}
-                        disabled={isSavingAudit}
-                      >
+                      <Button size="sm" variant="outline" className="h-8" onClick={() => setIsEditingAudit(false)}>Annuler</Button>
+                      <Button size="sm" className="h-8" onClick={handleSaveAuditCorrections} disabled={isSavingAudit}
+                        style={{ background: E.fg, color: "white" }}>
                         {isSavingAudit ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5 mr-1.5" />}
                         Sauvegarder
                       </Button>
                     </>
                   )}
-                  <Button
-                    size="sm"
-                    className="h-8 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
-                    onClick={handleGenerateFromAudit}
-                    disabled={isGenerating}
-                  >
+                  <Button size="sm" onClick={handleGenerateFromAudit} disabled={isGenerating}
+                    style={{ background: E.fg, color: "white" }}>
                     {isGenerating ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
                     Générer des articles
                   </Button>
                 </div>
               </div>
 
-              {/* Mode édition — correction de l'analyse */}
+              {/* Edit mode */}
               {isEditingAudit && (
-                <Card className="border-amber-200 bg-amber-50/50">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-semibold text-amber-800 flex items-center gap-2">
-                      <Edit className="h-4 w-4" />
-                      Corriger l&apos;analyse — chaque ligne = un élément
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-600">Quick Wins (un mot-clé par ligne)</Label>
-                      <Textarea
-                        value={editedQuickWins}
-                        onChange={(e) => setEditedQuickWins(e.target.value)}
-                        rows={6}
-                        className="text-xs font-mono resize-none"
-                        placeholder="mot-clé 1&#10;mot-clé 2"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-600">Actions techniques ([high/medium/low] Description)</Label>
-                      <Textarea
-                        value={editedTechnicalActions}
-                        onChange={(e) => setEditedTechnicalActions(e.target.value)}
-                        rows={6}
-                        className="text-xs font-mono resize-none"
-                        placeholder="[high] Optimiser les balises title&#10;[medium] Ajouter des méta descriptions"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-600">Gaps sémantiques (un sujet par ligne)</Label>
-                      <Textarea
-                        value={editedSemanticGaps}
-                        onChange={(e) => setEditedSemanticGaps(e.target.value)}
-                        rows={6}
-                        className="text-xs font-mono resize-none"
-                        placeholder="Sujet 1&#10;Sujet 2"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-600">SWOT (JSON)</Label>
-                      <Textarea
-                        value={editedSwot}
-                        onChange={(e) => setEditedSwot(e.target.value)}
-                        rows={6}
-                        className="text-xs font-mono resize-none"
-                        placeholder='{"strengths":[],"weaknesses":[],"opportunities":[],"threats":[]}'
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
+                <div className="p-6 rounded-xl" style={{ ...CARD, border: `1px solid ${A.line}`, background: A.soft }}>
+                  <p className="text-[11px] font-mono uppercase tracking-wider mb-3 flex items-center gap-2" style={{ color: A.fg }}>
+                    <Edit className="h-3.5 w-3.5" />Corriger l&apos;analyse — chaque ligne = un élément
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      { label: "Quick Wins (un mot-clé/ligne)", val: editedQuickWins, set: setEditedQuickWins, ph: "mot-clé 1\nmot-clé 2" },
+                      { label: "Actions techniques ([high/med/low] desc)", val: editedTechnicalActions, set: setEditedTechnicalActions, ph: "[high] Optimiser les balises title" },
+                      { label: "Gaps sémantiques (un sujet/ligne)", val: editedSemanticGaps, set: setEditedSemanticGaps, ph: "Sujet 1\nSujet 2" },
+                      { label: "SWOT (JSON)", val: editedSwot, set: setEditedSwot, ph: '{"strengths":[],"weaknesses":[]}' },
+                    ].map(({ label, val, set, ph }) => (
+                      <div key={label} className="space-y-1.5">
+                        <Label className="text-xs font-medium" style={{ color: "var(--fg-dim)" }}>{label}</Label>
+                        <Textarea value={val} onChange={(e) => set(e.target.value)} rows={5} className="text-xs font-mono resize-none" placeholder={ph} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
-              {/* Overview cards */}
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-                  <div className="h-1 w-full bg-gradient-to-r from-emerald-400 to-emerald-500" />
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 shrink-0">
-                        <Target className="h-5 w-5 text-emerald-600" />
+              {/* Overview */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { icon: <Target className="h-5 w-5" />, label: "Thématique", value: intelligenceReport.userSite?.theme || "Non analysé" },
+                  { icon: <BookOpen className="h-5 w-5" />, label: "Mots-clés identifiés", value: intelligenceReport.userSite?.intentKeywords?.length || 0 },
+                  { icon: <BarChart3 className="h-5 w-5" />, label: "Concurrents analysés", value: intelligenceReport.competitorAnalysis?.length || 0 },
+                ].map((k) => (
+                  <div key={k.label} className="p-4 rounded-xl" style={CARD}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: E.soft, color: E.fg }}>
+                        {k.icon}
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Thematique</p>
-                        <p className="text-gray-900 font-semibold mt-0.5">{intelligenceReport.userSite?.theme || "Non analyse"}</p>
+                        <p className="text-[10.5px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>{k.label}</p>
+                        <p className="font-display text-[22px] font-bold tabular mt-0.5 leading-none" style={{ color: "var(--fg)" }}>{k.value}</p>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-                  <div className="h-1 w-full bg-gradient-to-r from-teal-400 to-teal-500" />
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-50 shrink-0">
-                        <BookOpen className="h-5 w-5 text-teal-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Mots-cles identifies</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-0.5">
-                          {intelligenceReport.userSite?.intentKeywords?.length || 0}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-                  <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-400" />
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 shrink-0">
-                        <BarChart3 className="h-5 w-5 text-emerald-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Concurrents analyses</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-0.5">
-                          {intelligenceReport.competitorAnalysis?.length || 0}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                ))}
               </div>
 
-              {/* Competitor Radar */}
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100">
-                      <Target className="h-5 w-5 text-emerald-600" />
-                    </div>
+              {/* Quick wins */}
+              {intelligenceReport.strategy?.quickWins?.length > 0 && (
+                <div className="p-6 rounded-xl" style={CARD}>
+                  <div className="flex items-center justify-between mb-4">
                     <div>
-                      <CardTitle className="text-gray-900">Radar de Competitivite</CardTitle>
-                      <CardDescription className="text-gray-500">
-                        Comparaison de votre site avec les 3 principaux concurrents
-                      </CardDescription>
+                      <p className="text-[10.5px] font-mono uppercase tracking-[0.16em] flex items-center gap-1.5" style={{ color: E.fg }}>
+                        <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: E.fg }} />
+                        Quick wins · proposés par l&apos;IA
+                      </p>
+                      <h3 className="font-display text-[17px] font-semibold mt-0.5" style={{ color: "var(--fg)" }}>
+                        {intelligenceReport.strategy.quickWins.length} opportunités
+                      </h3>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-5">
-                    {intelligenceReport.competitorAnalysis?.slice(0, 3).map((competitor: any, i: number) => {
-                      const barColors = ["from-emerald-400 to-emerald-500", "from-teal-400 to-teal-500", "from-cyan-400 to-cyan-500"];
-                      return (
-                        <div key={i} className="group rounded-xl border border-gray-100 bg-white/50 p-4 hover:border-emerald-200 transition-colors">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-600">
-                                {i + 1}
-                              </div>
-                              <span className="text-gray-900 font-semibold">{competitor.domain}</span>
-                            </div>
-                            <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200 font-semibold">
-                              {competitor.authorityScore}/100
-                            </Badge>
-                          </div>
-                          <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full bg-gradient-to-r ${barColors[i]} transition-all duration-700 ease-out`}
-                              style={{ width: `${competitor.authorityScore}%` }}
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4 mt-3">
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                              {competitor.strengths?.length || 0} forces
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                              <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
-                              {competitor.weaknesses?.length || 0} faiblesses
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Keywords Table */}
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100">
-                      <TrendingUp className="h-5 w-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-gray-900">Tableau des Mots-Cles & Opportunites</CardTitle>
-                      <CardDescription className="text-gray-500">
-                        Mots-cles identifies avec difficulte et concurrents principaux
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto rounded-xl border border-gray-100">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gray-50/80">
-                          <th className="text-left p-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Mot-cle</th>
-                          <th className="text-left p-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Difficulte</th>
-                          <th className="text-left p-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Volume</th>
-                          <th className="text-left p-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Concurrent #1</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {intelligenceReport.marketInsights?.slice(0, 10).map((insight: any, i: number) => (
-                          <tr key={i} className="hover:bg-emerald-50/30 transition-colors">
-                            <td className="p-3.5 text-gray-900 font-medium">{insight.keyword}</td>
-                            <td className="p-3.5">
-                              <Badge
-                                variant="outline"
-                                className={
-                                  insight.difficulty === "easy"
-                                    ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                                    : insight.difficulty === "medium"
-                                    ? "bg-amber-50 text-amber-600 border-amber-200"
-                                    : "bg-red-50 text-red-600 border-red-200"
-                                }
-                              >
-                                {insight.difficulty === "easy" ? "Facile" : insight.difficulty === "medium" ? "Moyen" : "Difficile"}
-                              </Badge>
-                            </td>
-                            <td className="p-3.5">
-                              <span className={`text-sm font-medium ${
-                                insight.volumeEstimate === "high" ? "text-emerald-600" :
-                                insight.volumeEstimate === "medium" ? "text-amber-600" :
-                                "text-gray-500"
-                              }`}>
-                                {insight.volumeEstimate === "high" ? "Eleve" : insight.volumeEstimate === "medium" ? "Moyen" : "Faible"}
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-gray-500 text-sm">
-                              {insight.competitors?.[0]?.domain || "N/A"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Quick Wins */}
-              {intelligenceReport.strategy?.quickWins && intelligenceReport.strategy.quickWins.length > 0 && (
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-100 to-orange-100">
-                        <Zap className="h-5 w-5 text-amber-500" />
+                  <div className="grid grid-cols-2 gap-3">
+                    {intelligenceReport.strategy.quickWins.slice(0, 6).map((win: any, i: number) => (
+                      <div key={i} className="p-3.5 rounded-lg" style={CARD_SOFT}>
+                        <p className="font-display text-[13px] font-semibold leading-snug" style={{ color: "var(--fg)" }}>
+                          {win.keyword}
+                        </p>
+                        <p className="text-[11.5px] mt-1" style={{ color: "var(--fg-mute)" }}>{win.opportunity}</p>
                       </div>
-                      <div>
-                        <CardTitle className="text-gray-900">Quick Wins - Opportunites Faciles</CardTitle>
-                        <CardDescription className="text-gray-500">
-                          Mots-cles a faible difficulte avec fort potentiel
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {intelligenceReport.strategy.quickWins.slice(0, 10).map((win: any, i: number) => {
-                        const gradients = [
-                          "from-emerald-50 to-teal-50 border-emerald-100",
-                          "from-teal-50 to-cyan-50 border-teal-100",
-                          "from-emerald-50 to-green-50 border-emerald-100",
-                          "from-cyan-50 to-emerald-50 border-cyan-100",
-                        ];
-                        return (
-                          <div key={i} className={`rounded-xl p-4 bg-gradient-to-br ${gradients[i % gradients.length]} border hover:shadow-sm transition-shadow`}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <Badge className="bg-white/80 text-emerald-700 border-emerald-200 shadow-sm">
-                                {win.keyword}
-                              </Badge>
-                              <div className="flex items-center gap-1 ml-auto">
-                                {Array.from({ length: 5 }).map((_, si) => (
-                                  <div
-                                    key={si}
-                                    className={`h-1.5 w-3 rounded-full ${
-                                      si < win.estimatedImpact ? "bg-amber-400" : "bg-gray-200"
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                            <p className="text-gray-700 text-sm leading-relaxed">{win.opportunity}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
+                    ))}
+                  </div>
+                </div>
               )}
 
-              {/* Strategic Checklist */}
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100">
-                      <CheckCircle className="h-5 w-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-gray-900">Checklist Strategique</CardTitle>
-                      <CardDescription className="text-gray-500">
-                        Actions prioritaires pour ameliorer votre SEO
-                      </CardDescription>
-                    </div>
+              {/* Competitor radar */}
+              {intelligenceReport.competitorAnalysis?.length > 0 && (
+                <div className="p-6 rounded-xl" style={CARD}>
+                  <p className="text-[10.5px] font-mono uppercase tracking-[0.16em] mb-4" style={{ color: "var(--fg-mute)" }}>
+                    Radar de compétitivité
+                  </p>
+                  <div className="space-y-3">
+                    {intelligenceReport.competitorAnalysis.slice(0, 3).map((comp: any, i: number) => (
+                      <div key={i} className="p-4 rounded-xl" style={CARD_SOFT}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-bold"
+                              style={{ background: E.soft, color: E.fg }}>{i + 1}</div>
+                            <span className="font-semibold text-[13px]" style={{ color: "var(--fg)" }}>{comp.domain}</span>
+                          </div>
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded"
+                            style={{ background: E.soft, color: E.fg, border: `1px solid ${E.line}` }}>
+                            {comp.authorityScore}/100
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0.21 0.03 260 / 0.06)" }}>
+                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${comp.authorityScore}%`, background: E.fg }} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    {/* Technical Actions */}
-                    {intelligenceReport.recommendations?.technical && intelligenceReport.recommendations.technical.length > 0 && (
+                </div>
+              )}
+
+              {/* Strategic checklist */}
+              {(intelligenceReport.recommendations?.technical?.length > 0 || intelligenceReport.recommendations?.semantic?.length > 0) && (
+                <div className="p-6 rounded-xl" style={CARD}>
+                  <p className="text-[10.5px] font-mono uppercase tracking-[0.16em] mb-4" style={{ color: "var(--fg-mute)" }}>
+                    Checklist stratégique
+                  </p>
+                  <div className="space-y-5">
+                    {intelligenceReport.recommendations?.technical?.length > 0 && (
                       <div>
-                        <h4 className="text-gray-900 font-semibold mb-3 flex items-center gap-2 text-sm uppercase tracking-wider">
-                          <AlertTriangle className="h-4 w-4 text-orange-400" />
-                          Actions Techniques ({intelligenceReport.recommendations.technical.length})
-                        </h4>
-                        <div className="space-y-3">
-                          {intelligenceReport.recommendations.technical.map((action: any, i: number) => (
-                            <div key={i} className="group rounded-xl border border-gray-100 bg-white/60 p-4 hover:border-emerald-200 hover:bg-white/80 transition-all">
-                              <div className="flex items-start gap-3">
-                                <div className={`flex h-6 w-6 items-center justify-center rounded-full shrink-0 mt-0.5 ${
-                                  action.priority === "high" ? "bg-red-100" :
-                                  action.priority === "medium" ? "bg-amber-100" :
-                                  "bg-gray-100"
-                                }`}>
-                                  <CheckCircle className={`h-3.5 w-3.5 ${
-                                    action.priority === "high" ? "text-red-500" :
-                                    action.priority === "medium" ? "text-amber-500" :
-                                    "text-gray-400"
-                                  }`} />
+                        <p className="text-[11px] font-mono uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: A.fg }}>
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          Actions techniques ({intelligenceReport.recommendations.technical.length})
+                        </p>
+                        <div className="space-y-2">
+                          {intelligenceReport.recommendations.technical.map((action: any, i: number) => {
+                            const c = action.priority === "high" ? D : action.priority === "medium" ? A : V;
+                            return (
+                              <div key={i} className="flex items-start gap-3 p-3 rounded-lg"
+                                style={{ background: "oklch(0.985 0.005 260)", border: "1px solid var(--line)" }}>
+                                <div className="h-6 w-6 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                                  style={{ background: c.soft }}>
+                                  <CheckCircle className="h-3.5 w-3.5" style={{ color: c.fg }} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                    <span className="text-gray-900 font-medium text-sm">{action.action}</span>
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${
-                                        action.priority === "high"
-                                          ? "bg-red-50 text-red-600 border-red-200"
-                                          : action.priority === "medium"
-                                          ? "bg-amber-50 text-amber-600 border-amber-200"
-                                          : "bg-gray-50 text-gray-500 border-gray-200"
-                                      }`}
-                                    >
-                                      {action.priority === "high" ? "Haute" : action.priority === "medium" ? "Moyenne" : "Basse"}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-gray-500 text-sm">{action.description}</p>
-                                  {action.example && (
-                                    <p className="text-gray-400 text-xs mt-1.5 italic">Exemple: {action.example}</p>
+                                  <p className="text-[12.5px] font-medium" style={{ color: "var(--fg)" }}>{action.action}</p>
+                                  {action.description && action.description !== action.action && (
+                                    <p className="text-[11.5px] mt-0.5" style={{ color: "var(--fg-mute)" }}>{action.description}</p>
                                   )}
                                 </div>
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0"
+                                  style={{ background: c.soft, color: c.fg }}>
+                                  {action.priority}
+                                </span>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
-
-                    {/* Semantic Gaps */}
-                    {intelligenceReport.recommendations?.semantic && intelligenceReport.recommendations.semantic.length > 0 && (
+                    {intelligenceReport.recommendations?.semantic?.length > 0 && (
                       <div>
-                        <h4 className="text-gray-900 font-semibold mb-3 flex items-center gap-2 text-sm uppercase tracking-wider">
-                          <Lightbulb className="h-4 w-4 text-emerald-600" />
-                          Gaps Semantiques ({intelligenceReport.recommendations.semantic.length})
-                        </h4>
-                        <div className="space-y-3">
+                        <p className="text-[11px] font-mono uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: E.fg }}>
+                          <Lightbulb className="h-3.5 w-3.5" />
+                          Gaps sémantiques ({intelligenceReport.recommendations.semantic.length})
+                        </p>
+                        <div className="space-y-2">
                           {intelligenceReport.recommendations.semantic.map((gap: any, i: number) => (
-                            <div key={i} className="rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50/60 to-teal-50/40 p-4 hover:shadow-sm transition-shadow">
-                              <div className="flex items-start gap-2 mb-1.5">
-                                <ArrowRight className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
-                                <span className="text-gray-900 font-medium text-sm">{gap.topic}</span>
-                              </div>
-                              <p className="text-gray-500 text-sm ml-6">{gap.gap}</p>
-                              <div className="flex items-start gap-1.5 ml-6 mt-1.5">
-                                <Lightbulb className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                                <p className="text-emerald-600 text-sm">{gap.recommendation}</p>
+                            <div key={i} className="p-3 rounded-lg" style={{ background: E.soft, border: `1px solid ${E.line}` }}>
+                              <div className="flex items-start gap-2">
+                                <ArrowRight className="h-4 w-4 shrink-0 mt-0.5" style={{ color: E.fg }} />
+                                <div>
+                                  <p className="text-[12.5px] font-semibold" style={{ color: "var(--fg)" }}>{gap.topic}</p>
+                                  <p className="text-[11.5px] mt-0.5" style={{ color: "var(--fg-dim)" }}>{gap.recommendation}</p>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -2534,660 +1831,275 @@ export default function SEOFactoryPage() {
                       </div>
                     )}
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* SWOT Analysis */}
-              {intelligenceReport.strategy?.swot && (
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100">
-                        <BarChart3 className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <CardTitle className="text-gray-900">Analyse SWOT SEO</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {/* Strengths */}
-                      <div className="rounded-xl p-5 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200/60">
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100">
-                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                          </div>
-                          <h4 className="text-emerald-700 font-semibold">Forces</h4>
-                        </div>
-                        <ul className="space-y-2">
-                          {intelligenceReport.strategy.swot.strengths?.map((s: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                              <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
-                              {s}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      {/* Weaknesses */}
-                      <div className="rounded-xl p-5 bg-gradient-to-br from-red-50 to-rose-50 border border-red-200/60">
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100">
-                            <XCircle className="h-4 w-4 text-red-600" />
-                          </div>
-                          <h4 className="text-red-700 font-semibold">Faiblesses</h4>
-                        </div>
-                        <ul className="space-y-2">
-                          {intelligenceReport.strategy.swot.weaknesses?.map((w: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                              <XCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
-                              {w}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      {/* Opportunities */}
-                      <div className="rounded-xl p-5 bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-200/60">
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100">
-                            <Lightbulb className="h-4 w-4 text-amber-600" />
-                          </div>
-                          <h4 className="text-amber-700 font-semibold">Opportunites</h4>
-                        </div>
-                        <ul className="space-y-2">
-                          {intelligenceReport.strategy.swot.opportunities?.map((o: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                              <Lightbulb className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
-                              {o}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      {/* Threats */}
-                      <div className="rounded-xl p-5 bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200/60">
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-100">
-                            <AlertTriangle className="h-4 w-4 text-orange-600" />
-                          </div>
-                          <h4 className="text-orange-700 font-semibold">Menaces</h4>
-                        </div>
-                        <ul className="space-y-2">
-                          {intelligenceReport.strategy.swot.threats?.map((t: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                              <AlertTriangle className="h-4 w-4 text-orange-400 mt-0.5 shrink-0" />
-                              {t}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                </div>
               )}
 
-              {/* Bottom CTA — Générer des articles depuis ce diagnostic */}
-              <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+              {/* Generate CTA */}
+              <div className="p-6 rounded-xl flex items-center justify-between gap-4"
+                style={{ background: E.soft, border: `1px solid ${E.line}` }}>
                 <div>
-                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-emerald-600" />
+                  <h3 className="font-semibold flex items-center gap-2" style={{ color: "var(--fg)" }}>
+                    <Sparkles className="h-4 w-4" style={{ color: E.fg }} />
                     Générer des articles depuis ce diagnostic
                   </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {((intelligenceReport.strategy?.quickWins?.length ?? 0) + Math.min((intelligenceReport.marketInsights?.length ?? 0), 5))} mots-clés identifiés — lancez la rédaction en un clic.
+                  <p className="text-[12px] mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                    {((intelligenceReport.strategy?.quickWins?.length ?? 0) + Math.min((intelligenceReport.marketInsights?.length ?? 0), 5))} mots-clés identifiés
                   </p>
                 </div>
-                <Button
-                  className="shrink-0 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-sm px-6"
-                  onClick={handleGenerateFromAudit}
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Génération en cours...</>
-                  ) : (
-                    <><Sparkles className="h-4 w-4 mr-2" />Rédiger les articles</>
-                  )}
-                </Button>
+                <button onClick={handleGenerateFromAudit} disabled={isGenerating}
+                  className="px-5 py-2 rounded-lg font-semibold text-[13px] flex items-center gap-2 disabled:opacity-50 shrink-0"
+                  style={{ background: E.fg, color: "white" }}>
+                  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Rédiger les articles
+                </button>
               </div>
             </div>
           )}
-        </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            AUDIT TAB
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="audit" className="space-y-6">
-          <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-            <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-500" />
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-sm">
-                  <Search className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <CardTitle className="text-gray-900">Audit SEO Instantane</CardTitle>
-                  <CardDescription className="text-gray-500">
-                    Analysez n&apos;importe quelle page et obtenez un score de 0 a 100
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-3">
-                <div className="relative flex-1">
-                  <ExternalLink className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="https://exemple.com/page"
-                    value={auditUrl}
-                    onChange={(e) => setAuditUrl(e.target.value)}
-                    className="pl-10 bg-white/80 border-gray-200 text-gray-900 focus:border-emerald-500 focus:ring-emerald-500/20 h-11"
-                  />
-                </div>
-                <Button
-                  onClick={handleAudit}
-                  disabled={isAuditing || isDepleted}
-                  title={isDepleted ? "Crédits épuisés. Passez à un plan supérieur dans Paramètres." : undefined}
-                  className="h-11 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-sm"
-                >
-                  {isAuditing ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Search className="h-4 w-4 mr-2" />
-                  )}
-                  Analyser
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Audit Results */}
-          {auditReport && (
-            <div className="space-y-6">
-              {/* Large animated score ring */}
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardContent className="p-8">
-                  <div className="flex flex-col md:flex-row items-center gap-8">
-                    {/* SVG Ring */}
-                    <div className="relative h-40 w-40 shrink-0">
-                      <svg className="h-40 w-40 -rotate-90" viewBox="0 0 160 160">
-                        <circle
-                          cx="80"
-                          cy="80"
-                          r="70"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="8"
-                          className="text-gray-100"
-                        />
-                        <circle
-                          cx="80"
-                          cy="80"
-                          r="70"
-                          fill="none"
-                          strokeWidth="8"
-                          strokeLinecap="round"
-                          strokeDasharray={`${(auditReport.score / 100) * 439.8} 439.8`}
-                          className={`${getScoreRingColor(auditReport.score)} transition-all duration-1000 ease-out`}
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className={`text-5xl font-extrabold ${getScoreColor(auditReport.score)}`}>
-                          {auditReport.score}
-                        </span>
-                        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">/100</span>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 text-center md:text-left">
-                      <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                        Score SEO Global
-                      </h3>
-                      <p className="text-gray-500 mb-4 leading-relaxed">
-                        {auditReport.score >= 80
-                          ? "Excellent ! Votre page est bien optimisee pour le referencement."
-                          : auditReport.score >= 60
-                          ? "Correct, mais des ameliorations sont possibles pour gagner en visibilite."
-                          : "Des optimisations importantes sont necessaires pour ameliorer votre positionnement."}
-                      </p>
-                      <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                        {Object.values(auditReport)
-                          .filter((v) => typeof v === "object" && v.issues)
-                          .flatMap((v) => (v as { issues: string[] }).issues)
-                          .slice(0, 3)
-                          .map((issue, i) => (
-                            <Badge
-                              key={i}
-                              variant="outline"
-                              className="bg-red-50 text-red-600 border-red-200"
-                            >
-                              {issue}
-                            </Badge>
-                          ))}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Detailed Scores as horizontal bars */}
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <CardTitle className="text-gray-900">Scores Detailles</CardTitle>
-                  <CardDescription className="text-gray-500">
-                    Performance pour chaque critere SEO
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-5">
-                    {[
-                      { name: "Titre", data: auditReport.title, icon: FileText },
-                      { name: "Meta Description", data: auditReport.metaDescription, icon: BookOpen },
-                      { name: "Titres (H1-H3)", data: auditReport.headings, icon: BarChart3 },
-                      { name: "Images", data: auditReport.images, icon: Eye },
-                      { name: "Liens", data: auditReport.links, icon: ExternalLink },
-                      { name: "Contenu", data: auditReport.content, icon: FileText },
-                    ].map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <div key={item.name} className="group">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2.5">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-50 group-hover:bg-emerald-50 transition-colors">
-                                <Icon className="h-3.5 w-3.5 text-gray-400 group-hover:text-emerald-500 transition-colors" />
-                              </div>
-                              <span className="text-sm font-medium text-gray-700">{item.name}</span>
-                            </div>
-                            <span className={`text-sm font-bold ${getScoreColor(item.data.score)}`}>
-                              {item.data.score}/100
-                            </span>
-                          </div>
-                          <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${getScoreBarColor(item.data.score)} transition-all duration-700 ease-out`}
-                              style={{ width: `${item.data.score}%` }}
-                            />
-                          </div>
-                          {/* Expandable issues */}
-                          {item.data.issues.length > 0 && (
-                            <div className="mt-2 space-y-1 pl-9">
-                              {item.data.issues.map((issue, i) => (
-                                <div
-                                  key={i}
-                                  className="flex items-center gap-2 text-xs text-gray-500"
-                                >
-                                  <AlertCircle className="h-3 w-3 text-amber-400 shrink-0" />
-                                  {issue}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+          {/* Empty state for analyze */}
+          {!auditReport && !technicalReport && !intelligenceReport && !isAnalyzing && (
+            <div className="py-16 text-center rounded-xl" style={CARD}>
+              <span className="font-mono text-[40px]" style={{ color: "var(--fg-mute)", opacity: 0.3 }}>⌕</span>
+              <p className="font-semibold mt-4" style={{ color: "var(--fg)" }}>
+                {analyzeMode === "audit" ? "Audit SEO on-page" : analyzeMode === "tech" ? "Santé technique" : "SEO Intelligence"}
+              </p>
+              <p className="text-[13px] mt-1" style={{ color: "var(--fg-mute)" }}>
+                Entrez une URL ci-dessus et lancez l&apos;analyse.
+              </p>
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-            SANTÉ TECHNIQUE TAB
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="technical" className="space-y-6">
-          {/* Input */}
-          <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-gray-900 flex items-center gap-2">
-                <Gauge className="h-5 w-5 text-emerald-600" />
-                Score de Santé Technique
-              </CardTitle>
-              <CardDescription>
-                Analyse PageSpeed + Core Web Vitals + recommandations IA
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-3">
-                <Input
-                  placeholder="https://votre-site.fr"
-                  value={technicalUrl}
-                  onChange={(e) => setTechnicalUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleTechnicalAudit()}
-                  className="bg-white/60 border-gray-200 text-gray-900"
-                />
-                <Button
-                  onClick={handleTechnicalAudit}
-                  disabled={isTechAuditing || !technicalUrl.trim()}
-                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 whitespace-nowrap"
-                >
-                  {isTechAuditing ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Activity className="h-4 w-4 mr-2" />
-                  )}
-                  Analyser
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Results */}
-          {technicalReport && (
-            <div className="space-y-6">
-              {/* Score + Category */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm sm:col-span-1">
-                  <CardContent className="pt-6 text-center">
-                    <div
-                      className={`text-5xl font-black mb-2 ${
-                        technicalReport.performanceScore >= 90
-                          ? "text-emerald-600"
-                          : technicalReport.performanceScore >= 50
-                          ? "text-amber-500"
-                          : "text-red-500"
-                      }`}
-                    >
-                      {technicalReport.performanceScore}
-                    </div>
-                    <p className="text-sm text-gray-500">Score Performance</p>
-                    <Badge
-                      className={`mt-2 ${
-                        technicalReport.overallCategory === "FAST"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : technicalReport.overallCategory === "AVERAGE"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {technicalReport.overallCategory === "FAST"
-                        ? "Rapide"
-                        : technicalReport.overallCategory === "AVERAGE"
-                        ? "Moyen"
-                        : technicalReport.overallCategory === "SLOW"
-                        ? "Lent"
-                        : "Inconnu"}
-                    </Badge>
-                  </CardContent>
-                </Card>
-
-                {/* Core Web Vitals */}
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm sm:col-span-2">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base text-gray-900">Core Web Vitals</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-3">
-                      {(
-                        [
-                          { key: "lcp", label: "LCP" },
-                          { key: "tbt", label: "TBT" },
-                          { key: "cls", label: "CLS" },
-                          { key: "fcp", label: "FCP" },
-                          { key: "speedIndex", label: "Speed Index" },
-                          { key: "ttfb", label: "TTFB" },
-                        ] as { key: keyof typeof technicalReport.vitals; label: string }[]
-                      ).map(({ key, label }) => {
-                        const vital = technicalReport.vitals[key];
-                        return (
-                          <div
-                            key={key}
-                            className={`flex items-center justify-between p-2 rounded-lg border ${
-                              vital.status === "good"
-                                ? "bg-emerald-50 border-emerald-200"
-                                : vital.status === "needs-improvement"
-                                ? "bg-amber-50 border-amber-200"
-                                : "bg-red-50 border-red-200"
-                            }`}
-                          >
-                            <span className="text-xs font-semibold text-gray-600">{label}</span>
-                            <div className="text-right">
-                              <span
-                                className={`text-xs font-bold ${
-                                  vital.status === "good"
-                                    ? "text-emerald-700"
-                                    : vital.status === "needs-improvement"
-                                    ? "text-amber-700"
-                                    : "text-red-700"
-                                }`}
-                              >
-                                {vital.value}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Opportunities */}
-              {technicalReport.opportunities.length > 0 && (
-                <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base text-gray-900 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      Opportunités d&apos;optimisation
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {technicalReport.opportunities.map((opp, i) => (
-                        <div
-                          key={i}
-                          className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200/60"
-                        >
-                          <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900">{opp.title}</p>
-                            {opp.savings && (
-                              <p className="text-xs text-amber-600 mt-0.5">Économie estimée: {opp.savings}</p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* AI Recommendations */}
-              <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base text-gray-900 flex items-center gap-2">
-                    <Brain className="h-4 w-4 text-emerald-600" />
-                    Analyse IA & Recommandations
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="bg-white/50 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                    {technicalReport.aiRecommendations}
-                  </div>
-                  <p className="text-xs text-gray-400 mt-3">
-                    Analysé le {new Date(technicalReport.analyzedAt).toLocaleString("fr-FR")} · Mobile
-                  </p>
-                </CardContent>
-              </Card>
+      {/* ══════════════════════════════════════════
+          TAB: Réglages
+      ══════════════════════════════════════════ */}
+      {activeTab === "settings" && (
+        <div className="space-y-6 max-w-2xl">
+          {/* Setup done banner */}
+          {seoSetupDone && (
+            <div className="flex items-center gap-3 p-3 rounded-xl"
+              style={{ background: E.soft, border: `1px solid ${E.line}` }}>
+              <CheckCircle className="h-4 w-4 shrink-0" style={{ color: E.fg }} />
+              <p className="text-[13px] font-medium" style={{ color: E.fg }}>
+                Configuration active — la génération d&apos;articles est débloquée.
+              </p>
             </div>
           )}
 
-          {!technicalReport && !isTechAuditing && (
-            <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-              <CardContent className="text-center py-16">
-                <Gauge className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 font-medium">Entrez une URL pour analyser sa santé technique</p>
-                <p className="text-sm text-gray-400 mt-1">
-                  PageSpeed Insights · Core Web Vitals · LCP · CLS · TBT
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+          {/* Step 1 — Content mode */}
+          <div className="p-6 rounded-xl space-y-4" style={CARD}>
+            <div>
+              <p className="text-[11px] font-mono uppercase tracking-wider" style={{ color: E.fg }}>Étape 1 — Type de contenu</p>
+              <p className="text-[13px] mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                Choisissez le mode qui correspond à votre stratégie.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {([
+                { mode: "article" as SeoContentMode, icon: "📝", label: "Article", badge: "Standard" },
+                { mode: "affiliation" as SeoContentMode, icon: "🔗", label: "Affiliation", badge: "Conversion" },
+                { mode: "ecommerce" as SeoContentMode, icon: "🛒", label: "E-commerce", badge: "Ventes" },
+                { mode: "discovery" as SeoContentMode, icon: "🔥", label: "Discovery", badge: "Viral" },
+                { mode: "local" as SeoContentMode, icon: "📍", label: "Local SEO", badge: "Local" },
+              ] as const).map(({ mode, icon, label, badge }) => (
+                <button key={mode} type="button" onClick={() => setSetupContentMode(mode)}
+                  className="relative text-left rounded-xl border-2 p-3.5 transition-all"
+                  style={setupContentMode === mode
+                    ? { borderColor: E.fg, background: E.soft }
+                    : { borderColor: "var(--line)", background: "var(--bg-elev)" }}>
+                  {setupContentMode === mode && (
+                    <CheckCircle className="absolute top-2.5 right-2.5 h-4 w-4" style={{ color: E.fg }} />
+                  )}
+                  <div className="text-xl mb-1.5">{icon}</div>
+                  <p className="font-semibold text-[13px]" style={{ color: "var(--fg)" }}>{label}</p>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded mt-1 inline-block"
+                    style={{ background: "oklch(0.21 0.03 260 / 0.06)", color: "var(--fg-mute)" }}>
+                    {badge}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            TOPIC CLUSTER TAB
-        ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="cluster" className="space-y-6">
-          <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-gray-900 flex items-center gap-2">
-                <Network className="h-5 w-5 text-emerald-600" />
-                Topic Cluster — 1 pilier → 5 articles satellites
-              </CardTitle>
-              <CardDescription>
-                Entrez un mot-clé pilier → l&apos;IA conçoit le cluster SEO et lance la génération des 6 articles en parallèle
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Mot-clé pilier</label>
-                  <Input
-                    placeholder="Ex: marketing automation"
-                    value={clusterKeyword}
-                    onChange={(e) => setClusterKeyword(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleGenerateCluster()}
-                    className="bg-white/60 border-gray-200 text-gray-900"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Secteur / contexte (optionnel)</label>
-                  <Input
-                    placeholder="Ex: SaaS B2B, e-commerce, RH..."
-                    value={clusterContext}
-                    onChange={(e) => setClusterContext(e.target.value)}
-                    className="bg-white/60 border-gray-200 text-gray-900"
-                  />
-                </div>
+          {/* Step 2 — Business activity + Site type */}
+          <div className="p-6 rounded-xl space-y-4" style={CARD}>
+            <div>
+              <p className="text-[11px] font-mono uppercase tracking-wider" style={{ color: E.fg }}>Étape 2 — Activité & type de site</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Décrivez votre activité / offre principale</Label>
+              <Input
+                placeholder="Ex : Logiciel CRM pour PME, Boutique de vêtements bio..."
+                value={setupBusinessActivity}
+                onChange={(e) => setSetupBusinessActivity(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {([
+                { value: "saas", icon: "💻", label: "SaaS / App" },
+                { value: "ecommerce", icon: "🛍️", label: "E-commerce" },
+                { value: "services", icon: "🤝", label: "Services" },
+                { value: "blog_affiliation", icon: "✍️", label: "Blog / Affil." },
+                { value: "media", icon: "📰", label: "Média" },
+                { value: "local_business", icon: "📍", label: "Local" },
+                { value: "marketplace", icon: "🏪", label: "Marketplace" },
+                { value: "portfolio", icon: "🎨", label: "Portfolio" },
+              ] as const).map(({ value, icon, label }) => (
+                <button key={value} type="button" onClick={() => setSetupSiteType(value as SeoSiteType)}
+                  className="text-left rounded-lg border-2 p-2.5 transition-all"
+                  style={setupSiteType === value
+                    ? { borderColor: E.fg, background: E.soft }
+                    : { borderColor: "var(--line)", background: "var(--bg-elev)" }}>
+                  <div className="text-lg mb-0.5">{icon}</div>
+                  <p className="font-semibold text-[11.5px]" style={{ color: "var(--fg)" }}>{label}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Step 3 — URL */}
+          <div className="p-6 rounded-xl space-y-4" style={CARD}>
+            <p className="text-[11px] font-mono uppercase tracking-wider" style={{ color: E.fg }}>Étape 3 — URL de votre site</p>
+            <div className="space-y-2">
+              <Label htmlFor="setup-domain">URL du site</Label>
+              <Input id="setup-domain" type="url" placeholder="https://monsite.com"
+                value={setupDomainUrl} onChange={(e) => setSetupDomainUrl(e.target.value)}
+                className="font-mono text-sm" />
+            </div>
+          </div>
+
+          {/* Step 4 — Strategy */}
+          <div className="p-6 rounded-xl space-y-5" style={CARD}>
+            <p className="text-[11px] font-mono uppercase tracking-wider" style={{ color: E.fg }}>Étape 4 — Stratégie de publication</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Fréquence de publication</Label>
+                <Select value={setupFrequency} onValueChange={(v) => setSetupFrequency(v as SeoPublicationStrategy["frequency"])}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1/week">1 article / semaine</SelectItem>
+                    <SelectItem value="2/week">2 articles / semaine</SelectItem>
+                    <SelectItem value="3/week">3 articles / semaine</SelectItem>
+                    <SelectItem value="daily">1 article / jour</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Button
-                onClick={handleGenerateCluster}
-                disabled={isGeneratingCluster || !clusterKeyword.trim()}
-                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
-              >
-                {isGeneratingCluster ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Génération du cluster…
-                  </>
-                ) : (
-                  <>
-                    <Network className="h-4 w-4 mr-2" />
-                    Générer le Topic Cluster (6 articles)
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
+              <div className="space-y-2">
+                <Label>Langue des articles</Label>
+                <Select value={setupLanguage} onValueChange={(v) => setSetupLanguage(v as SeoPublicationStrategy["language"])}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fr">Français</SelectItem>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="es">Español</SelectItem>
+                    <SelectItem value="de">Deutsch</SelectItem>
+                    <SelectItem value="pt">Português</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-          {cluster && (
-            <div className="space-y-4">
-              {/* Strategy */}
-              <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200/60 shadow-sm">
-                <CardContent className="pt-5">
-                  <div className="flex items-start gap-3">
-                    <Sparkles className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800 mb-1">{cluster.strategy}</p>
-                      {clusterBatchId && (
-                        <p className="text-xs text-emerald-600">
-                          ✓ 6 articles en génération — suivez l&apos;avancement dans &quot;Mes Articles&quot;
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="space-y-2">
+              <Label htmlFor="setup-audience" className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" style={{ color: "var(--fg-mute)" }} />
+                Audience cible
+              </Label>
+              <Textarea id="setup-audience"
+                placeholder="Ex : PME françaises cherchant à automatiser leur prospection commerciale"
+                value={setupTargetAudience} onChange={(e) => setSetupTargetAudience(e.target.value)} rows={2} />
+            </div>
 
-              {/* Pillar article */}
-              <Card className="bg-white/70 backdrop-blur-sm border-emerald-300/60 shadow-sm ring-1 ring-emerald-200">
-                <CardContent className="pt-5">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 rounded-lg bg-emerald-100 shrink-0">
-                      <FileText className="h-4 w-4 text-emerald-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-bold uppercase tracking-wide text-emerald-600">Article Pilier</span>
-                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">3 000+ mots</span>
-                      </div>
-                      <p className="text-sm font-semibold text-gray-900">{cluster.pillarTitle}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{cluster.pillarKeyword}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Satellite articles */}
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {cluster.supportingKeywords.map((sat, i) => (
-                  <Card key={i} className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-                    <CardContent className="pt-4">
-                      <div className="flex items-start gap-2">
-                        <div className="p-1.5 rounded-lg bg-gray-100 shrink-0">
-                          <Link2 className="h-3.5 w-3.5 text-gray-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Satellite {i + 1}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              sat.intent === "informational" ? "bg-sky-100 text-sky-700" :
-                              sat.intent === "commercial" ? "bg-amber-100 text-amber-700" :
-                              "bg-purple-100 text-purple-700"
-                            }`}>
-                              {sat.intent}
-                            </span>
-                          </div>
-                          <p className="text-sm font-semibold text-gray-900 leading-snug">{sat.keyword}</p>
-                          <p className="text-xs text-gray-500 mt-1">{sat.angle}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Flag className="h-3.5 w-3.5" style={{ color: "var(--fg-mute)" }} />
+                Objectifs SEO
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "organic_traffic", label: "Trafic organique" },
+                  { value: "lead_gen", label: "Génération de leads" },
+                  { value: "brand_awareness", label: "Notoriété" },
+                  { value: "conversion", label: "Conversion" },
+                  { value: "thought_leadership", label: "Expertise métier" },
+                ].map(({ value, label }) => (
+                  <button key={value} type="button" onClick={() => toggleGoal(value)}
+                    className="rounded-full px-3 py-1 text-xs font-medium border transition-colors"
+                    style={setupGoals.includes(value)
+                      ? { background: E.fg, color: "white", borderColor: E.fg }
+                      : { background: "var(--bg-elev)", color: "var(--fg-dim)", borderColor: "var(--line)" }}>
+                    {label}
+                  </button>
                 ))}
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Columns3 className="h-3.5 w-3.5" style={{ color: "var(--fg-mute)" }} />
+                Piliers de contenu
+              </Label>
+              <div className="space-y-2">
+                {setupPillars.map((pillar, i) => (
+                  <Input key={i} placeholder={`Pilier ${i + 1} (ex : Automatisation marketing)`}
+                    value={pillar}
+                    onChange={(e) => {
+                      const next = [...setupPillars];
+                      next[i] = e.target.value;
+                      setSetupPillars(next);
+                    }}
+                  />
+                ))}
+                {setupPillars.length < 6 && (
+                  <button type="button" onClick={() => setSetupPillars([...setupPillars, ""])}
+                    className="text-xs flex items-center gap-1" style={{ color: E.fg }}>
+                    <Plus className="h-3 w-3" /> Ajouter un pilier
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Save button */}
+          <div className="flex items-center gap-3">
+            <button onClick={handleSaveSetup} disabled={isSavingSetup}
+              className="px-5 py-2.5 rounded-lg font-semibold text-[13px] flex items-center gap-2 disabled:opacity-50"
+              style={{ background: E.fg, color: "white" }}>
+              {isSavingSetup ? (
+                <><Loader2 className="h-4 w-4 animate-spin" />Sauvegarde…</>
+              ) : (
+                <><CheckCircle className="h-4 w-4" />Valider la configuration</>
+              )}
+            </button>
+          </div>
+
+          {/* Strategy tab */}
+          {workspaceId && (
+            <div className="pt-4 border-t" style={{ borderColor: "var(--line)" }}>
+              <SeoStrategyTab workspaceId={workspaceId} />
+            </div>
           )}
+        </div>
+      )}
 
-          {!cluster && !isGeneratingCluster && (
-            <Card className="bg-white/70 backdrop-blur-sm border-gray-200/60 shadow-sm">
-              <CardContent className="text-center py-16">
-                <Network className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 font-medium">Entrez un mot-clé pilier</p>
-                <p className="text-sm text-gray-400 mt-1">
-                  L&apos;IA conçoit l&apos;architecture du cluster et lance la génération des 6 articles
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* ─── Stratégie Tab ─── */}
-        <TabsContent value="strategy" className="space-y-6">
-          {workspaceId && <SeoStrategyTab workspaceId={workspaceId} />}
-        </TabsContent>
-
-      </Tabs>
-
-      {/* ─── Preview Dialog ─── */}
+      {/* Preview Dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] bg-white/95 backdrop-blur-xl border-gray-200/60 shadow-xl">
+        <DialogContent className="max-w-4xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle className="text-gray-900 text-lg">Previsualisation de l&apos;article</DialogTitle>
+            <DialogTitle>Prévisualisation de l&apos;article</DialogTitle>
           </DialogHeader>
-          <div className="overflow-y-auto max-h-[60vh] prose prose-gray max-w-none text-gray-700">
+          <div className="overflow-y-auto max-h-[60vh] prose prose-gray max-w-none">
             <div className="whitespace-pre-wrap font-mono text-sm leading-relaxed">
               {previewContent}
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                navigator.clipboard.writeText(previewContent);
-                toast.success("Contenu copie dans le presse-papier");
-              }}
-              className="border-gray-200 text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200"
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              Copier le contenu
+            <Button variant="outline" onClick={() => {
+              navigator.clipboard.writeText(previewContent);
+              toast.success("Contenu copié dans le presse-papier");
+            }}>
+              <Copy className="h-4 w-4 mr-2" />Copier le contenu
             </Button>
           </DialogFooter>
         </DialogContent>

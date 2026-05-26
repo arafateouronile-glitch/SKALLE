@@ -23,10 +23,10 @@ type Tab = typeof TABS[number]["id"];
 type StatusFilter = "Tous" | "Publié" | "Programmé" | "Brouillon";
 
 const TEMPLATES = [
-  { id: "seo",    title: "Article SEO",       desc: "Long format optimisé, plan + preview avant validation", credits: 8,  icon: FileText, tab: "articles" as Tab },
-  { id: "posts",  title: "30 Posts sociaux",  desc: "Batch personnalisé sur le persona de vos clients",     credits: 15, icon: Sparkles, tab: "posts"    as Tab },
-  { id: "image",  title: "Image de blog",     desc: "Visuel HD 16:9 optimisé pour article",                 credits: 5,  icon: Image,    tab: "images"   as Tab },
-  { id: "remix",  title: "Remixer un contenu", desc: "Posts viraux → threads, carrousels, scripts vidéo",   credits: 3,  icon: RotateCcw, tab: "posts"   as Tab },
+  { id: "generate", title: "Générer un post",  desc: "Hook psychologique + 6 déclencheurs émotionnels → post prêt à publier", credits: 3,  icon: Sparkles,  tab: "posts"    as Tab },
+  { id: "seo",      title: "Article SEO",       desc: "Long format optimisé, plan + preview avant validation",                  credits: 8,  icon: FileText,  tab: "articles" as Tab },
+  { id: "posts",    title: "30 Posts sociaux",  desc: "Batch personnalisé sur le persona de vos clients",                       credits: 15, icon: RotateCcw, tab: "posts"    as Tab },
+  { id: "image",    title: "Image de blog",     desc: "Visuel HD 16:9 optimisé pour article",                                   credits: 5,  icon: Image,     tab: "images"   as Tab },
 ];
 
 type Creation = {
@@ -147,6 +147,23 @@ export default function StudioPage() {
   const [creations, setCreations]   = useState<Creation[]>(BASE_CREATIONS);
   const [creating, setCreating]     = useState(false);
   const [created, setCreated]       = useState(false);
+
+  // Load drafts saved from Remix page (localStorage)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("studio_drafts");
+      if (!raw) return;
+      const drafts = JSON.parse(raw) as Creation[];
+      if (drafts.length > 0) {
+        setCreations((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const newDrafts = drafts.filter((d) => !existingIds.has(d.id));
+          return newDrafts.length > 0 ? [...newDrafts, ...prev] : prev;
+        });
+        setActiveTab("posts");
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Wizard state
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -398,16 +415,11 @@ export default function StudioPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {TEMPLATES.map((tpl) => {
               const Icon = tpl.icon;
-              return (
-                <button key={tpl.id}
-                  className="text-left p-4 rounded-[12px] transition-all hover:-translate-y-0.5 hover:brightness-[0.97]"
-                  style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
-                  onClick={() => {
-                    if (tpl.id === "remix") { router.push("/marketing-os/studio/remix"); return; }
-                    if (tpl.id === "posts") { openWizard(); return; }
-                    setPrompt(tpl.title); setActiveTab(tpl.tab); inputRef.current?.focus();
-                  }}
-                >
+              const href = tpl.id === "generate" ? "/marketing-os/studio/generate"
+                         : tpl.id === "seo"      ? "/marketing-os/seo-factory"
+                         : null;
+              const inner = (
+                <>
                   <div className="flex items-start justify-between mb-2">
                     <Icon className="h-4 w-4" style={{ color: "var(--emerald-fg)" }} />
                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
@@ -417,6 +429,27 @@ export default function StudioPage() {
                   </div>
                   <p className="text-[13px] font-semibold mb-0.5" style={{ color: "var(--fg)" }}>{tpl.title}</p>
                   <p className="text-[11.5px] leading-snug" style={{ color: "var(--fg-mute)" }}>{tpl.desc}</p>
+                </>
+              );
+              if (href) {
+                return (
+                  <Link key={tpl.id} href={href}
+                    className="text-left p-4 rounded-[12px] transition-all hover:-translate-y-0.5 hover:brightness-[0.97] block"
+                    style={{ background: "var(--bg)", border: "1px solid var(--line)" }}>
+                    {inner}
+                  </Link>
+                );
+              }
+              return (
+                <button key={tpl.id}
+                  className="text-left p-4 rounded-[12px] transition-all hover:-translate-y-0.5 hover:brightness-[0.97]"
+                  style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
+                  onClick={() => {
+                    if (tpl.id === "posts") { openWizard(); return; }
+                    setPrompt(tpl.title); setActiveTab(tpl.tab); inputRef.current?.focus();
+                  }}
+                >
+                  {inner}
                 </button>
               );
             })}
