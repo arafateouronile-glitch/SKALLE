@@ -102,6 +102,10 @@ const HOOK_PATTERNS: { type: HookType; patterns: RegExp[] }[] = [
   { type: "PREDICTION", patterns: [/\b(dans \d+ ans?|en 202\d|dans le futur|prediction|prédi[ct])\b/i] },
 ];
 
+/** Strip null bytes that PostgreSQL UTF-8 rejects (common in Apify Twitter/LinkedIn responses) */
+function sanitize(s: string | null | undefined): string {
+  return (s ?? "").replace(/\x00/g, "");
+}
 function detectHookType(content: string): HookType {
   const first300 = content.slice(0, 300);
   for (const { type, patterns } of HOOK_PATTERNS) {
@@ -166,16 +170,29 @@ export async function getApifyRunStatus(runId: string): Promise<ApifyRunStatus> 
   return json.data.status as ApifyRunStatus;
 }
 
-/** Récupère les items du dataset d'un run terminé */
-export async function fetchApifyRunItems<T>(runId: string): Promise<T[]> {
+/** Récupère les items du dataset d'un run terminé (max 50 pour limiter les upserts) */
+export async function fetchApifyRunItems<T>(runId: string, limit = 50): Promise<T[]> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN manquant");
 
-  const res = await fetch(`${APIFY_API_BASE}/actor-runs/${runId}/dataset/items?token=${token}&clean=true`, {
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`Apify fetch items failed (${res.status})`);
-  return res.json() as Promise<T[]>;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+
+  try {
+    const res = await fetch(
+      `${APIFY_API_BASE}/actor-runs/${runId}/dataset/items?token=${token}&clean=true&limit=${limit}`,
+      { signal: controller.signal }
+    );
+    if (!res.ok) throw new Error(`Apify fetch items failed (${res.status})`);
+    // Race the body read too — AbortSignal alone doesn't always stop res.json()
+    const body = await Promise.race([
+      res.json() as Promise<T[]>,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("dataset read timeout")), 18_000)),
+    ]);
+    return body;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function runApifyActor<T>(actorId: string, input: unknown): Promise<T[]> {
@@ -253,44 +270,33 @@ export async function collectHarvestLinkedInRun(runId: string, queries: string[]
   }
 
   const items = await fetchApifyRunItems<HarvestLinkedInPost>(runId);
-  let saved = 0;
 
-  for (const item of items) {
-    const content = item.text ?? item.content ?? "";
-    const url = item.url ?? item.postUrl ?? "";
-    if (!content || !url) continue;
-
+  const rows = items.flatMap((item) => {
+    const content = sanitize(item.text ?? item.content);
+    const url     = sanitize(item.url ?? item.postUrl);
+    if (!content || !url) return [];
     const likes    = item.numLikes    ?? item.likesCount    ?? 0;
     const comments = item.numComments ?? item.commentsCount ?? 0;
     const shares   = item.numShares   ?? item.sharesCount   ?? 0;
     const views    = item.numViews    ?? item.viewsCount;
     const niche    = queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
     const rawDate  = item.postedDate  ?? item.postedAt;
+    return [{
+      platform: "LINKEDIN" as const,
+      content,
+      authorName:   sanitize(item.authorName ?? item.authorFullName ?? "Anonyme"),
+      authorAvatar: item.authorProfilePicture ?? item.authorAvatar ?? null,
+      likes, comments, shares, views: views ?? null,
+      viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
+      postUrl: url,
+      postedAt: rawDate ? new Date(rawDate) : null,
+      hookType: detectHookType(content),
+      niche,
+    }];
+  });
 
-    try {
-      await prisma.viralPost.upsert({
-        where: { postUrl: url },
-        update: {
-          likes, comments, shares, views,
-          viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
-        },
-        create: {
-          platform: "LINKEDIN",
-          content,
-          authorName:   item.authorName ?? item.authorFullName ?? "Anonyme",
-          authorAvatar: item.authorProfilePicture ?? item.authorAvatar,
-          likes, comments, shares, views,
-          viralScore: calcViralScore("LINKEDIN", likes, comments, shares, views),
-          postUrl: url,
-          postedAt: rawDate ? new Date(rawDate) : null,
-          hookType: detectHookType(content),
-          niche,
-        },
-      });
-      saved++;
-    } catch { /* duplicate */ }
-  }
-  return saved;
+  const result = await prisma.viralPost.createMany({ data: rows, skipDuplicates: true });
+  return result.count;
 }
 
 async function scrapeTwitter(queries: string[], maxPosts: number): Promise<number> {
@@ -400,39 +406,38 @@ export async function collectLinkedInRun(runId: string, queries: string[]): Prom
 /** Sauvegarde les items Twitter d'un run Apify terminé */
 export async function collectTwitterRun(runId: string, queries: string[]): Promise<number> {
   const items = await fetchApifyRunItems<ApifyTwitterPost>(runId);
-  let saved = 0;
-  for (const item of items) {
-    const content = item.full_text ?? item.text ?? "";
-    const url = item.url ?? "";
-    if (!content || !url) continue;
-    const likes = item.favorite_count ?? 0;
-    const shares = item.retweet_count ?? 0;
-    const comments = item.reply_count ?? 0;
-    const views = item.views?.count;
-    const user = item.user ?? (item.author as typeof item.user);
+
+  const rows = items.flatMap((item) => {
+    const content = sanitize(item.full_text ?? item.text);
+    const url     = sanitize(item.url);
+    if (!content || !url) return [];
+    const likes    = item.favorite_count ?? 0;
+    const shares   = item.retweet_count  ?? 0;
+    const comments = item.reply_count    ?? 0;
+    const views    = item.views?.count;
+    const user     = item.user ?? (item.author as typeof item.user);
     const rawLocation = user?.location ?? (item.author as { location?: string })?.location;
-    const country = normalizeCountry(rawLocation);
-    const niche = item.searchTerm ?? queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
-    try {
-      await prisma.viralPost.upsert({
-        where: { postUrl: url },
-        update: { likes, comments, shares, views, viralScore: calcViralScore("TWITTER", likes, comments, shares, views), ...(country && { country }) },
-        create: {
-          platform: "TWITTER", content,
-          authorName: user?.name ?? "Anonyme",
-          authorHandle: (user as { screen_name?: string })?.screen_name ?? (user as { userName?: string })?.userName,
-          authorAvatar: (user as { profile_image_url_https?: string })?.profile_image_url_https ?? (user as { profilePicture?: string })?.profilePicture,
-          likes, comments, shares, views,
-          viralScore: calcViralScore("TWITTER", likes, comments, shares, views),
-          postUrl: url,
-          postedAt: item.created_at ?? item.createdAt ? new Date((item.created_at ?? item.createdAt)!) : null,
-          hookType: detectHookType(content), niche, country: country ?? null,
-        },
-      });
-      saved++;
-    } catch { /* duplicate */ }
-  }
-  return saved;
+    const country  = normalizeCountry(rawLocation);
+    const niche    = item.searchTerm ?? queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
+    const rawDate  = item.created_at ?? item.createdAt;
+    return [{
+      platform: "TWITTER" as const,
+      content,
+      authorName:   sanitize(user?.name ?? "Anonyme"),
+      authorHandle: sanitize((user as { screen_name?: string })?.screen_name ?? (user as { userName?: string })?.userName),
+      authorAvatar: (user as { profile_image_url_https?: string })?.profile_image_url_https ?? (user as { profilePicture?: string })?.profilePicture ?? null,
+      likes, comments, shares, views: views ?? null,
+      viralScore: calcViralScore("TWITTER", likes, comments, shares, views),
+      postUrl: url,
+      postedAt: rawDate ? new Date(rawDate) : null,
+      hookType: detectHookType(content),
+      niche,
+      country: country ?? null,
+    }];
+  });
+
+  const result = await prisma.viralPost.createMany({ data: rows, skipDuplicates: true });
+  return result.count;
 }
 
 /** Collecte et sauvegarde les posts d'un run apify~facebook-posts-scraper */
@@ -455,44 +460,33 @@ export async function collectFacebookRun(runId: string, queries: string[]): Prom
   }
 
   const items = await fetchApifyRunItems<ApifyFacebookPost>(runId);
-  let saved = 0;
 
-  for (const item of items) {
-    if (item.error) continue;
-    const content = item.text?.trim() ?? "";
-    const url = item.url ?? item.topLevelUrl ?? "";
-    if (!content || !url) continue;
-
+  const rows = items.flatMap((item) => {
+    if (item.error) return [];
+    const content = sanitize(item.text?.trim());
+    const url     = sanitize(item.url ?? item.topLevelUrl);
+    if (!content || !url) return [];
     const likes    = item.likes ?? item.reactionLikeCount ?? 0;
     const comments = item.comments ?? 0;
     const shares   = item.shares ?? 0;
     const niche    = queries.find((q) => content.toLowerCase().includes(q.toLowerCase())) ?? queries[0];
     const rawDate  = item.time ?? (item.timestamp ? new Date(item.timestamp * 1000).toISOString() : undefined);
+    return [{
+      platform: "FACEBOOK" as const,
+      content,
+      authorName:   sanitize(item.user?.name ?? item.pageName ?? "Anonyme"),
+      authorAvatar: item.user?.profilePic ?? null,
+      likes, comments, shares,
+      viralScore: calcViralScore("FACEBOOK", likes, comments, shares),
+      postUrl: url,
+      postedAt: rawDate ? new Date(rawDate) : null,
+      hookType: detectHookType(content),
+      niche,
+    }];
+  });
 
-    try {
-      await prisma.viralPost.upsert({
-        where: { postUrl: url },
-        update: {
-          likes, comments, shares,
-          viralScore: calcViralScore("FACEBOOK", likes, comments, shares),
-        },
-        create: {
-          platform: "FACEBOOK",
-          content,
-          authorName: item.user?.name ?? item.pageName ?? "Anonyme",
-          authorAvatar: item.user?.profilePic,
-          likes, comments, shares,
-          viralScore: calcViralScore("FACEBOOK", likes, comments, shares),
-          postUrl: url,
-          postedAt: rawDate ? new Date(rawDate) : null,
-          hookType: detectHookType(content),
-          niche,
-        },
-      });
-      saved++;
-    } catch { /* duplicate */ }
-  }
-  return saved;
+  const result = await prisma.viralPost.createMany({ data: rows, skipDuplicates: true });
+  return result.count;
 }
 
 export async function scrapeViralPosts(options: ScrapeOptions): Promise<ScrapeResult> {

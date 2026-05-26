@@ -30,18 +30,52 @@ const TEMPLATES = [
 ];
 
 type Creation = {
-  id: number; title: string; type: string;
+  id: string | number; title: string; type: string;
   status: StatusFilter; date: string; statusColor: string; tab: Tab;
   content?: string; network?: string; hookType?: string;
 };
 
+interface DbPost {
+  id: string;
+  type: string;
+  title: string | null;
+  content: string;
+  status: "DRAFT" | "SCHEDULED" | "PUBLISHED" | "FAILED";
+  createdAt: string;
+  sources: unknown;
+}
+
+function relDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 2) return "à l'instant";
+  if (min < 60) return `il y a ${min}min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `il y a ${h}h`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "hier";
+  return `il y a ${d}j`;
+}
+
+function mapStatus(s: DbPost["status"]): StatusFilter {
+  if (s === "SCHEDULED") return "Programmé";
+  if (s === "PUBLISHED") return "Publié";
+  return "Brouillon";
+}
+
+function mapStatusColor(s: DbPost["status"]): string {
+  if (s === "SCHEDULED") return "violet";
+  if (s === "PUBLISHED") return "emerald";
+  return "amber";
+}
+
 const BASE_CREATIONS: Creation[] = [
-  { id: 1, title: "10 stratégies SEO pour 2026",       type: "Article", status: "Publié",    date: "hier",          statusColor: "emerald", tab: "articles" },
-  { id: 2, title: "Thread LinkedIn : AI Sales",         type: "Post",    status: "Programmé", date: "demain",        statusColor: "violet",  tab: "posts"    },
-  { id: 3, title: "Guide Signals Radar — B2B",          type: "Article", status: "Brouillon", date: "aujourd'hui",   statusColor: "amber",   tab: "articles" },
-  { id: 4, title: "30 posts automation marketing",      type: "Posts",   status: "Publié",    date: "il y a 2j",     statusColor: "emerald", tab: "posts"    },
-  { id: 5, title: "Image couverture guide SEO",         type: "Image",   status: "Brouillon", date: "aujourd'hui",   statusColor: "amber",   tab: "images"   },
-  { id: 6, title: "Remixage article lead scoring",      type: "Remix",   status: "Programmé", date: "cette semaine", statusColor: "violet",  tab: "posts"    },
+  { id: "base-1", title: "10 stratégies SEO pour 2026",       type: "Article", status: "Publié",    date: "hier",          statusColor: "emerald", tab: "articles" },
+  { id: "base-2", title: "Thread LinkedIn : AI Sales",         type: "Post",    status: "Programmé", date: "demain",        statusColor: "violet",  tab: "posts"    },
+  { id: "base-3", title: "Guide Signals Radar — B2B",          type: "Article", status: "Brouillon", date: "aujourd'hui",   statusColor: "amber",   tab: "articles" },
+  { id: "base-4", title: "30 posts automation marketing",      type: "Posts",   status: "Publié",    date: "il y a 2j",     statusColor: "emerald", tab: "posts"    },
+  { id: "base-5", title: "Image couverture guide SEO",         type: "Image",   status: "Brouillon", date: "aujourd'hui",   statusColor: "amber",   tab: "images"   },
+  { id: "base-6", title: "Remixage article lead scoring",      type: "Remix",   status: "Programmé", date: "cette semaine", statusColor: "violet",  tab: "posts"    },
 ];
 
 const STATUS_FILTERS: StatusFilter[] = ["Tous", "Publié", "Programmé", "Brouillon"];
@@ -148,7 +182,7 @@ export default function StudioPage() {
   const [creating, setCreating]     = useState(false);
   const [created, setCreated]       = useState(false);
 
-  // Load drafts saved from Remix page (localStorage)
+  // Load drafts saved from Remix/Generate pages (localStorage)
   useEffect(() => {
     try {
       const raw = localStorage.getItem("studio_drafts");
@@ -156,13 +190,40 @@ export default function StudioPage() {
       const drafts = JSON.parse(raw) as Creation[];
       if (drafts.length > 0) {
         setCreations((prev) => {
-          const existingIds = new Set(prev.map((c) => c.id));
-          const newDrafts = drafts.filter((d) => !existingIds.has(d.id));
+          const existingIds = new Set(prev.map((c) => String(c.id)));
+          const newDrafts = drafts.filter((d) => !existingIds.has(String(d.id)));
           return newDrafts.length > 0 ? [...newDrafts, ...prev] : prev;
         });
         setActiveTab("posts");
       }
     } catch { /* ignore */ }
+  }, []);
+
+  // Load previously generated social posts from DB
+  useEffect(() => {
+    fetch("/api/social/posts")
+      .then((r) => r.json() as Promise<{ posts?: DbPost[] }>)
+      .then(({ posts }) => {
+        if (!posts?.length) return;
+        const dbCreations: Creation[] = posts.map((p) => ({
+          id: p.id,
+          title: p.title ?? p.content.slice(0, 60),
+          type: `Post ${p.type}`,
+          status: mapStatus(p.status),
+          date: relDate(p.createdAt),
+          statusColor: mapStatusColor(p.status),
+          tab: "posts" as Tab,
+          content: p.content,
+          network: p.type,
+          hookType: (p.sources as Record<string, string> | null)?.hookType,
+        }));
+        setCreations((prev) => {
+          const existingIds = new Set(prev.map((c) => String(c.id)));
+          const newFromDb = dbCreations.filter((c) => !existingIds.has(String(c.id)));
+          return newFromDb.length > 0 ? [...prev, ...newFromDb] : prev;
+        });
+      })
+      .catch(() => {});
   }, []);
 
   // Wizard state
@@ -199,7 +260,7 @@ export default function StudioPage() {
         "Image de blog": "images", "Remixer un contenu": "posts",
       };
       const newItem: Creation = {
-        id: Date.now(), title: prompt,
+        id: `local-${Date.now()}`, title: prompt,
         type: tabMap[prompt] ?? "Article", status: "Brouillon",
         date: "à l'instant", statusColor: "amber",
         tab: tabMap[prompt] ?? activeTab,
@@ -247,6 +308,9 @@ export default function StudioPage() {
     setGenProgress(0);
     setGenStatus("Initialisation…");
 
+    // Local accumulator — avoids reading stale state inside setState updaters
+    const localPosts: StreamPost[] = [];
+
     try {
       const res = await fetch("/api/social/batch-posts", {
         method: "POST",
@@ -289,30 +353,30 @@ export default function StudioPage() {
           if (eventName === "status") {
             setGenStatus(data.message as string);
           } else if (eventName === "post") {
-            setStreamedPosts((prev) => [...prev, data as unknown as StreamPost]);
+            const post = data as unknown as StreamPost;
+            localPosts.push(post);
+            setStreamedPosts((prev) => [...prev, post]);
           } else if (eventName === "progress") {
             setGenProgress(Math.round(((data.generated as number) / 30) * 100));
           } else if (eventName === "done") {
             setGenDone(true);
             setGenProgress(100);
-            // Add all generated posts to creations
-            setStreamedPosts((prev) => {
-              const newCreations: Creation[] = prev.map((p) => ({
-                id: Date.now() + p.index,
-                title: p.hook.slice(0, 60),
-                type: `Post ${p.network}`,
-                status: "Brouillon" as StatusFilter,
-                date: "à l'instant",
-                statusColor: "emerald",
-                tab: "posts" as Tab,
-                content: p.content,
-                network: p.network,
-                hookType: p.hookType,
-              }));
-              setCreations((c) => [...newCreations, ...c]);
-              setActiveTab("posts");
-              return prev;
-            });
+            // Map local accumulator → creations (no nested setState)
+            const ts = Date.now();
+            const newCreations: Creation[] = localPosts.map((p) => ({
+              id: `gen-${ts}-${p.index}`,
+              title: p.hook.slice(0, 60),
+              type: `Post ${p.network}`,
+              status: "Brouillon" as StatusFilter,
+              date: "à l'instant",
+              statusColor: "emerald",
+              tab: "posts" as Tab,
+              content: p.content,
+              network: p.network,
+              hookType: p.hookType,
+            }));
+            setCreations((c) => [...newCreations, ...c]);
+            setActiveTab("posts");
           } else if (eventName === "error") {
             setGenError(data.message as string);
           }

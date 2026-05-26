@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/modules/app-topbar";
-import { ArrowLeft, Search, Heart, MessageCircle, Repeat2, Sparkles, Copy, Check, RefreshCw, AlertCircle } from "lucide-react";
+import { ArrowLeft, Search, Heart, MessageCircle, Repeat2, Sparkles, Copy, Check, RefreshCw, AlertCircle, BookmarkCheck } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,13 +44,25 @@ const NETWORKS: { id: NetworkFilter; label: string; platform: string; color: str
 
 const NICHES = ["B2B SaaS", "Marketing", "IA & Tech", "Finance", "RH & Recrutement", "Vente & Outreach", "Growth", "Entrepreneuriat"];
 
-const ENGAGEMENT_MAP: Record<EngagementMin, number> = { "500": 500, "1k": 1000, "5k": 5000, "10k": 10000, "50k": 50000 };
+// Maps UI niche labels to the terms actually stored in the DB (from DEFAULT_QUERIES in scrape route)
+const NICHE_DB_MAP: Record<string, string> = {
+  "B2B SaaS":         "SaaS",
+  "Marketing":        "marketing",
+  "IA & Tech":        "Tech",
+  "Finance":          "Finance",
+  "RH & Recrutement": "RH",
+  "Vente & Outreach": "growth hacking",
+  "Growth":           "growth hacking",
+  "Entrepreneuriat":  "entrepreneuriat",
+};
+
+const ENGAGEMENT_MAP: Record<EngagementMin, number> = { "500": 100, "1k": 500, "5k": 1000, "10k": 5000, "50k": 10000 };
 const ENGAGEMENT_OPTIONS: { id: EngagementMin; label: string }[] = [
-  { id: "500", label: "500+ likes" },
-  { id: "1k",  label: "1k+ likes" },
-  { id: "5k",  label: "5k+ likes" },
-  { id: "10k", label: "10k+ likes" },
-  { id: "50k", label: "50k+ likes" },
+  { id: "500", label: "100+ likes" },
+  { id: "1k",  label: "500+ likes" },
+  { id: "5k",  label: "1k+ likes" },
+  { id: "10k", label: "5k+ likes" },
+  { id: "50k", label: "10k+ likes" },
 ];
 
 const PERIODS: Period[] = ["7j", "30j", "3 mois"];
@@ -89,6 +102,8 @@ function formatLikes(n: number): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function RemixPage() {
+  const router = useRouter();
+
   // Filters
   const [selectedNetworks, setSelectedNetworks] = useState<NetworkFilter[]>(["linkedin"]);
   const [selectedNiches, setSelectedNiches]     = useState<string[]>([]);
@@ -103,6 +118,8 @@ export default function RemixPage() {
   const [pollMsg, setPollMsg]       = useState("");
   const [hasResults, setHasResults] = useState(false);
   const [posts, setPosts]           = useState<ApiPost[]>([]);
+  const [totalPosts, setTotalPosts] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   const [searchError, setSearchError] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -116,6 +133,15 @@ export default function RemixPage() {
 
   useEffect(() => () => { if (pollingRef.current) clearInterval(pollingRef.current); }, []);
 
+  // Clear stale results whenever the user changes which networks are selected
+  useEffect(() => {
+    setPosts([]);
+    setTotalPosts(0);
+    setHasResults(false);
+    setCurrentPage(1);
+    setSearchError(null);
+  }, [selectedNetworks]);
+
   function toggleNetwork(n: NetworkFilter) {
     setSelectedNetworks((prev) =>
       prev.includes(n) ? (prev.length > 1 ? prev.filter((x) => x !== n) : prev) : [...prev, n]
@@ -125,32 +151,45 @@ export default function RemixPage() {
     setSelectedNiches((prev) => prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]);
   }
 
-  function buildQueryString(): string {
+  function buildQueryString(page = 1): string {
     const params = new URLSearchParams();
     params.set("minLikes", String(ENGAGEMENT_MAP[engagement]));
     params.set("sortBy", sortBy);
-    params.set("limit", "20");
-    if (selectedNiches.length === 1) params.set("niche", selectedNiches[0]);
+    params.set("limit", "10");
+    params.set("page", String(page));
+    if (selectedNiches.length === 1) {
+      // Map UI label to the term stored in DB (scrape saves niche from DEFAULT_QUERIES)
+      params.set("niche", NICHE_DB_MAP[selectedNiches[0]] ?? selectedNiches[0]);
+    }
     return params.toString();
   }
 
-  async function fetchPostsFromDB(): Promise<ApiPost[]> {
+  async function fetchPostsFromDB(page = 1): Promise<{ posts: ApiPost[]; total: number }> {
     const platforms = selectedNetworks.map((n) => NETWORKS.find((x) => x.id === n)!.platform);
     const results = await Promise.all(
       platforms.map((p) =>
-        fetch(`/api/social/veille?platform=${p}&${buildQueryString()}`)
-          .then((r) => r.json() as Promise<{ posts: ApiPost[] }>)
-          .then((d) => d.posts ?? [])
-          .catch(() => [] as ApiPost[])
+        fetch(`/api/social/veille?platform=${p}&${buildQueryString(page)}`)
+          .then((r) => r.json() as Promise<{ posts: ApiPost[]; total: number }>)
+          .catch(() => ({ posts: [] as ApiPost[], total: 0 }))
       )
     );
-    const merged = results.flat();
+    // Merge + deduplicate — defensive: only keep posts whose platform was actually requested
     const seen = new Set<string>();
-    return merged.filter((p) => {
+    const posts = results.flatMap((r) => r.posts ?? []).filter((p) => {
       if (seen.has(p.id)) return false;
       seen.add(p.id);
-      return true;
+      return platforms.includes(p.platform);
     });
+    const total = results.reduce((sum, r) => sum + (r.total ?? 0), 0);
+    return { posts, total };
+  }
+
+  async function handlePageChange(page: number) {
+    const { posts: newPosts, total } = await fetchPostsFromDB(page);
+    setPosts(newPosts);
+    setTotalPosts(total);
+    setCurrentPage(page);
+    setTimeout(() => document.getElementById("results-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
   async function handleSearch() {
@@ -161,23 +200,49 @@ export default function RemixPage() {
     setRemixResult(null);
     setSearchError(null);
     setPollMsg("");
+    setCurrentPage(1);
+    setTotalPosts(0);
+
+    const SCRAPE_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6h between Apify runs
+    function canLaunchScrape(): boolean {
+      try {
+        const last = Number(localStorage.getItem("last_apify_scrape") ?? "0");
+        return Date.now() - last > SCRAPE_COOLDOWN_MS;
+      } catch { return true; }
+    }
+    function markScrapeTime() {
+      try { localStorage.setItem("last_apify_scrape", String(Date.now())); } catch { /* ignore */ }
+    }
 
     try {
-      // 1. Check DB first
-      const dbPosts = await fetchPostsFromDB();
-      if (dbPosts.length >= 3) {
+      // 1. Show any cached DB results immediately — no background scrape here
+      const { posts: dbPosts, total: dbTotal } = await fetchPostsFromDB(1);
+      if (dbPosts.length > 0) {
         setPosts(dbPosts);
+        setTotalPosts(dbTotal);
         setHasResults(true);
         setSearching(false);
         setTimeout(() => document.getElementById("results-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
         return;
       }
 
-      // 2. Not enough in DB — trigger Apify scrape
-      setScraping(true);
-      setPollMsg("Lancement du scraping… résultats dans ~2 min");
+      // 2. DB empty — launch Apify scrape (max once per 6h)
+      if (!canLaunchScrape()) {
+        setSearchError("Aucun résultat en base. Le prochain scraping sera disponible dans quelques heures.");
+        setSearching(false);
+        return;
+      }
 
-      const scrapeRes = await fetch("/api/social/veille/scrape", { method: "POST" });
+      setScraping(true);
+      setPollMsg("Lancement du scraping Apify… résultats dans ~2-3 min");
+      markScrapeTime();
+
+      const networks = selectedNetworks.map((n) => NETWORKS.find((x) => x.id === n)!.platform);
+      const scrapeRes = await fetch("/api/social/veille/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ networks }),
+      });
       if (!scrapeRes.ok) {
         const err = await scrapeRes.json() as { error?: string };
         throw new Error(err.error ?? "Échec du scraping");
@@ -185,38 +250,66 @@ export default function RemixPage() {
       const { runIds, queries } = await scrapeRes.json() as { runIds: Record<string, string | null>; queries: string[] };
 
       let elapsed = 0;
+      let foundResults = false;
+      const collected: string[] = [];
       pollingRef.current = setInterval(async () => {
-        elapsed += 6;
-        setPollMsg(`Scraping en cours… ${elapsed < 60 ? `~${120 - elapsed}s` : "encore quelques secondes"}`);
+        elapsed += 10;
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        setPollMsg(`Scraping en cours… ${mins > 0 ? `${mins}m ` : ""}${secs}s écoulées`);
 
         try {
           const collectRes = await fetch("/api/social/veille/scrape?collect=1", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ runIds, queries }),
+            body: JSON.stringify({ runIds, queries, collectedRunIds: collected }),
           });
-          const collectData = await collectRes.json() as { status: string; saved?: number };
+          const collectData = await collectRes.json() as { status: string; saved?: number; newlyCollected?: string[] };
+          if (collectData.newlyCollected?.length) collected.push(...collectData.newlyCollected);
 
-          if (collectData.status === "done") {
-            clearInterval(pollingRef.current!);
-            const freshPosts = await fetchPostsFromDB();
-            setPosts(freshPosts);
+          // Check for partial DB results even before Apify reports "done"
+          const { posts: partialPosts, total: partialTotal } = await fetchPostsFromDB(1);
+          if (partialPosts.length > 0 && !foundResults) {
+            foundResults = true;
+            setPosts(partialPosts);
+            setTotalPosts(partialTotal);
             setHasResults(true);
             setSearching(false);
             setScraping(false);
-            setPollMsg("");
+            setPollMsg(collectData.status === "done" ? "" : `${partialPosts.length} posts trouvés — scraping en cours…`);
             setTimeout(() => document.getElementById("results-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+          }
+
+          if (collectData.status === "done") {
+            clearInterval(pollingRef.current!);
+            const { posts: freshPosts, total: freshTotal } = await fetchPostsFromDB(1);
+            if (freshPosts.length > 0) {
+              const firstTime = !foundResults;
+              foundResults = true;
+              setPosts(freshPosts);
+              setTotalPosts(freshTotal);
+              setHasResults(true);
+              if (firstTime) {
+                setTimeout(() => document.getElementById("results-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+              }
+            }
+            setSearching(false);
+            setScraping(false);
+            setPollMsg("");
           }
         } catch { /* ignore poll errors */ }
 
-        if (elapsed >= 180) {
+        // After 10 min, stop polling gracefully
+        if (elapsed >= 600) {
           clearInterval(pollingRef.current!);
           setSearching(false);
           setScraping(false);
           setPollMsg("");
-          setSearchError("Le scraping a pris trop de temps. Réessayez dans quelques minutes.");
+          if (!foundResults) {
+            setSearchError("Le scraping prend plus de temps que prévu. Nos serveurs collectent les données — réessayez dans quelques minutes.");
+          }
         }
-      }, 6000);
+      }, 10000);
 
     } catch (e) {
       setSearchError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -257,6 +350,28 @@ export default function RemixPage() {
     navigator.clipboard.writeText(remixResult);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleSaveToStudio() {
+    if (!remixResult || !selectedPost) return;
+    const formatLabel = REMIX_FORMATS.find((f) => f.id === remixFormat)?.label ?? "Remix";
+    const draft = {
+      id: Date.now(),
+      title: `${formatLabel} — ${selectedPost.authorName}`,
+      type: "Remix",
+      status: "Brouillon",
+      date: "aujourd'hui",
+      statusColor: "amber",
+      tab: "posts",
+      content: remixResult,
+      network: selectedPost.platform,
+      hookType: selectedPost.hookType,
+    };
+    try {
+      const existing = JSON.parse(localStorage.getItem("studio_drafts") ?? "[]") as typeof draft[];
+      localStorage.setItem("studio_drafts", JSON.stringify([draft, ...existing]));
+    } catch { /* ignore */ }
+    router.push("/marketing-os/studio");
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -431,9 +546,16 @@ export default function RemixPage() {
         {/* ── Step 2 : Résultats ───────────────────────────────────────────── */}
         {hasResults && (
           <section id="results-section">
-            <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] mb-4" style={{ color: "var(--fg-mute)" }}>
-              <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--emerald-fg)", color: "white" }}>2</span>
-              {posts.length} posts viraux — choisissez-en un à remixer
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em]" style={{ color: "var(--fg-mute)" }}>
+                <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--emerald-fg)", color: "white" }}>2</span>
+                {totalPosts > 0 ? `${totalPosts} posts viraux` : `${posts.length} posts viraux`} — choisissez-en un à remixer
+              </div>
+              {totalPosts > 10 && (
+                <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
+                  Page {currentPage} / {Math.ceil(totalPosts / 10)}
+                </span>
+              )}
             </div>
 
             {posts.length === 0 ? (
@@ -523,6 +645,42 @@ export default function RemixPage() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {posts.length > 0 && totalPosts > 10 && (
+              <div className="flex items-center justify-center gap-2 mt-5">
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-all disabled:opacity-30"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                >
+                  ← Préc.
+                </button>
+                {Array.from({ length: Math.ceil(totalPosts / 10) }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => handlePageChange(p)}
+                    className="w-8 h-8 rounded-[8px] text-[12px] font-semibold transition-all"
+                    style={
+                      p === currentPage
+                        ? { background: "var(--emerald-fg)", color: "white" }
+                        : { background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg-dim)" }
+                    }
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= Math.ceil(totalPosts / 10)}
+                  className="px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-all disabled:opacity-30"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                >
+                  Suiv. →
+                </button>
               </div>
             )}
           </section>
@@ -633,13 +791,14 @@ export default function RemixPage() {
                     <RefreshCw className="h-3.5 w-3.5" />
                     Regénérer
                   </button>
-                  <Link
-                    href="/marketing-os/studio"
-                    className="px-4 py-1.5 rounded-[8px] text-[12px] font-semibold transition-all hover:brightness-110"
+                  <button
+                    onClick={handleSaveToStudio}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-[8px] text-[12px] font-semibold transition-all hover:brightness-110"
                     style={{ background: "var(--emerald-fg)", color: "white" }}
                   >
+                    <BookmarkCheck className="h-3.5 w-3.5" />
                     Enregistrer dans Studio →
-                  </Link>
+                  </button>
                 </div>
               </div>
               <pre

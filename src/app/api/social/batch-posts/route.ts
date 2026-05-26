@@ -269,6 +269,7 @@ export async function POST(req: NextRequest) {
         send("status", { message: `Génération des 30 posts (${TOTAL_POSTS / BATCH_SIZE} vagues de ${BATCH_SIZE})…`, step: 3, total: 4 });
 
         let totalGenerated = 0;
+        const allPosts: GeneratedPost[] = [];
 
         // 3. Generate in 5 batches of 6
         for (let batchIdx = 0; batchIdx < TOTAL_POSTS / BATCH_SIZE; batchIdx++) {
@@ -303,13 +304,32 @@ export async function POST(req: NextRequest) {
           // Emit each post individually
           for (const post of posts) {
             totalGenerated++;
+            allPosts.push(post);
             send("post", { ...post, index: totalGenerated });
           }
 
           send("progress", { generated: totalGenerated, total: TOTAL_POSTS, batch: batchIdx + 1 });
         }
 
-        // 4. Done
+        // 4. Persist to DB
+        if (allPosts.length > 0) {
+          const validTypes = new Set(["LINKEDIN", "X", "INSTAGRAM", "FACEBOOK", "TIKTOK"]);
+          await prisma.post.createMany({
+            data: allPosts
+              .filter((p) => validTypes.has(p.network))
+              .map((p) => ({
+                workspaceId: workspace.id,
+                type: p.network as "LINKEDIN" | "X" | "INSTAGRAM" | "FACEBOOK" | "TIKTOK",
+                title: p.hook.slice(0, 80),
+                content: p.content,
+                status: "DRAFT" as const,
+                keywords: [],
+                sources: { hookType: p.hookType, category: p.category },
+              })),
+            skipDuplicates: true,
+          });
+        }
+
         send("status", { message: "Génération terminée !", step: 4, total: 4 });
         send("done", { total: totalGenerated });
       } catch (err) {

@@ -34,6 +34,7 @@ export const CREDIT_COSTS = {
   repurpose_single: 2,
   repurpose_multi: 5,
   social_post: 1,
+  post_direct_generate: 3,       // Génération directe d'un post via architecture émotionnelle
 
   // Prospection
   prospect_sequence: 3,
