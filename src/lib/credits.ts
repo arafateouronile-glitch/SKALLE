@@ -108,6 +108,11 @@ export const CREDIT_COSTS = {
 
   // Superscale Ad Agent (End-to-End Ad Creative Engine)
   superscale_campaign: 50,    // Pipeline complet : research + copy + visuel x3 + formats x3
+
+  // Agent CMO — exécution des proposals approuvées
+  cmo_generate_posts: 15,     // Batch de posts sociaux générés par le CMO Agent
+  cmo_generate_article: 8,    // Article SEO long-format généré par le CMO Agent
+  cmo_analyze: 2,             // Rapport d'analyse de performance CMO
 } as const;
 
 export type OperationType = keyof typeof CREDIT_COSTS;

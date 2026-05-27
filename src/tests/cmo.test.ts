@@ -80,6 +80,9 @@ vi.mock("@/lib/prisma", () => ({
     googleSearchConsoleConfig: {
       findUnique: vi.fn(() => null),
     },
+    aPIUsage: {
+      create: vi.fn(),
+    },
   },
 }));
 
@@ -122,8 +125,18 @@ vi.mock("@/lib/services/notifications/admin", () => ({
   notifyAgentBrainDecision: vi.fn(),
 }));
 
+vi.mock("@/lib/credits", () => ({
+  useCredits: vi.fn(() => ({ success: true, remainingCredits: 500 })),
+  CREDIT_COSTS: {
+    cmo_generate_posts: 15,
+    cmo_generate_article: 8,
+    cmo_analyze: 2,
+  },
+}));
+
 // ─── Imports routes ───────────────────────────────────────────────────────────
 
+import type { NextRequest } from "next/server";
 import { GET as getProposals } from "@/app/api/cmo/proposals/route";
 import {
   GET as getObjectives,
@@ -135,6 +148,7 @@ import { POST as rejectProposal } from "@/app/api/cmo/proposals/[id]/reject/rout
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { useCredits } from "@/lib/credits";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -143,7 +157,7 @@ function makeReq(url = "http://localhost", body?: unknown, method = body ? "POST
     method,
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
-  });
+  }) as unknown as NextRequest;
 }
 
 function makeParams(id: string) {
@@ -383,9 +397,38 @@ describe("POST /api/cmo/proposals/[id]/approve", () => {
     vi.mocked(prisma.post.count).mockResolvedValue(10);
     const res = await approveProposal(makeReq("http://localhost", {}), makeParams("prop-1"));
     expect(res.status).toBe(200);
-    // L'exécution async met à jour la proposal — on vérifie au moins que l'update IN_PROGRESS est appelé
     expect(prisma.cMOProposal.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "IN_PROGRESS" }) })
     );
+  });
+
+  it("déduit les crédits avant exécution de GENERATE_POSTS", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    vi.mocked(prisma.cMOProposal.findFirst).mockResolvedValueOnce(mockProposal as never);
+    await approveProposal(makeReq("http://localhost", {}), makeParams("prop-1"));
+    // useCredits est appelé dans la promesse void — on attend la résolution
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useCredits).toHaveBeenCalledWith("user-1", "cmo_generate_posts");
+  });
+
+  it("passe la proposal en FAILED si crédits insuffisants", async () => {
+    vi.mocked(useCredits).mockResolvedValueOnce({ success: false, remainingCredits: 0, error: "Crédits insuffisants" });
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    vi.mocked(prisma.cMOProposal.findFirst).mockResolvedValueOnce(mockProposal as never);
+    await approveProposal(makeReq("http://localhost", {}), makeParams("prop-1"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(prisma.cMOProposal.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) })
+    );
+  });
+
+  it("n'appelle pas useCredits pour SCHEDULE_POSTS (gratuit)", async () => {
+    const scheduleProp = { ...mockProposal, type: "SCHEDULE_POSTS", payload: { networks: ["LINKEDIN"], count: 3 } };
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    vi.mocked(prisma.cMOProposal.findFirst).mockResolvedValueOnce(scheduleProp as never);
+    vi.mocked(prisma.post.findMany).mockResolvedValueOnce([{ id: "p1" }, { id: "p2" }] as never);
+    await approveProposal(makeReq("http://localhost", {}), makeParams("prop-1"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useCredits).not.toHaveBeenCalled();
   });
 });

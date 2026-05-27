@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { useCredits, CREDIT_COSTS } from "@/lib/credits";
+import type { OperationType } from "@/lib/credits";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth().catch(() => null);
@@ -44,6 +46,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ ok: true, status: "IN_PROGRESS" });
 }
 
+const PROPOSAL_CREDIT_OPS: Partial<Record<string, OperationType>> = {
+  GENERATE_POSTS: "cmo_generate_posts",
+  GENERATE_ARTICLE: "cmo_generate_article",
+  ANALYZE: "cmo_analyze",
+};
+
+async function deductCredits(
+  proposalId: string,
+  type: string,
+  userId: string,
+  workspaceId: string,
+): Promise<boolean> {
+  const op = PROPOSAL_CREDIT_OPS[type];
+  if (!op) return true; // SCHEDULE_POSTS / ADJUST_STRATEGY sont gratuits
+
+  const creditResult = await useCredits(userId, op);
+  if (!creditResult.success) {
+    await prisma.cMOProposal.update({
+      where: { id: proposalId },
+      data: { status: "FAILED", result: { error: creditResult.error ?? "Crédits insuffisants" } },
+    });
+    return false;
+  }
+
+  await prisma.aPIUsage.create({
+    data: { service: "cmo", operation: op, credits: CREDIT_COSTS[op], workspaceId },
+  }).catch(() => undefined); // log best-effort
+
+  return true;
+}
+
 async function executeProposal(
   proposalId: string,
   type: string,
@@ -51,6 +84,9 @@ async function executeProposal(
   workspaceId: string,
   userId: string,
 ) {
+  const creditsOk = await deductCredits(proposalId, type, userId, workspaceId);
+  if (!creditsOk) return;
+
   let result: Record<string, unknown> = {};
 
   if (type === "GENERATE_POSTS") {
