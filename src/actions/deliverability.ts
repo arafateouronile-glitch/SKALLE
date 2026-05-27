@@ -357,3 +357,141 @@ export async function analyzeEngagement(
     return { success: false, error: String(error) };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧹 CLEAN LIST - Exécuter le nettoyage effectif de la liste
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function cleanList(workspaceId: string): Promise<{
+  success: boolean;
+  data?: { removed: number; skippedSteps: number; breakdown: Record<string, number> };
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth();
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { id: workspaceId, userId: session.user!.id! },
+    });
+    if (!workspace) return { success: false, error: "Workspace non trouvé" };
+
+    const breakdown: Record<string, number> = {
+      unsubscribed: 0,
+      spam: 0,
+      hardBounce: 0,
+      lowEngagement: 0,
+    };
+
+    // 1. Désabonnés et plaintes spam → UNSUBSCRIBED
+    const [unsubResult, spamResult] = await Promise.all([
+      prisma.prospect.updateMany({
+        where: { workspaceId, emailStatus: "unsubscribed", status: { not: "UNSUBSCRIBED" } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { status: "UNSUBSCRIBED" as any },
+      }),
+      prisma.prospect.updateMany({
+        where: { workspaceId, emailStatus: "spam_complaint", status: { not: "UNSUBSCRIBED" } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { status: "UNSUBSCRIBED" as any },
+      }),
+    ]);
+    breakdown.unsubscribed = unsubResult.count;
+    breakdown.spam = spamResult.count;
+
+    // 2. Hard bounces (≥2 steps FAILED avec "bounce") → marquer emailStatus=bounced + UNSUBSCRIBED
+    const bouncedProspects = await prisma.prospect.findMany({
+      where: { workspaceId, emailStatus: { not: "bounced" } },
+      select: {
+        id: true,
+        sequences: {
+          select: {
+            steps: {
+              where: { channel: "EMAIL", status: "FAILED", error: { contains: "bounce" } },
+              select: { id: true },
+            },
+          },
+        },
+      },
+    });
+    const hardBounceIds = bouncedProspects
+      .filter((p) => p.sequences.flatMap((s) => s.steps).length >= 2)
+      .map((p) => p.id);
+
+    if (hardBounceIds.length > 0) {
+      await prisma.prospect.updateMany({
+        where: { id: { in: hardBounceIds } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { emailStatus: "bounced", status: "UNSUBSCRIBED" as any },
+      });
+      breakdown.hardBounce = hardBounceIds.length;
+    }
+
+    // 3. Low engagement (≥5 emails envoyés, jamais ouvert) → emailStatus=inactive, annuler steps PENDING
+    const lowEngagementProspects = await prisma.prospect.findMany({
+      where: { workspaceId, emailStatus: { not: "inactive" } },
+      select: {
+        id: true,
+        sequences: {
+          select: {
+            steps: {
+              where: { channel: "EMAIL" },
+              select: { status: true, openedAt: true },
+            },
+          },
+        },
+      },
+    });
+    const lowEngagementIds = lowEngagementProspects
+      .filter((p) => {
+        const steps = p.sequences.flatMap((s) => s.steps);
+        const sent = steps.filter((s) => s.status === "SENT" || s.status === "DELIVERED");
+        return sent.length >= 5 && sent.every((s) => s.openedAt === null);
+      })
+      .map((p) => p.id);
+
+    if (lowEngagementIds.length > 0) {
+      await prisma.prospect.updateMany({
+        where: { id: { in: lowEngagementIds } },
+        data: { emailStatus: "inactive" },
+      });
+      breakdown.lowEngagement = lowEngagementIds.length;
+    }
+
+    // 4. Annuler tous les steps PENDING pour les prospects traités ci-dessus
+    const allTreatedIds = [
+      ...hardBounceIds,
+      ...lowEngagementIds,
+    ];
+    // Les unsubscribed/spam sont déjà traités par le webhook — mais on s'assure des PENDING restants
+    const unsubscribedIds = await prisma.prospect.findMany({
+      where: { workspaceId, emailStatus: { in: ["unsubscribed", "spam_complaint", "bounced"] } },
+      select: { id: true },
+    });
+    const cancelIds = [...new Set([...allTreatedIds, ...unsubscribedIds.map((p) => p.id)])];
+
+    let skippedSteps = 0;
+    if (cancelIds.length > 0) {
+      const cancelResult = await prisma.sequenceStep.updateMany({
+        where: {
+          sequence: { prospectId: { in: cancelIds } },
+          channel: "EMAIL",
+          status: "PENDING",
+        },
+        data: { status: "SKIPPED" },
+      });
+      skippedSteps = cancelResult.count;
+    }
+
+    const removed = breakdown.unsubscribed + breakdown.spam + breakdown.hardBounce;
+
+    // Recompute spamRate après nettoyage
+    await trackEmailMetrics(workspaceId, "unsubscribed").catch(() => {});
+
+    return {
+      success: true,
+      data: { removed, skippedSteps, breakdown },
+    };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
