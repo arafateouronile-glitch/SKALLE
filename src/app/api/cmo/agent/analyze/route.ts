@@ -22,7 +22,7 @@ interface ProposalDraft {
 }
 
 export async function POST() {
-  const session = await auth();
+  const session = await auth().catch(() => null);
   if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
   const workspace = await prisma.workspace.findFirst({
@@ -31,18 +31,41 @@ export async function POST() {
   });
   if (!workspace) return NextResponse.json({ error: "Workspace introuvable" }, { status: 404 });
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
   // Gather context
-  const [objectives, recentPosts, pendingProposals] = await Promise.all([
+  const [objectives, recentPosts, pendingProposals, rejectedFeedback, doneByType, gscConfig] = await Promise.all([
     prisma.cMOObjective.findMany({
       where: { workspaceId: workspace.id, status: "ACTIVE" },
       orderBy: { createdAt: "desc" },
     }),
     prisma.post.findMany({
-      where: { workspaceId: workspace.id, deletedAt: null, createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+      where: { workspaceId: workspace.id, deletedAt: null, createdAt: { gte: thirtyDaysAgo } },
       select: { type: true, status: true, createdAt: true },
     }),
     prisma.cMOProposal.count({
       where: { workspaceId: workspace.id, status: "PENDING" },
+    }),
+    prisma.cMOProposal.findMany({
+      where: {
+        workspaceId: workspace.id,
+        status: "REJECTED",
+        userFeedback: { not: null },
+        updatedAt: { gte: fourteenDaysAgo },
+      },
+      select: { type: true, title: true, userFeedback: true },
+      orderBy: { updatedAt: "desc" },
+      take: 8,
+    }),
+    prisma.cMOProposal.groupBy({
+      by: ["type"],
+      where: { workspaceId: workspace.id, status: "DONE", updatedAt: { gte: thirtyDaysAgo } },
+      _count: { id: true },
+    }),
+    prisma.googleSearchConsoleConfig.findUnique({
+      where: { workspaceId: workspace.id },
+      select: { topPages: true, topKeywords: true, isConnected: true },
     }),
   ]);
 
@@ -60,7 +83,35 @@ export async function POST() {
     return acc;
   }, {});
   const published = recentPosts.filter((p) => p.status === "PUBLISHED").length;
-  const drafts = recentPosts.filter((p) => p.status === "DRAFT").length;
+  const draftsCount = recentPosts.filter((p) => p.status === "DRAFT").length;
+
+  // Feedback loop: rejections récentes
+  const rejectionSummary = rejectedFeedback.length > 0
+    ? rejectedFeedback.map((r) => `  - [${r.type}] "${r.title}" → rejeté: "${r.userFeedback}"`).join("\n")
+    : "  Aucun rejet récent.";
+
+  // Actions réussies: types exécutés avec succès ce mois
+  const doneSummary = doneByType.length > 0
+    ? doneByType.map((d) => `  - ${d.type}: ${d._count.id} exécutée(s)`).join("\n")
+    : "  Aucune action complétée ce mois.";
+
+  // GSC: pages/mots-clés disponibles
+  let gscSection = "";
+  if (gscConfig?.isConnected && (gscConfig.topPages ?? gscConfig.topKeywords)) {
+    const pages = gscConfig.topPages as { page?: string; url?: string; clicks?: number; position?: number }[] | null;
+    const keywords = gscConfig.topKeywords as { keyword?: string; query?: string; clicks?: number; position?: number }[] | null;
+    if (pages?.length) {
+      const declining = pages.filter((p) => (p.position ?? 0) > 15).slice(0, 5);
+      if (declining.length > 0) {
+        gscSection = `\nGOOGLE SEARCH CONSOLE — Pages en position >15 (opportunités de régénération):
+${declining.map((p) => `  - ${p.url ?? p.page} (pos. ${p.position?.toFixed(1)}, ${p.clicks ?? 0} clics)`).join("\n")}`;
+      }
+    }
+    if (!gscSection && keywords?.length) {
+      gscSection = `\nGOOGLE SEARCH CONSOLE — Top keywords:
+${keywords.slice(0, 5).map((k) => `  - "${k.query ?? k.keyword}" (pos. ${k.position?.toFixed(1)}, ${k.clicks ?? 0} clics)`).join("\n")}`;
+    }
+  }
 
   const systemPrompt = `Tu es un CMO IA expert en stratégie de contenu B2B/B2C.
 Tu analyses les objectifs marketing d'une marque et génères des propositions d'actions concrètes et priorisées.
@@ -73,21 +124,32 @@ ICP: ${icp ? JSON.stringify(icp) : "non défini"}
 ÉTAT ACTUEL (30 derniers jours):
 - Posts créés par réseau: ${JSON.stringify(postsByType)}
 - Posts publiés: ${published}
-- Brouillons en attente: ${drafts}
+- Brouillons en attente: ${draftsCount}
 - Propositions déjà en attente: ${pendingProposals}
+${gscSection}
+
+HISTORIQUE DES PROPOSITIONS (14 derniers jours):
+Actions complétées avec succès:
+${doneSummary}
+
+Propositions rejetées par l'utilisateur (à éviter ou adapter):
+${rejectionSummary}
 
 TYPES D'ACTIONS DISPONIBLES:
 - GENERATE_POSTS: génère un batch de posts sociaux (payload: {niche, networks, icp, count})
 - GENERATE_ARTICLE: crée un article SEO en brouillon (payload: {keyword, niche})
+- SCHEDULE_POSTS: programme des brouillons existants (payload: {networks, scheduledFor, count})
 - ANALYZE: rapport de performance (payload: {period, metrics})
 - ADJUST_STRATEGY: ajuste la brand voice / stratégie (payload: {adjustments})
 
 RÈGLES:
 1. Ne propose pas d'actions déjà PENDING (${pendingProposals} en attente)
-2. Priorise selon l'écart entre objectif et réalité
-3. Chaque proposition doit être immédiatement exécutable
-4. creditsEst: GENERATE_POSTS=15, GENERATE_ARTICLE=8, ANALYZE=2, ADJUST_STRATEGY=0
-5. Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown.`;
+2. Tiens compte des rejets récents — ne répète pas une proposition rejetée sans la modifier substantiellement
+3. Priorise selon l'écart entre objectif et réalité
+4. Si des brouillons existent (${draftsCount}) et aucun programmé, propose SCHEDULE_POSTS
+5. Si des pages GSC déclinent, propose GENERATE_ARTICLE sur le sujet correspondant
+6. creditsEst: GENERATE_POSTS=15, GENERATE_ARTICLE=8, SCHEDULE_POSTS=0, ANALYZE=2, ADJUST_STRATEGY=0
+7. Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown.`;
 
   const humanPrompt = `Objectifs actifs:
 ${objectives.map((o) => {

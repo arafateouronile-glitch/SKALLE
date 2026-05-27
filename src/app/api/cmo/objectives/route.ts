@@ -3,26 +3,31 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+  try {
+    const session = await auth().catch(() => null);
+    if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
-  const workspace = await prisma.workspace.findFirst({
-    where: { userId: session.user.id },
-    select: { id: true },
-  });
-  if (!workspace) return NextResponse.json({ objectives: [] });
+    const workspace = await prisma.workspace.findFirst({
+      where: { userId: session.user.id },
+      select: { id: true },
+    });
+    if (!workspace) return NextResponse.json({ objectives: [] });
 
-  const objectives = await prisma.cMOObjective.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { proposals: true } } },
-  });
+    const objectives = await prisma.cMOObjective.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { createdAt: "desc" },
+      include: { _count: { select: { proposals: true } } },
+    });
 
-  return NextResponse.json({ objectives });
+    return NextResponse.json({ objectives });
+  } catch (e) {
+    console.error("[GET /api/cmo/objectives]", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await auth().catch(() => null);
   if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
   const workspace = await prisma.workspace.findFirst({

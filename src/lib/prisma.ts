@@ -1,11 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 
+// Bump this key whenever new Prisma models are added.
+// NOTE: after `prisma db push`, a dev-server restart is still required to flush
+// Node.js's require() cache for @prisma/client.
+const PRISMA_SINGLETON_KEY = "__prisma_v2" as const;
+
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  [PRISMA_SINGLETON_KEY]: PrismaClient | undefined;
 };
 
-// Limiter le pool et timeout pour réduire les "Error in PostgreSQL connection: Error { kind: Closed }"
-// (connexions idle fermées par le serveur en dev / HMR)
 function getDatasourceUrl(): string | undefined {
   const url = process.env.DATABASE_URL;
   if (!url) return undefined;
@@ -18,7 +21,7 @@ function getDatasourceUrl(): string | undefined {
 }
 
 export const prisma =
-  globalForPrisma.prisma ??
+  globalForPrisma[PRISMA_SINGLETON_KEY] ??
   new PrismaClient({
     log:
       process.env.NODE_ENV === "development"
@@ -27,6 +30,6 @@ export const prisma =
     ...(getDatasourceUrl() && { datasources: { db: { url: getDatasourceUrl()! } } }),
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production") globalForPrisma[PRISMA_SINGLETON_KEY] = prisma;
 
 export default prisma;
