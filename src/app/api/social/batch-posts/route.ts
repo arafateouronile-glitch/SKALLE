@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { getViralPosts } from "@/lib/services/social/viral-monitor";
 import { getClaude, getStringParser } from "@/lib/ai/langchain";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { useCredits } from "@/lib/credits";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -222,6 +223,15 @@ export async function POST(req: NextRequest) {
   });
   if (!workspace) {
     return NextResponse.json({ error: "Workspace introuvable" }, { status: 404 });
+  }
+
+  // Déduire les crédits avant de lancer la génération (5 appels Claude)
+  const creditResult = await useCredits(session.user.id, "social_factory_concepts");
+  if (!creditResult.success) {
+    return NextResponse.json(
+      { error: creditResult.error ?? "Crédits insuffisants pour générer 30 posts" },
+      { status: 402 }
+    );
   }
 
   // Persist ICP into brandVoice if requested

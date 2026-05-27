@@ -1,16 +1,67 @@
 /**
- * API publique Skalle v1 — Inbound
- * POST /api/v1/leads : injecter un lead dans le CRM depuis l'extérieur (Typeform, Zapier, Make).
+ * API publique Skalle v1 — Leads
+ *
+ * GET  /api/v1/leads : lister les leads du workspace (?cursor, ?limit, ?status)
+ * POST /api/v1/leads : injecter un lead depuis l'extérieur (Typeform, Zapier, Make)
  *
  * Auth : Authorization: Bearer <sk_live_xxx>
- * Body : { name, company, email?, jobTitle?, linkedInUrl?, notes? }
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateSkalleApi, consumeApiCredits } from "@/lib/skalle-api-auth";
 import { inngest } from "@/inngest/client";
 import { z } from "zod";
+
+const VALID_STATUSES = new Set([
+  "NEW", "RESEARCHED", "MESSAGES_GENERATED", "CONTACTED",
+  "RESPONDED", "MEETING_BOOKED", "CONVERTED", "REJECTED", "UNSUBSCRIBED",
+]);
+
+export async function GET(req: NextRequest) {
+  const auth = await authenticateSkalleApi(req, "api_lead");
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const { searchParams } = req.nextUrl;
+  const cursor = searchParams.get("cursor") ?? undefined;
+  const limit = Math.min(Math.max(1, Number(searchParams.get("limit") ?? 50)), 100);
+  const statusParam = searchParams.get("status");
+
+  if (statusParam && !VALID_STATUSES.has(statusParam)) {
+    return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
+  }
+
+  const leads = await prisma.prospect.findMany({
+    where: {
+      workspaceId: auth.workspaceId,
+      ...(statusParam ? { status: statusParam as never } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      company: true,
+      email: true,
+      jobTitle: true,
+      linkedInUrl: true,
+      status: true,
+      emailStatus: true,
+      source: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+  });
+
+  const hasMore = leads.length > limit;
+  const items = hasMore ? leads.slice(0, limit) : leads;
+  const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+  return NextResponse.json({ leads: items, nextCursor, count: items.length });
+}
 
 const createLeadSchema = z.object({
   name: z.string().min(1).max(200),
