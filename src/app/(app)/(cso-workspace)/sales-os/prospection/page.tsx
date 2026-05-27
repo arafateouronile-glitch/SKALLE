@@ -119,6 +119,8 @@ import {
   verifyDNSRecords,
   getWarmupStatus,
   getMonitoringStatus,
+  analyzeListHygiene,
+  cleanList,
 } from "@/actions/deliverability";
 import { exportProspectsCSV } from "@/actions/csv-import-export";
 import { prepareProspectOutreachAction } from "@/actions/cso-sales";
@@ -1301,6 +1303,22 @@ function DeliverabilityTab({ workspaceId }: { workspaceId: string }) {
     senderScore: boolean;
     microsoftSNDS: boolean;
   } | null>(null);
+  const [hygieneData, setHygieneData] = useState<{
+    invalidEmails: number;
+    bouncedEmails: number;
+    unsubscribedEmails: number;
+    spamComplaints: number;
+    lowEngagementEmails: number;
+    totalRemoved: number;
+    recommendations: string[];
+  } | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<{
+    removed: number;
+    skippedSteps: number;
+    breakdown: Record<string, number>;
+  } | null>(null);
 
   useEffect(() => {
     loadConfig();
@@ -1345,6 +1363,42 @@ function DeliverabilityTab({ workspaceId }: { workspaceId: string }) {
       }
     } catch (error) {
       toast.error("Une erreur est survenue");
+    }
+  };
+
+  const handleAnalyzeHygiene = async () => {
+    setIsAnalyzing(true);
+    setCleanResult(null);
+    try {
+      const result = await analyzeListHygiene(workspaceId);
+      if (result.success && result.data) {
+        setHygieneData(result.data);
+      } else {
+        toast.error(result.error || "Erreur d'analyse");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleCleanList = async () => {
+    setIsCleaning(true);
+    try {
+      const result = await cleanList(workspaceId);
+      if (result.success && result.data) {
+        setCleanResult(result.data);
+        setHygieneData(null);
+        toast.success(`Liste nettoyée : ${result.data.removed} contact(s) retiré(s)`);
+        loadConfig();
+      } else {
+        toast.error(result.error || "Erreur de nettoyage");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsCleaning(false);
     }
   };
 
@@ -1627,6 +1681,129 @@ function DeliverabilityTab({ workspaceId }: { workspaceId: string }) {
           </CardContent>
         </Card>
       )}
+
+      {/* List Hygiene */}
+      <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-gray-900 flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-orange-500" />
+              Hygiène de liste
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={handleAnalyzeHygiene} disabled={isAnalyzing}>
+              {isAnalyzing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Zap className="h-4 w-4 mr-2" />
+              )}
+              {isAnalyzing ? "Analyse..." : "Analyser"}
+            </Button>
+          </div>
+          <CardDescription className="text-gray-500">
+            Identifiez et supprimez les contacts invalides pour protéger votre réputation d&apos;expéditeur
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!hygieneData && !cleanResult && (
+            <div className="flex flex-col items-center justify-center py-8 text-center text-gray-400">
+              <Trash2 className="h-10 w-10 mb-3 opacity-20" />
+              <p className="text-sm font-medium text-gray-500">Aucune analyse en cours</p>
+              <p className="text-xs mt-1">Cliquez sur &laquo; Analyser &raquo; pour détecter les contacts problématiques.</p>
+            </div>
+          )}
+
+          {hygieneData && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-red-50 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-red-600">{hygieneData.bouncedEmails}</div>
+                  <div className="text-xs text-red-500 mt-0.5">Bounces</div>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-orange-600">{hygieneData.spamComplaints}</div>
+                  <div className="text-xs text-orange-500 mt-0.5">Plaintes spam</div>
+                </div>
+                <div className="bg-yellow-50 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-yellow-600">{hygieneData.unsubscribedEmails}</div>
+                  <div className="text-xs text-yellow-500 mt-0.5">Désabonnés</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-gray-600">{hygieneData.lowEngagementEmails}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Faible engagement</div>
+                </div>
+              </div>
+
+              {hygieneData.recommendations.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-medium text-amber-700">Recommandations</span>
+                  </div>
+                  <ul className="space-y-1">
+                    {hygieneData.recommendations.map((rec, i) => (
+                      <li key={i} className="text-xs text-amber-600">{rec}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {hygieneData.totalRemoved > 0 ? (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <span className="text-sm text-gray-600">
+                    <span className="font-semibold text-gray-900">{hygieneData.totalRemoved}</span> contact(s) à nettoyer
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={handleCleanList}
+                    disabled={isCleaning}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    {isCleaning ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 mr-2" />
+                    )}
+                    {isCleaning ? "Nettoyage..." : "Nettoyer la liste"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 pt-2 border-t border-gray-100 text-green-600">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">Liste saine — aucun contact à supprimer</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {cleanResult && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-green-600">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="text-sm font-semibold">Nettoyage effectué avec succès</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-green-50 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-green-700">{cleanResult.removed}</div>
+                  <div className="text-xs text-green-600 mt-0.5">Contacts retirés</div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-blue-700">{cleanResult.skippedSteps}</div>
+                  <div className="text-xs text-blue-600 mt-0.5">Séquences annulées</div>
+                </div>
+              </div>
+              <div className="text-xs text-gray-400 space-y-0.5">
+                {Object.entries(cleanResult.breakdown).filter(([, v]) => v > 0).map(([k, v]) => (
+                  <div key={k}>{k}: {v}</div>
+                ))}
+              </div>
+              <Button variant="outline" size="sm" onClick={handleAnalyzeHygiene} disabled={isAnalyzing}>
+                <Zap className="h-4 w-4 mr-2" />
+                Relancer l&apos;analyse
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Monitoring Externe */}
       <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
