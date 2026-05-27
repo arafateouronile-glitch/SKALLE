@@ -142,6 +142,10 @@ import {
   GET as getObjectives,
   POST as postObjective,
 } from "@/app/api/cmo/objectives/route";
+import {
+  PATCH as patchObjective,
+  DELETE as deleteObjective,
+} from "@/app/api/cmo/objectives/[id]/route";
 import { POST as runAnalyze } from "@/app/api/cmo/agent/analyze/route";
 import { POST as approveProposal } from "@/app/api/cmo/proposals/[id]/approve/route";
 import { POST as rejectProposal } from "@/app/api/cmo/proposals/[id]/reject/route";
@@ -430,5 +434,79 @@ describe("POST /api/cmo/proposals/[id]/approve", () => {
     await approveProposal(makeReq("http://localhost", {}), makeParams("prop-1"));
     await new Promise((r) => setTimeout(r, 50));
     expect(useCredits).not.toHaveBeenCalled();
+  });
+});
+
+// ─── PATCH /api/cmo/objectives/[id] ──────────────────────────────────────────
+
+describe("PATCH /api/cmo/objectives/[id]", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retourne 401 sans session", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(null as never);
+    const res = await patchObjective(makeReq("http://localhost", { status: "PAUSED" }, "PATCH"), makeParams("obj-1"));
+    expect(res.status).toBe(401);
+  });
+
+  it("met à jour le statut d'un objectif", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    const res = await patchObjective(
+      makeReq("http://localhost", { status: "PAUSED" }, "PATCH"),
+      makeParams("obj-1"),
+    );
+    expect(res.status).toBe(200);
+    expect(prisma.cMOObjective.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "PAUSED" }) })
+    );
+  });
+
+  it("retourne 404 si objectif introuvable (count=0)", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    vi.mocked(prisma.cMOObjective.updateMany).mockResolvedValueOnce({ count: 0 });
+    const res = await patchObjective(
+      makeReq("http://localhost", { status: "COMPLETED" }, "PATCH"),
+      makeParams("obj-x"),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("met à jour le titre et la cible", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    const body = { title: "Nouveau titre", target: { metric: "posts", value: 50, unit: "posts" } };
+    const res = await patchObjective(makeReq("http://localhost", body, "PATCH"), makeParams("obj-1"));
+    expect(res.status).toBe(200);
+    expect(prisma.cMOObjective.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ title: "Nouveau titre" }),
+      })
+    );
+  });
+});
+
+// ─── DELETE /api/cmo/objectives/[id] ─────────────────────────────────────────
+
+describe("DELETE /api/cmo/objectives/[id]", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retourne 401 sans session", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(null as never);
+    const res = await deleteObjective(makeReq("http://localhost", undefined, "DELETE"), makeParams("obj-1"));
+    expect(res.status).toBe(401);
+  });
+
+  it("supprime l'objectif", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    const res = await deleteObjective(makeReq("http://localhost", undefined, "DELETE"), makeParams("obj-1"));
+    expect(res.status).toBe(200);
+    expect(prisma.cMOObjective.deleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "obj-1" }) })
+    );
+  });
+
+  it("retourne ok même si objectif déjà absent (deleteMany ne lance pas d'erreur)", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(mockSession as never);
+    vi.mocked(prisma.cMOObjective.deleteMany).mockResolvedValueOnce({ count: 0 });
+    const res = await deleteObjective(makeReq("http://localhost", undefined, "DELETE"), makeParams("obj-x"));
+    expect(res.status).toBe(200);
   });
 });

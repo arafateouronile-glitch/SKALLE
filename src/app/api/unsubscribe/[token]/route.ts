@@ -44,11 +44,20 @@ export async function GET(
       await prisma.prospect.update({
         where: { id: prospectId },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: { status: "UNSUBSCRIBED" as any },
+        data: { status: "UNSUBSCRIBED" as any, emailStatus: "unsubscribed" },
       });
 
-      // Mettre à jour le taux de spam/unsubscribe dans la config délivrabilité
-      await trackEmailMetrics(prospect.workspaceId, "bounced").catch(() => {});
+      // Stopper les séquences email PENDING pour ce prospect
+      await prisma.sequenceStep.updateMany({
+        where: {
+          sequence: { prospectId },
+          channel: "EMAIL",
+          status: "PENDING",
+        },
+        data: { status: "SKIPPED" },
+      }).catch(() => {});
+
+      await trackEmailMetrics(prospect.workspaceId, "unsubscribed").catch(() => {});
     }
 
     return new NextResponse(renderPage("Désinscription confirmée", "Vous avez bien été désinscrit de nos communications. Vous ne recevrez plus d'emails de notre part.", true), {

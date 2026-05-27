@@ -137,7 +137,7 @@ export async function updateWarmupProgress(
 
 export async function trackEmailMetrics(
   workspaceId: string,
-  event: "sent" | "delivered" | "bounced" | "opened" | "clicked" | "replied" | "spam"
+  event: "sent" | "delivered" | "bounced" | "opened" | "clicked" | "replied" | "spam" | "unsubscribed"
 ): Promise<void> {
   try {
     const config = await prisma.emailDeliverabilityConfig.findUnique({
@@ -209,6 +209,18 @@ export async function trackEmailMetrics(
           },
         });
         updates.spamRate = totalProcessed > 0 ? Math.round((spam / totalProcessed) * 10000) / 100 : 0;
+        break;
+      }
+      case "unsubscribed": {
+        // Recompute spamRate to include unsubscribes — proxy metric until a dedicated field is added
+        const [unsubCount, spamCount] = await Promise.all([
+          prisma.prospect.count({ where: { workspaceId, emailStatus: "unsubscribed" } }),
+          prisma.prospect.count({ where: { workspaceId, emailStatus: "spam_complaint" } }),
+        ]);
+        const totalProspects = await prisma.prospect.count({ where: { workspaceId } });
+        if (totalProspects > 0) {
+          updates.spamRate = Math.round(((unsubCount + spamCount) / totalProspects) * 10000) / 100;
+        }
         break;
       }
     }
