@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   Brain,
   Linkedin,
@@ -223,6 +223,7 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
   const [loading, setLoading] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "done">("pending");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const reload = useCallback(async () => {
     const res = await fetch(`/api/cso-agent?workspaceId=${workspaceId}`);
@@ -282,16 +283,33 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
       });
-      if (res.ok) {
-        toast.success("Analyse déclenchée — les décisions arriveront dans quelques secondes");
-        setTimeout(() => reload(), 8_000);
-      } else {
-        toast.error("Erreur lors du déclenchement");
-      }
+      if (!res.ok) { toast.error("Erreur lors du déclenchement"); return; }
+
+      toast.success("Analyse déclenchée — les décisions arriveront dans quelques secondes");
+
+      // Poll every 3s up to 5 times (15s total), stop early if new decisions arrived
+      const prevCount = decisions.filter((d) => d.status === "PENDING").length;
+      if (pollRef.current) clearInterval(pollRef.current);
+      let attempts = 0;
+      pollRef.current = setInterval(async () => {
+        attempts++;
+        const pollRes = await fetch(`/api/cso-agent?workspaceId=${workspaceId}`);
+        if (pollRes.ok) {
+          const json = (await pollRes.json()) as { decisions: AgentDecision[]; pendingCount: number };
+          setDecisions(json.decisions);
+          if (json.pendingCount > prevCount || attempts >= 5) {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+          }
+        } else if (attempts >= 5) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+        }
+      }, 3_000);
     } finally {
       setTriggering(false);
     }
-  }, [workspaceId, reload]);
+  }, [workspaceId, decisions, reload]);
 
   const pendingDecisions = decisions.filter((d) => d.status === "PENDING");
   const doneDecisions = decisions.filter((d) => d.status !== "PENDING");

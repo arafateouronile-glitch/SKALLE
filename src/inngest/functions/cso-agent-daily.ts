@@ -48,7 +48,7 @@ export const csoAgentDaily = inngest.createFunction(
         }
 
         logger.info(`Workspace ${ws.id} — ${total} candidats détectés`);
-        const drafts = await generateCsoDecisions(obs);
+        const drafts = await generateCsoDecisions(obs, ws.id);
         const stored = await storeCsoDecisions(ws.id, drafts);
         logger.info(`Workspace ${ws.id} — ${stored} nouvelles décisions générées`);
         return { generated: stored };
@@ -76,7 +76,7 @@ export const csoAgentManual = inngest.createFunction(
       const total = obs.highScoreNew.length + obs.stagnantContacted.length + obs.staleProspects.length;
       if (total === 0) return { generated: 0, message: "Pipeline vide" };
 
-      const drafts = await generateCsoDecisions(obs);
+      const drafts = await generateCsoDecisions(obs, workspaceId);
       const stored = await storeCsoDecisions(workspaceId, drafts);
       return { generated: stored };
     });

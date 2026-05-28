@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { getClaude, getStringParser } from "@/lib/ai/langchain";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { SequenceChannel } from "@prisma/client";
+import { checkBudget, trackSpend } from "@/lib/ai/budget-guard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -158,10 +159,14 @@ function stripMarkdownJson(raw: string): string {
   return raw.replace(/^```[\w]*\s*/m, "").replace(/```\s*$/m, "").trim();
 }
 
-const SYSTEM_PROMPT = `Tu es le CSO Agent de SKALLE, un assistant autonome de gestion de pipeline commercial.
+function buildSystemPrompt(brandContext: string): string {
+  const brandSection = brandContext
+    ? `\n## Contexte de marque (à utiliser dans tous les messages générés)\n${brandContext}\n`
+    : "";
+  return `Tu es le CSO Agent, un assistant autonome de gestion de pipeline commercial.
 
 Ton rôle : analyser l'état du pipeline et générer des décisions d'outreach personnalisées et priorisées.
-
+${brandSection}
 Pour chaque prospect, tu génères une décision structurée :
 - actionType : CSO_LAUNCH_LINKEDIN | CSO_LAUNCH_EMAIL | CSO_FOLLOWUP | CSO_STALE_REJECT
 - Règles :
@@ -170,8 +175,8 @@ Pour chaque prospect, tu génères une décision structurée :
   • CSO_FOLLOWUP : prospect CONTACTED depuis 5-20 jours sans réponse → message de relance
   • CSO_STALE_REJECT : prospect CONTACTED depuis 21+ jours → suggérer de marquer REJECTED (libère le pipeline)
 - priority : 1 (urgent, score élevé ou délai long) → 5 (peu urgent)
-- Pour LAUNCH_LINKEDIN : génère une note de connexion (<300 chars) personnalisée
-- Pour LAUNCH_EMAIL : génère un objet + corps d'email (~120 mots) personnalisé
+- Pour LAUNCH_LINKEDIN : génère une note de connexion (<300 chars) personnalisée au contexte de marque
+- Pour LAUNCH_EMAIL : génère un objet + corps d'email (~120 mots) personnalisé au ton de marque
 - Pour FOLLOWUP : génère un message court de relance (60-80 mots) sur le même canal que le dernier contact
 - Pour STALE_REJECT : reasoning explicatif uniquement, pas de message
 
@@ -222,14 +227,43 @@ Réponds UNIQUEMENT avec un JSON valide, tableau de décisions :
   }
 ]
 
-Génère au maximum 15 décisions au total. Priorise la qualité sur la quantité.`;
+Génère au maximum 15 décisions au total. Priorise la qualité sur la quantité.`
+}
 
 export async function generateCsoDecisions(
-  obs: PipelineObservation
+  obs: PipelineObservation,
+  workspaceId: string
 ): Promise<CsoDecisionDraft[]> {
   const total =
     obs.highScoreNew.length + obs.stagnantContacted.length + obs.staleProspects.length;
   if (total === 0) return [];
+
+  // Fetch workspace for budget check and brand voice
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: {
+      name: true,
+      brandVoice: true,
+      user: { select: { plan: true } },
+    },
+  });
+
+  const plan = workspace?.user?.plan ?? "AGENCY";
+  const budgetCheck = await checkBudget(workspaceId, "cso_agent_analyze", "claude-sonnet-4-6", plan);
+  if (!budgetCheck.allowed) {
+    console.warn(`[CSO Agent] Budget dépassé pour ${workspaceId}: ${budgetCheck.reason}`);
+    return [];
+  }
+
+  // Build brand voice context for personalized messages
+  const bv = (workspace?.brandVoice ?? {}) as Record<string, unknown>;
+  const persona = bv.marketingPersona as Record<string, unknown> | null;
+  const brandContext = [
+    workspace?.name ? `Entreprise : ${workspace.name}` : null,
+    (persona?.tone ?? bv.tone) ? `Ton de communication : ${persona?.tone ?? bv.tone}` : null,
+    persona?.uniqueValueProp ? `Proposition de valeur : ${persona.uniqueValueProp}` : null,
+    bv.targetAudience ? `Cible : ${bv.targetAudience}` : null,
+  ].filter(Boolean).join("\n");
 
   const humanPrompt = `
 Voici l'état actuel du pipeline :
@@ -256,9 +290,11 @@ Génère les décisions d'outreach optimales pour aujourd'hui.
   const parser = getStringParser();
 
   const response = await claude.invoke([
-    new SystemMessage({ content: SYSTEM_PROMPT }),
+    new SystemMessage({ content: buildSystemPrompt(brandContext) }),
     new HumanMessage({ content: humanPrompt }),
   ]);
+
+  await trackSpend(workspaceId, "cso_agent_analyze").catch(() => undefined);
 
   const raw = await parser.invoke(response);
   const clean = stripMarkdownJson(raw);
@@ -279,25 +315,38 @@ export async function storeCsoDecisions(
 ): Promise<number> {
   if (!drafts.length) return 0;
 
-  // Skip duplicates: same prospectId + same actionType already PENDING
-  const existing = await prisma.agentDecision.findMany({
-    where: {
-      workspaceId,
-      status: "PENDING",
-      actionType: { in: drafts.map((d) => d.actionType) },
-    },
-    select: { actionType: true, actionData: true },
-  });
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000);
 
-  const existingKeys = new Set(
-    existing.map((e) => {
+  // Skip duplicates: same prospectId + same actionType already PENDING
+  // Also skip prospects rejected for the same action type in the last 7 days (cooldown)
+  const [existing, recentRejected] = await Promise.all([
+    prisma.agentDecision.findMany({
+      where: {
+        workspaceId,
+        status: "PENDING",
+        actionType: { in: drafts.map((d) => d.actionType) },
+      },
+      select: { actionType: true, actionData: true },
+    }),
+    prisma.agentDecision.findMany({
+      where: {
+        workspaceId,
+        status: "REJECTED",
+        updatedAt: { gte: sevenDaysAgo },
+      },
+      select: { actionType: true, actionData: true },
+    }),
+  ]);
+
+  const blockedKeys = new Set(
+    [...existing, ...recentRejected].map((e) => {
       const data = e.actionData as Record<string, unknown> | null;
       return `${e.actionType}:${data?.prospectId ?? ""}`;
     })
   );
 
   const fresh = drafts.filter(
-    (d) => !existingKeys.has(`${d.actionType}:${d.prospectId}`)
+    (d) => !blockedKeys.has(`${d.actionType}:${d.prospectId}`)
   );
 
   if (!fresh.length) return 0;
@@ -335,8 +384,9 @@ export async function executeCsoDecision(
   const data = decision.actionData as Record<string, unknown> & { prospectId: string };
 
   try {
+    const now = new Date();
+
     if (decision.actionType === "CSO_LAUNCH_LINKEDIN") {
-      // Create a LinkedIn OutreachSequence with a connect step
       const sequence = await prisma.outreachSequence.create({
         data: {
           workspaceId,
@@ -354,6 +404,11 @@ export async function executeCsoDecision(
           status: "PENDING",
           scheduledAt: null,
         },
+      });
+      // Mark prospect as CONTACTED so it won't reappear in observe
+      await prisma.prospect.update({
+        where: { id: data.prospectId },
+        data: { status: "CONTACTED", lastInteractionAt: now },
       });
     } else if (decision.actionType === "CSO_LAUNCH_EMAIL") {
       const sequence = await prisma.outreachSequence.create({
@@ -375,8 +430,11 @@ export async function executeCsoDecision(
           scheduledAt: null,
         },
       });
+      await prisma.prospect.update({
+        where: { id: data.prospectId },
+        data: { status: "CONTACTED", lastInteractionAt: now },
+      });
     } else if (decision.actionType === "CSO_FOLLOWUP") {
-      // Find or create sequence
       let sequence = await prisma.outreachSequence.findFirst({
         where: { workspaceId, prospectId: data.prospectId, isActive: true },
         orderBy: { createdAt: "desc" },
@@ -407,7 +465,20 @@ export async function executeCsoDecision(
           scheduledAt: null,
         },
       });
+      // Reset lastInteractionAt so the follow-up cooldown restarts
+      await prisma.prospect.update({
+        where: { id: data.prospectId },
+        data: { lastInteractionAt: now },
+      });
     } else if (decision.actionType === "CSO_STALE_REJECT") {
+      // Cancel active sequences before marking rejected
+      await prisma.sequenceStep.updateMany({
+        where: {
+          sequence: { workspaceId, prospectId: data.prospectId },
+          status: "PENDING",
+        },
+        data: { status: "SKIPPED" },
+      });
       await prisma.prospect.update({
         where: { id: data.prospectId },
         data: { status: "REJECTED" },

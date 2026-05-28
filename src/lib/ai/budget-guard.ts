@@ -35,6 +35,7 @@ export const ESTIMATED_TOKENS_PER_OP: Record<string, number> = {
   agent_social:         4000,  // ~4k tokens (adaptation contenu)
   agent_prospection:    3000,  // ~3k tokens (séquence messages)
   learn_from_performance: 6000, // ~6k tokens (apprentissage hebdomadaire)
+  cso_agent_analyze:    5000,  // ~5k tokens (observation pipeline + génération décisions)
 };
 
 // ─── Lazy Redis client ───────────────────────────────────────────────────────
