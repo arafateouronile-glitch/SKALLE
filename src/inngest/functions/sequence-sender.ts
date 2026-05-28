@@ -524,30 +524,23 @@ export const retryFailedSteps = inngest.createFunction(
 
     // Réessayer chaque étape
     const results = await step.run("retry-steps", async () => {
-      const retryPromises = failedSteps.map(async (step) => {
+      const retryPromises = failedSteps.map(async (failedStep) => {
         try {
-          // Réinitialiser le statut
           await prisma.sequenceStep.update({
-            where: { id: step.id },
-            data: {
-              status: "PENDING",
-              error: null,
-            },
+            where: { id: failedStep.id },
+            data: { status: "PENDING", error: null },
           });
-
-          // Réessayer l'envoi
           await inngest.send({
             name: "sequence/step.send",
             data: {
-              stepId: step.id,
-              sequenceId: step.sequenceId,
-              delayDays: 0, // Réessayer immédiatement
+              stepId: failedStep.id,
+              sequenceId: failedStep.sequenceId,
+              delayDays: 0,
             },
           });
-
-          return { stepId: step.id, success: true };
+          return { stepId: failedStep.id, success: true };
         } catch (error) {
-          return { stepId: step.id, success: false, error: String(error) };
+          return { stepId: failedStep.id, success: false, error: String(error) };
         }
       });
 

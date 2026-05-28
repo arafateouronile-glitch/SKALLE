@@ -14,6 +14,8 @@ import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
 import { createSmtpTransporter, sendEmailViaSMTP } from "@/lib/email/smtp-transport";
 import { decryptIfNeeded } from "@/lib/encryption";
+import { generateUnsubscribeToken } from "@/lib/unsubscribe-token";
+import { trackEmailMetrics } from "@/lib/prospection/deliverability";
 
 // ─── Template interpolation ───────────────────────────────────────────────────
 
@@ -38,7 +40,8 @@ function splitName(fullName: string) {
 function injectTracking(html: string, stepId: string, prospectId: string): string {
   const base = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "";
   const pixel = `<img src="${base}/api/track/open/${stepId}" width="1" height="1" alt="" style="display:none" />`;
-  const unsubUrl = `${base}/api/unsubscribe/${prospectId}`;
+  const unsubToken = generateUnsubscribeToken(prospectId);
+  const unsubUrl = `${base}/api/unsubscribe/${unsubToken}`;
   const unsubFooter = `<div style="text-align:center;margin-top:24px;font-size:11px;color:#9ca3af;"><a href="${unsubUrl}" style="color:#9ca3af;text-decoration:underline;">Se désinscrire</a></div>`;
   const extras = pixel + unsubFooter;
   return html.includes("</body>") ? html.replace("</body>", `${extras}</body>`) : html + extras;
@@ -162,7 +165,7 @@ export const emailOutreachDaily = inngest.createFunction(
           const prospect = s.sequence.prospect;
 
           // Skip si pas d'email ou désinscrit / bounced
-          if (!prospect.email || prospect.emailStatus === "unsubscribed" || prospect.emailStatus === "bounced") {
+          if (!prospect.email || prospect.emailStatus === "unsubscribed" || prospect.emailStatus === "bounced" || prospect.emailStatus === "spam_complaint") {
             skipped++;
             await prisma.sequenceStep.update({
               where: { id: s.id },
@@ -234,6 +237,11 @@ export const emailOutreachDaily = inngest.createFunction(
 
         transporter.close();
         logger.info(`Workspace ${smtp.workspaceId} — sent=${sent} failed=${failed} skipped=${skipped}`);
+
+        // Mise à jour des métriques de délivrabilité
+        if (sent > 0) await trackEmailMetrics(smtp.workspaceId, "sent").catch(() => undefined);
+        if (failed > 0) await trackEmailMetrics(smtp.workspaceId, "bounced").catch(() => undefined);
+
         return { sent, failed, skipped };
       });
 
@@ -367,6 +375,8 @@ export const emailOutreachManual = inngest.createFunction(
       }
 
       transporter.close();
+      if (sent > 0) await trackEmailMetrics(workspaceId, "sent").catch(() => undefined);
+      if (failed > 0) await trackEmailMetrics(workspaceId, "bounced").catch(() => undefined);
       return { sent, failed, skipped };
     });
   }
