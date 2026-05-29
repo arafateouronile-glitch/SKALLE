@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { useCredits, CREDIT_COSTS, type OperationType } from "@/lib/credits";
 import { randomBytes } from "crypto";
 import { searchGoogleMaps } from "@/lib/ai/serper";
+import { inngest } from "@/inngest/client";
 
 const MIN_LEADS = 10;
 const MAX_LEADS = 100;
@@ -207,7 +208,8 @@ export interface BulkLocalResult {
  */
 export async function bulkProcessLocalLeads(
   workspaceId: string,
-  leads: LocalLeadEvaluated[]
+  leads: LocalLeadEvaluated[],
+  userId: string
 ): Promise<BulkLocalResult> {
   let imported = 0;
   const prospects: ProspectBasic[] = [];
@@ -234,6 +236,10 @@ export async function bulkProcessLocalLeads(
       });
       prospects.push(prospect);
       imported++;
+      await inngest.send({
+        name: "prospect/created",
+        data: { prospectId: prospect.id, workspaceId, userId },
+      }).catch(() => {/* fire-and-forget */});
     } catch (err) {
       console.error(`[LocalScraper] Failed to create ${lead.name}:`, err);
     }

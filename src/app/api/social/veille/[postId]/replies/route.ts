@@ -85,7 +85,7 @@ function mapReply(item: RawXReply): XReply | null {
     a.followers ?? a.followersCount ?? a.followers_count;
 
   return {
-    id: item.id ?? item.tweetId ?? Math.random().toString(36).slice(2),
+    id: item.id ?? item.tweetId ?? crypto.randomUUID(),
     text: text.trim(),
     authorName,
     authorHandle,

@@ -10,6 +10,8 @@ import { getClaude, getStringParser } from "@/lib/ai/langchain";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { SequenceChannel } from "@prisma/client";
 import { checkBudget, trackSpend } from "@/lib/ai/budget-guard";
+import { researchProspectsBatch, type ProspectInput } from "@/lib/prospection/prospect-researcher";
+import { generateCsoMessages, buildBrandContext } from "@/lib/prospection/message-generator";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -238,14 +240,9 @@ export async function generateCsoDecisions(
     obs.highScoreNew.length + obs.stagnantContacted.length + obs.staleProspects.length;
   if (total === 0) return [];
 
-  // Fetch workspace for budget check and brand voice
   const workspace = await prisma.workspace.findUnique({
     where: { id: workspaceId },
-    select: {
-      name: true,
-      brandVoice: true,
-      user: { select: { plan: true } },
-    },
+    select: { name: true, brandVoice: true, user: { select: { plan: true } } },
   });
 
   const plan = workspace?.user?.plan ?? "AGENCY";
@@ -255,35 +252,62 @@ export async function generateCsoDecisions(
     return [];
   }
 
-  // Build brand voice context for personalized messages
   const bv = (workspace?.brandVoice ?? {}) as Record<string, unknown>;
-  const persona = bv.marketingPersona as Record<string, unknown> | null;
+  const brand = buildBrandContext(workspace?.name ?? "Skalle", bv);
+
+  // ── Step A: Research high-score prospects in parallel ──────────────────────
+  const prospectInputs: ProspectInput[] = obs.highScoreNew.map((p) => ({
+    id: p.id,
+    name: p.name,
+    company: p.company,
+    jobTitle: p.jobTitle,
+    linkedInUrl: p.linkedInUrl,
+    email: p.email,
+  }));
+
+  const researchMap = prospectInputs.length > 0
+    ? await researchProspectsBatch(prospectInputs, 2).catch(() => new Map())
+    : new Map();
+
+  // ── Step B: Claude decides WHICH prospects to contact + priority ───────────
   const brandContext = [
     workspace?.name ? `Entreprise : ${workspace.name}` : null,
-    (persona?.tone ?? bv.tone) ? `Ton de communication : ${persona?.tone ?? bv.tone}` : null,
-    persona?.uniqueValueProp ? `Proposition de valeur : ${persona.uniqueValueProp}` : null,
-    bv.targetAudience ? `Cible : ${bv.targetAudience}` : null,
+    brand.offer ? `Offre : ${brand.offer}` : null,
+    brand.tone ? `Ton : ${brand.tone}` : null,
   ].filter(Boolean).join("\n");
+
+  // Enrich highScoreNew with research signals for better decision making
+  const newProspectsWithContext = obs.highScoreNew.map((p) => {
+    const r = researchMap.get(p.id);
+    const signals = r
+      ? [
+          r.companyTrigger ? `🔥 ${r.companyTrigger}` : null,
+          r.hiringSignals[0] ? `💼 ${r.hiringSignals[0]}` : null,
+          r.recentJobChange ? "🆕 Changement de poste récent" : null,
+          `Confiance research: ${r.confidence}`,
+        ].filter(Boolean).join(" | ")
+      : "Pas de signal fort détecté";
+    return `- ${p.name} | ${p.company} | ${p.jobTitle ?? "N/A"} | Score: ${p.score} | Email: ${p.hasEmail ? "✓" : "✗"} | LinkedIn: ${p.hasLinkedIn ? "✓" : "✗"} | SIGNALS: [${signals}] | id: ${p.id}`;
+  });
 
   const humanPrompt = `
 Voici l'état actuel du pipeline :
 
 ## Prospects high-score non contactés (${obs.highScoreNew.length})
-${obs.highScoreNew.map((p) =>
-    `- ${p.name} | ${p.company} | ${p.jobTitle ?? "N/A"} | Score: ${p.score} | Email: ${p.hasEmail ? "✓" : "✗"} | LinkedIn: ${p.hasLinkedIn ? "✓" : "✗"} | id: ${p.id}`
-  ).join("\n")}
+${newProspectsWithContext.join("\n")}
 
 ## Prospects contactés sans réponse (${obs.stagnantContacted.length})
 ${obs.stagnantContacted.map((p) =>
     `- ${p.name} | ${p.company} | ${p.daysSinceContact}j sans réponse | Canal: ${p.channel} | Dernier message: "${p.lastMessage ?? "N/A"}" | id: ${p.id}`
   ).join("\n")}
 
-## Prospects en attente depuis 21+ jours — candidats REJECTED (${obs.staleProspects.length})
+## Prospects en attente depuis 21+ jours (${obs.staleProspects.length})
 ${obs.staleProspects.map((p) =>
     `- ${p.name} | ${p.company} | ${p.daysSinceContact}j sans activité | id: ${p.id}`
   ).join("\n")}
 
-Génère les décisions d'outreach optimales pour aujourd'hui.
+Priorise les prospects avec des SIGNALS forts (🔥 levée, 💼 recrutement, 🆕 changement de poste).
+Génère les décisions. Les messages seront personnalisés séparément.
 `;
 
   const claude = getClaude();
@@ -299,12 +323,58 @@ Génère les décisions d'outreach optimales pour aujourd'hui.
   const raw = await parser.invoke(response);
   const clean = stripMarkdownJson(raw);
 
+  let decisions: CsoDecisionDraft[] = [];
   try {
     const parsed = JSON.parse(clean) as CsoDecisionDraft[];
-    return Array.isArray(parsed) ? parsed.slice(0, 15) : [];
+    decisions = Array.isArray(parsed) ? parsed.slice(0, 15) : [];
   } catch {
     return [];
   }
+
+  // ── Step C: Replace generic messages with hyper-personalized ones ──────────
+  const enrichedDecisions = await Promise.all(
+    decisions.map(async (d): Promise<CsoDecisionDraft> => {
+      const research = researchMap.get(d.prospectId);
+      if (!research) return d;
+
+      const prospectData = obs.highScoreNew.find((p) => p.id === d.prospectId)
+        ?? obs.stagnantContacted.find((p) => p.id === d.prospectId);
+      if (!prospectData) return d;
+
+      const profile = {
+        id: d.prospectId,
+        name: d.prospectName,
+        firstName: d.prospectName.split(" ")[0],
+        company: prospectData.company,
+        jobTitle: prospectData.jobTitle ?? "",
+        email: "email" in prospectData ? prospectData.email : undefined,
+        linkedInUrl: "linkedInUrl" in prospectData ? prospectData.linkedInUrl : undefined,
+      };
+
+      try {
+        if (d.actionType === "CSO_LAUNCH_LINKEDIN") {
+          const msg = await generateCsoMessages(profile, research, brand, "LINKEDIN");
+          return { ...d, actionData: { ...d.actionData, connectNote: msg.content, _angle: msg.angle } };
+
+        } else if (d.actionType === "CSO_LAUNCH_EMAIL") {
+          const msg = await generateCsoMessages(profile, research, brand, "EMAIL");
+          return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content, _angle: msg.angle } };
+
+        } else if (d.actionType === "CSO_FOLLOWUP") {
+          const lastMsg = "lastMessage" in prospectData ? (prospectData.lastMessage ?? undefined) : undefined;
+          const channel = "channel" in prospectData ? (prospectData.channel as "EMAIL" | "LINKEDIN" | "FOLLOWUP") : "EMAIL";
+          const msg = await generateCsoMessages(profile, research, brand, channel === "LINKEDIN" ? "LINKEDIN" : "FOLLOWUP", lastMsg);
+          return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content, _angle: msg.angle } };
+        }
+      } catch (err) {
+        console.warn(`[CSO] Message generation failed for ${d.prospectId}:`, err);
+      }
+
+      return d;
+    })
+  );
+
+  return enrichedDecisions;
 }
 
 // ─── Step 3: Store decisions ──────────────────────────────────────────────────

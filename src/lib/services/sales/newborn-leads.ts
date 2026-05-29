@@ -11,6 +11,7 @@ import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { prisma } from "@/lib/prisma";
 import { useCredits, CREDIT_COSTS, type OperationType } from "@/lib/credits";
+import { inngest } from "@/inngest/client";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📋 MAPPING SECTEURS (Code NAF/APE → Label FR)
@@ -456,7 +457,8 @@ export interface BulkNewbornResult {
  */
 export async function bulkSaveNewbornLeads(
   workspaceId: string,
-  leads: NewbornLeadEnriched[]
+  leads: NewbornLeadEnriched[],
+  userId: string
 ): Promise<BulkNewbornResult> {
   let imported = 0;
   const prospects: ProspectBasic[] = [];
@@ -517,6 +519,13 @@ export async function bulkSaveNewbornLeads(
       });
       prospects.push(prospect);
       imported++;
+      // Fire auto-enrichment only for placeholder emails (real emails don't need enrichment)
+      if (email.endsWith("@registry.skalle")) {
+        await inngest.send({
+          name: "prospect/created",
+          data: { prospectId: prospect.id, workspaceId, userId },
+        }).catch(() => {/* fire-and-forget */});
+      }
     } catch (err) {
       console.error(`[NewbornLeads] Failed to save ${lead.companyName}:`, err);
     }

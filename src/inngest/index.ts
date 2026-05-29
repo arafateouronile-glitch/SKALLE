@@ -44,6 +44,7 @@ import { linkedInOutreachDaily, linkedInOutreachManual } from "./functions/linke
 import { linkedInReplyChecker, linkedInReplyCheckerManual } from "./functions/linkedin-reply-checker";
 import { emailOutreachDaily, emailOutreachManual } from "./functions/email-outreach-daily";
 import { csoAgentDaily, csoAgentManual, csoAgentExecute } from "./functions/cso-agent-daily";
+import { runPersonaPipeline } from "./functions/persona-pipeline";
 
 // Export all Inngest functions
 export const functions = [
@@ -107,4 +108,6 @@ export const functions = [
   csoAgentDaily,
   csoAgentManual,
   csoAgentExecute,
+  // Persona Pipeline — prospection orchestrée par persona
+  runPersonaPipeline,
 ];

@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { useCredits, CREDIT_COSTS, type OperationType } from "@/lib/credits";
 import { searchGoogle } from "@/lib/ai/serper";
 import { randomBytes } from "crypto";
+import { inngest } from "@/inngest/client";
 
 const MAX_OFFERS_PER_CALL = 10;
 const SIGNAL_OPERATION: OperationType = "job_board_signals";
@@ -366,7 +367,7 @@ export async function processAndSaveSignals(
       // Email unique par lead (contrainte @@unique([email, workspaceId]))
       const uniqueEmail = `signal+${randomBytes(8).toString("hex")}@job.skalle`;
 
-      await prisma.prospect.create({
+      const newProspect = await prisma.prospect.create({
         data: {
           name: job.companyName,
           email: uniqueEmail,
@@ -382,8 +383,13 @@ export async function processAndSaveSignals(
           intentScore: context.intentScore,
           workspaceId,
         },
+        select: { id: true },
       });
       created++;
+      await inngest.send({
+        name: "prospect/created",
+        data: { prospectId: newProspect.id, workspaceId, userId },
+      }).catch(() => {/* fire-and-forget */});
     } catch (err) {
       console.error(`[IntentSignals] Failed to create lead for ${job.companyName}:`, err);
       // Continue avec les autres offres

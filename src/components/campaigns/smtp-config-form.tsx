@@ -53,30 +53,88 @@ const PRESETS: Record<
   string,
   { host: string; port: number; secure: boolean; label: string; help: string; imapHost?: string; imapPort?: number }
 > = {
+  // ── Google & Microsoft ──────────────────────────────────────────────────────
   gmail: {
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    label: "Gmail",
-    help: "Utilisez un mot de passe d'application : Google Account > Sécurité > Mots de passe des applications",
-    imapHost: "imap.gmail.com",
-    imapPort: 993,
+    host: "smtp.gmail.com", port: 587, secure: false, label: "Gmail",
+    help: "Créez un mot de passe d'application : Google Account → Sécurité → Mots de passe des applications",
+    imapHost: "imap.gmail.com", imapPort: 993,
   },
   outlook: {
-    host: "smtp.office365.com",
-    port: 587,
-    secure: false,
-    label: "Outlook / Office 365",
-    help: "Utilisez votre mot de passe habituel ou un mot de passe d'application si 2FA est activé",
-    imapHost: "outlook.office365.com",
-    imapPort: 993,
+    host: "smtp.office365.com", port: 587, secure: false, label: "Outlook / Office 365",
+    help: "Mot de passe habituel ou mot de passe d'application si 2FA actif",
+    imapHost: "outlook.office365.com", imapPort: 993,
   },
+  // ── Outils marketing ───────────────────────────────────────────────────────
+  brevo: {
+    host: "smtp-relay.brevo.com", port: 587, secure: false, label: "Brevo (Sendinblue)",
+    help: "Clé SMTP dans Brevo : Paramètres → Clés SMTP & API. Login = votre email, mdp = clé SMTP",
+  },
+  mailjet: {
+    host: "in-v3.mailjet.com", port: 587, secure: false, label: "Mailjet",
+    help: "Clés dans Mailjet : Paramètres de compte → Clés API & SMTP. Login = API Key, mdp = Secret Key",
+  },
+  // ── Hébergeurs français ────────────────────────────────────────────────────
+  ovh: {
+    host: "ssl0.ovh.net", port: 587, secure: false, label: "OVH",
+    help: "Identifiant = adresse email complète, mot de passe = mot de passe OVH",
+    imapHost: "ssl0.ovh.net", imapPort: 993,
+  },
+  ionos: {
+    host: "smtp.ionos.fr", port: 587, secure: false, label: "Ionos / 1&1",
+    help: "Identifiant = adresse email complète, mot de passe Ionos",
+    imapHost: "imap.ionos.fr", imapPort: 993,
+  },
+  infomaniak: {
+    host: "mail.infomaniak.com", port: 587, secure: false, label: "Infomaniak",
+    help: "Identifiant = adresse email complète, mot de passe Infomaniak",
+    imapHost: "mail.infomaniak.com", imapPort: 993,
+  },
+  gandi: {
+    host: "mail.gandi.net", port: 587, secure: false, label: "Gandi Mail",
+    help: "Identifiant = adresse email complète, mot de passe Gandi",
+    imapHost: "mail.gandi.net", imapPort: 993,
+  },
+  // ── Autres fournisseurs ────────────────────────────────────────────────────
+  yahoo: {
+    host: "smtp.mail.yahoo.com", port: 587, secure: false, label: "Yahoo Mail",
+    help: "Créez un mot de passe d'application dans Yahoo : Sécurité du compte → Clé d'application",
+    imapHost: "imap.mail.yahoo.com", imapPort: 993,
+  },
+  zoho: {
+    host: "smtp.zoho.com", port: 587, secure: false, label: "Zoho Mail",
+    help: "Activez le SMTP dans Zoho : Paramètres mail → SMTP. Utilisez votre adresse email et mot de passe",
+    imapHost: "imap.zoho.com", imapPort: 993,
+  },
+  icloud: {
+    host: "smtp.mail.me.com", port: 587, secure: false, label: "iCloud Mail",
+    help: "Créez un mot de passe spécifique à l'app sur appleid.apple.com → Sécurité",
+    imapHost: "imap.mail.me.com", imapPort: 993,
+  },
+  fastmail: {
+    host: "smtp.fastmail.com", port: 587, secure: false, label: "Fastmail",
+    help: "Créez un mot de passe d'application dans Fastmail : Paramètres → Mots de passe et sécurité",
+    imapHost: "imap.fastmail.com", imapPort: 993,
+  },
+  // ── FAI français ──────────────────────────────────────────────────────────
+  free: {
+    host: "smtp.free.fr", port: 465, secure: true, label: "Free.fr",
+    help: "Identifiant Freebox, mot de passe Free. Limite : 100 emails/jour",
+    imapHost: "imap.free.fr", imapPort: 993,
+  },
+  orange: {
+    host: "smtp.orange.fr", port: 587, secure: false, label: "Orange",
+    help: "Identifiant = adresse @orange.fr, mot de passe Orange. Limite : 100 emails/jour",
+    imapHost: "imap.orange.fr", imapPort: 993,
+  },
+  sfr: {
+    host: "smtp.sfr.fr", port: 587, secure: false, label: "SFR",
+    help: "Identifiant = adresse @sfr.fr, mot de passe SFR. Limite : 100 emails/jour",
+    imapHost: "imap.sfr.fr", imapPort: 993,
+  },
+  // ── Personnalisé ──────────────────────────────────────────────────────────
   custom: {
-    host: "",
-    port: 587,
-    secure: false,
-    label: "Personnalisé",
-    help: "Entrez les paramètres SMTP de votre fournisseur",
+    host: "", port: 587, secure: false, label: "Personnalisé",
+    help: "Entrez manuellement les paramètres SMTP de votre hébergeur",
   },
 };
 

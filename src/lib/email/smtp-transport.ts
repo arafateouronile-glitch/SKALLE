@@ -122,25 +122,20 @@ export function calculateSendDelay(perMinuteLimit: number): number {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const SMTP_PRESETS: Record<string, { host: string; port: number; secure: boolean; dailyLimit: number; perMinuteLimit: number }> = {
-  gmail: {
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    dailyLimit: 500,
-    perMinuteLimit: 20,
-  },
-  outlook: {
-    host: "smtp.office365.com",
-    port: 587,
-    secure: false,
-    dailyLimit: 300,
-    perMinuteLimit: 30,
-  },
-  custom: {
-    host: "",
-    port: 587,
-    secure: false,
-    dailyLimit: 500,
-    perMinuteLimit: 15,
-  },
+  gmail: { host: "smtp.gmail.com", port: 587, secure: false, dailyLimit: 500, perMinuteLimit: 20 },
+  outlook: { host: "smtp.office365.com", port: 587, secure: false, dailyLimit: 300, perMinuteLimit: 30 },
+  yahoo: { host: "smtp.mail.yahoo.com", port: 587, secure: false, dailyLimit: 500, perMinuteLimit: 20 },
+  zoho: { host: "smtp.zoho.com", port: 587, secure: false, dailyLimit: 300, perMinuteLimit: 15 },
+  brevo: { host: "smtp-relay.brevo.com", port: 587, secure: false, dailyLimit: 300, perMinuteLimit: 30 },
+  mailjet: { host: "in-v3.mailjet.com", port: 587, secure: false, dailyLimit: 200, perMinuteLimit: 20 },
+  ovh: { host: "ssl0.ovh.net", port: 587, secure: false, dailyLimit: 300, perMinuteLimit: 15 },
+  ionos: { host: "smtp.ionos.fr", port: 587, secure: false, dailyLimit: 300, perMinuteLimit: 15 },
+  infomaniak: { host: "mail.infomaniak.com", port: 587, secure: false, dailyLimit: 1000, perMinuteLimit: 30 },
+  gandi: { host: "mail.gandi.net", port: 587, secure: false, dailyLimit: 1000, perMinuteLimit: 30 },
+  icloud: { host: "smtp.mail.me.com", port: 587, secure: false, dailyLimit: 1000, perMinuteLimit: 20 },
+  fastmail: { host: "smtp.fastmail.com", port: 587, secure: false, dailyLimit: 1000, perMinuteLimit: 30 },
+  free: { host: "smtp.free.fr", port: 465, secure: true, dailyLimit: 100, perMinuteLimit: 5 },
+  orange: { host: "smtp.orange.fr", port: 587, secure: false, dailyLimit: 100, perMinuteLimit: 5 },
+  sfr: { host: "smtp.sfr.fr", port: 587, secure: false, dailyLimit: 100, perMinuteLimit: 5 },
+  custom: { host: "", port: 587, secure: false, dailyLimit: 500, perMinuteLimit: 15 },
 };

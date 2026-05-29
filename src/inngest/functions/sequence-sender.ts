@@ -5,12 +5,11 @@ import {
   sendEmailViaSMTP,
 } from "@/lib/email/smtp-transport";
 import { decryptIfNeeded } from "@/lib/encryption";
+import { generateUnsubscribeToken } from "@/lib/unsubscribe-token";
 
 function injectTrackingExtras(html: string, stepId: string, prospectId: string): string {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
   const pixel = `<img src="${baseUrl}/api/track/open/${stepId}" width="1" height="1" alt="" style="display:none" />`;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { generateUnsubscribeToken } = require("../../lib/unsubscribe-token");
   const unsubToken = generateUnsubscribeToken(prospectId);
   const unsubUrl = `${baseUrl}/api/unsubscribe/${unsubToken}`;
   const unsubLink = `\n<div style="text-align:center;margin-top:24px;font-size:11px;color:#9ca3af;"><a href="${unsubUrl}" style="color:#9ca3af;text-decoration:underline;">Se désinscrire</a></div>`;

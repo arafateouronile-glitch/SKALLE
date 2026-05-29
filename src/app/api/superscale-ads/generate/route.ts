@@ -74,3 +74,27 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ campaignId: campaign.id, status: "GENERATING" }, { status: 202 });
 }
+
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
+  const workspace = await prisma.workspace.findFirst({
+    where: { userId: session.user.id },
+    select: { id: true },
+  });
+  if (!workspace) return NextResponse.json({ campaigns: [] });
+
+  const limit = Math.min(Number(new URL(req.url).searchParams.get("limit") ?? 20), 50);
+
+  const campaigns = await prisma.adCampaign.findMany({
+    where: { workspaceId: workspace.id },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: {
+      variants: { select: { id: true, framework: true, angle: true }, take: 3 },
+    },
+  });
+
+  return NextResponse.json({ campaigns });
+}
