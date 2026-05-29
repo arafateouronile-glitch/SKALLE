@@ -115,6 +115,7 @@ model Workspace {
   linkedInReplies           LinkedInReply[]
   cmoObjectives             CMOObjective[]
   cmoProposals              CMOProposal[]
+  personas                  Persona[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -319,6 +320,8 @@ model Prospect {
   lists               ProspectListEntry[]
   intentSignals       IntentSignal[]
   linkedInReplies     LinkedInReply[]
+  personaId           String?
+  persona             Persona?              @relation(fields: [personaId], references: [id])
 
   @@unique([email, workspaceId])
   @@index([workspaceId])
@@ -1017,6 +1020,36 @@ enum EnrichmentProvider {
   HUNTER
   ZOOMINFO
   CLEARBIT
+  APIFY
+}
+
+// ─── Persona ──────────────────────────────────────────────────────────────────
+
+enum PersonaStatus {
+  DRAFT
+  RUNNING
+  ACTIVE
+  PAUSED
+}
+
+model Persona {
+  id          String        @id @default(cuid())
+  workspaceId String
+  name        String
+  raw         Json          // RawPersona: industry, jobTitles[], companySizes[], locations[], keywords[], painPoints[]
+  enhanced    Json?         // EnhancedPersona: channel queries, hooks, email template (set by AI)
+  status      PersonaStatus @default(DRAFT)
+  lastRunAt   DateTime?
+  leadsFound  Int           @default(0)
+  enriched    Int           @default(0)
+  sequences   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  prospects   Prospect[]
+
+  @@index([workspaceId])
+  @@index([status])
 }
 
 enum EnrichmentStatus {
@@ -1295,15 +1328,16 @@ model LinkedInAutomationConfig {
   id                   String    @id @default(cuid())
   workspaceId          String    @unique
   liAt                 String    // cookie li_at (session LinkedIn)
+  jsessionId           String?   // cookie JSESSIONID (CSRF token) — même onglet DevTools que li_at
   isActive             Boolean   @default(false)
   dailyConnectLimit    Int       @default(10)  // défaut sécurisé (pas 20)
   dailyMessageLimit    Int       @default(25)  // défaut sécurisé (pas 50)
   sendAt               String    @default("10:00") // heure locale HH:mm
-  connectActor         String    @default("wangzishuo~linkedin-auto-connect")
-  messageActor         String    @default("wangzishuo~linkedin-message-sender")
+  connectActor         String    @default("voyager") // legacy, conservé pour compatibilité
+  messageActor         String    @default("voyager") // legacy, conservé pour compatibilité
   warmupDay            Int       @default(0)   // incrément à chaque run (0→21 = warm-up)
   warmupStartedAt      DateTime?               // date du 1er run réussi
-  proxyCountry         String    @default("FR") // code ISO pour le proxy résidentiel Apify
+  proxyCountry         String    @default("FR") // code ISO pays (référence pour anti-ban)
   lastRunAt            DateTime?
   lastRunStats         Json?     // { sent, failed, skipped, abortReason? }
   createdAt            DateTime  @default(now())

@@ -13,8 +13,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Target, Shield, MessageCircle, Copy, ExternalLink, Sparkles, Loader2, CreditCard, BookPlus } from "lucide-react";
-import { generateClosingResponseAction, saveToObjectionBankAction } from "@/actions/cso-sales";
+import { Target, Shield, MessageCircle, Copy, ExternalLink, Sparkles, Loader2, CreditCard, BookPlus, Send } from "lucide-react";
+import { generateClosingResponseAction, saveToObjectionBankAction, saveProspectGeneratedMessagesAction, queueLinkedInMessageAction } from "@/actions/cso-sales";
 import { updateProspectStatusAction } from "@/actions/crm";
 import { PaymentGenerator } from "@/components/sales/payment-generator";
 import type { ClosingResponseResult } from "@/lib/services/sales/replier";
@@ -72,6 +72,7 @@ export function ReplyAssistant({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [savingBankId, setSavingBankId] = useState<string | null>(null);
   const [applyingStatus, setApplyingStatus] = useState(false);
+  const [queuingId, setQueuingId] = useState<string | null>(null);
 
   const runAnalysis = async (instruction?: string) => {
     const message = incomingMessage.trim();
@@ -89,6 +90,14 @@ export function ReplyAssistant({
       if (res.success && res.data) {
         setResult(res.data);
         toast.success("Réponses générées (5 crédits)");
+        // Save silently — non-blocking
+        saveProspectGeneratedMessagesAction(prospectId, workspaceId, {
+          incomingMessage: message,
+          optionA: res.data.optionA,
+          optionB: res.data.optionB,
+          strategicNote: res.data.strategicNote,
+          intention: res.data.intentionDetected,
+        }).catch(() => null);
       } else {
         toast.error(res.error ?? "Erreur");
       }
@@ -123,6 +132,19 @@ export function ReplyAssistant({
       toast.error("Erreur");
     } finally {
       setSavingBankId(null);
+    }
+  };
+
+  const queueLinkedIn = async (text: string, optionId: string) => {
+    setQueuingId(optionId);
+    try {
+      const res = await queueLinkedInMessageAction(prospectId, workspaceId, text);
+      if (res.success) toast.success("Connexion demain 10h · DM le lendemain 10h");
+      else toast.error(res.error ?? "Erreur");
+    } catch {
+      toast.error("Erreur");
+    } finally {
+      setQueuingId(null);
     }
   };
 
@@ -248,6 +270,18 @@ export function ReplyAssistant({
                         {copiedId === "a" ? <Copy className="h-4 w-4 mr-1 text-green-500" /> : <Copy className="h-4 w-4 mr-1" />}
                         Copier & Ouvrir {PLATFORM_LABELS[platform]}
                       </Button>
+                      {platform === "LINKEDIN" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-blue-600"
+                          title="Connexion J0 → DM J+1 à 10h (jours ouvrés)"
+                          disabled={queuingId !== null}
+                          onClick={() => queueLinkedIn(result.optionA, "a")}
+                        >
+                          {queuingId === "a" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -273,6 +307,18 @@ export function ReplyAssistant({
                         {copiedId === "b" ? <Copy className="h-4 w-4 mr-1 text-green-500" /> : <Copy className="h-4 w-4 mr-1" />}
                         Copier & Ouvrir {PLATFORM_LABELS[platform]}
                       </Button>
+                      {platform === "LINKEDIN" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-blue-600"
+                          title="Connexion J0 → DM J+1 à 10h (jours ouvrés)"
+                          disabled={queuingId !== null}
+                          onClick={() => queueLinkedIn(result.optionB, "b")}
+                        >
+                          {queuingId === "b" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"

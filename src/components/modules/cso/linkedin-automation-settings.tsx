@@ -41,6 +41,13 @@ interface AutomationConfig {
   proxyCountry: string;
 }
 
+interface LoadResponse {
+  config: AutomationConfig | null;
+  hasSession: boolean;
+  hasJsessionId: boolean;
+  pendingCount: number;
+}
+
 interface Props {
   workspaceId: string;
 }
@@ -60,12 +67,14 @@ function warmupLabel(day: number): string {
 export function LinkedInAutomationSettings({ workspaceId }: Props) {
   const [config, setConfig] = useState<AutomationConfig | null>(null);
   const [hasSession, setHasSession] = useState(false);
+  const [hasJsessionId, setHasJsessionId] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTriggeringRun, setIsTriggeringRun] = useState(false);
 
   const [liAt, setLiAt] = useState("");
+  const [jsessionId, setJsessionId] = useState("");
   const [showLiAt, setShowLiAt] = useState(false);
   const [dailyConnectLimit, setDailyConnectLimit] = useState(10);
   const [dailyMessageLimit, setDailyMessageLimit] = useState(25);
@@ -80,13 +89,10 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
     setIsLoading(true);
     try {
       const res = await fetch(`/api/linkedin-automation?workspaceId=${workspaceId}`);
-      const data = await res.json() as {
-        config: AutomationConfig | null;
-        hasSession: boolean;
-        pendingCount: number;
-      };
+      const data = await res.json() as LoadResponse;
       setConfig(data.config);
       setHasSession(data.hasSession);
+      setHasJsessionId(data.hasJsessionId);
       setPendingCount(data.pendingCount);
       if (data.config) {
         setDailyConnectLimit(data.config.dailyConnectLimit);
@@ -112,6 +118,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
         proxyCountry,
       };
       if (liAt.trim()) body.liAt = liAt.trim();
+      if (jsessionId.trim()) body.jsessionId = jsessionId.trim();
 
       const res = await fetch("/api/linkedin-automation", {
         method: "POST",
@@ -122,10 +129,17 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
       if (!data.ok) { toast.error(data.error ?? "Erreur"); return; }
 
       setConfig(data.config ?? null);
-      if (liAt.trim()) {
-        setHasSession(true);
+      const cookieChanged = liAt.trim() || jsessionId.trim();
+      if (cookieChanged) {
+        if (liAt.trim()) setHasSession(true);
+        if (jsessionId.trim()) setHasJsessionId(true);
         setLiAt("");
-        toast.success("Cookie sauvegardé — warm-up remis à zéro. Active l'automation quand tu es prêt.");
+        setJsessionId("");
+        toast.success(
+          liAt.trim()
+            ? "Cookies sauvegardés — warm-up remis à zéro. Active l'automation quand tu es prêt."
+            : "JSESSIONID sauvegardé"
+        );
       } else {
         toast.success("Configuration sauvegardée");
       }
@@ -326,32 +340,35 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
         <div className="flex items-center gap-2">
           <Settings className="h-4 w-4 text-slate-400" />
           <span className="text-[13px] font-medium text-white">Session LinkedIn</span>
-          {hasSession ? (
+          {hasSession && hasJsessionId ? (
             <span className="flex items-center gap-1 text-[10px] text-emerald-400">
               <CheckCircle2 className="h-3 w-3" />
-              Cookie configuré
+              Session complète
             </span>
+          ) : hasSession ? (
+            <span className="text-[10px] text-amber-400">JSESSIONID manquant</span>
           ) : (
-            <span className="text-[10px] text-amber-400">Cookie manquant</span>
+            <span className="text-[10px] text-amber-400">Cookies manquants</span>
           )}
         </div>
 
+        <p className="text-[10px] text-slate-500 leading-relaxed">
+          DevTools → Application → Cookies → linkedin.com. Copie les deux valeurs ci-dessous.
+        </p>
+
+        {/* li_at */}
         <div className="space-y-1.5">
-          <Label className="text-[11px] text-slate-500">
-            Cookie{" "}
+          <Label className="text-[11px] text-slate-500 flex items-center gap-1.5">
             <code className="bg-white/[0.05] px-1 rounded text-sky-400">li_at</code>
-            {" "}(depuis les DevTools LinkedIn)
+            <span className="text-slate-600">— session principale</span>
+            {hasSession && <CheckCircle2 className="h-3 w-3 text-emerald-400 ml-auto" />}
           </Label>
           <div className="relative">
             <Input
               type={showLiAt ? "text" : "password"}
               value={liAt}
               onChange={(e) => setLiAt(e.target.value)}
-              placeholder={
-                hasSession
-                  ? "••••••••••• (laisser vide pour conserver)"
-                  : "Colle ton cookie li_at ici"
-              }
+              placeholder={hasSession ? "••••••••• (conserver)" : "Colle li_at ici"}
               className="bg-white/[0.03] border-white/[0.08] text-white placeholder:text-slate-600 text-[12px] pr-10 h-9"
             />
             <button
@@ -362,13 +379,30 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
               {showLiAt ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
             </button>
           </div>
-          <p className="text-[10px] text-slate-600">
-            DevTools → Application → Cookies → linkedin.com → cherche{" "}
-            <code className="text-sky-500">li_at</code>.
-            {hasSession && (
-              <span className="text-amber-500/80"> Changer le cookie remet le warm-up à zéro.</span>
-            )}
-          </p>
+          {hasSession && (
+            <p className="text-[10px] text-amber-500/70">Changer li_at remet le warm-up à zéro.</p>
+          )}
+        </div>
+
+        {/* JSESSIONID */}
+        <div className="space-y-1.5">
+          <Label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+            <code className="bg-white/[0.05] px-1 rounded text-sky-400">JSESSIONID</code>
+            <span className="text-slate-600">— token CSRF (requis)</span>
+            {hasJsessionId && <CheckCircle2 className="h-3 w-3 text-emerald-400 ml-auto" />}
+          </Label>
+          <Input
+            type="password"
+            value={jsessionId}
+            onChange={(e) => setJsessionId(e.target.value)}
+            placeholder={hasJsessionId ? "••••••••• (conserver)" : 'Ex : ajax:1234567890123456'}
+            className="bg-white/[0.03] border-white/[0.08] text-white placeholder:text-slate-600 text-[12px] h-9"
+          />
+          {!hasJsessionId && (
+            <p className="text-[10px] text-amber-400/80">
+              Sans JSESSIONID, les envois peuvent échouer — c&apos;est le token CSRF de l&apos;API LinkedIn.
+            </p>
+          )}
         </div>
       </div>
 
@@ -422,7 +456,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
 
           <div className="space-y-1.5">
             <Label className="text-[11px] text-slate-500">
-              Pays proxy résidentiel
+              Pays du compte LinkedIn
             </Label>
             <select
               value={proxyCountry}
@@ -438,9 +472,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
               <option value="DE">🇩🇪 Allemagne</option>
               <option value="US">🇺🇸 États-Unis</option>
             </select>
-            <p className="text-[10px] text-slate-600">
-              Proxy actif si <code className="text-sky-500">APIFY_PROXY_ENABLED=true</code>
-            </p>
+            <p className="text-[10px] text-slate-600">Utilisé pour adapter le comportement anti-ban</p>
           </div>
         </div>
       </div>

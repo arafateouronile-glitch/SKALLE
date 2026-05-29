@@ -59,12 +59,14 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  const hasSession = !!(await prisma.linkedInAutomationConfig.findUnique({
+  const cookies = await prisma.linkedInAutomationConfig.findUnique({
     where: { workspaceId },
-    select: { liAt: true },
-  }))?.liAt;
+    select: { liAt: true, jsessionId: true },
+  });
+  const hasSession = !!cookies?.liAt;
+  const hasJsessionId = !!cookies?.jsessionId;
 
-  return NextResponse.json({ config, hasSession, pendingCount });
+  return NextResponse.json({ config, hasSession, hasJsessionId, pendingCount });
 }
 
 export async function POST(req: NextRequest) {
@@ -74,12 +76,11 @@ export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
     workspaceId: string;
     liAt?: string;
+    jsessionId?: string;
     isActive?: boolean;
     dailyConnectLimit?: number;
     dailyMessageLimit?: number;
     sendAt?: string;
-    connectActor?: string;
-    messageActor?: string;
     proxyCountry?: string;
   };
 
@@ -108,14 +109,13 @@ export async function POST(req: NextRequest) {
     // Nouveau cookie → reset warm-up pour repartir de zéro
     data.warmupDay = 0;
     data.warmupStartedAt = null;
-    data.isActive = false; // l'utilisateur doit réactiver manuellement
+    data.isActive = false;
   }
+  if (body.jsessionId !== undefined) data.jsessionId = body.jsessionId || null;
   if (body.isActive !== undefined) data.isActive = body.isActive;
   if (body.dailyConnectLimit !== undefined) data.dailyConnectLimit = Math.min(body.dailyConnectLimit, 40);
   if (body.dailyMessageLimit !== undefined) data.dailyMessageLimit = Math.min(body.dailyMessageLimit, 100);
   if (body.sendAt !== undefined) data.sendAt = body.sendAt;
-  if (body.connectActor !== undefined) data.connectActor = body.connectActor;
-  if (body.messageActor !== undefined) data.messageActor = body.messageActor;
   if (body.proxyCountry !== undefined) data.proxyCountry = body.proxyCountry.toUpperCase().slice(0, 2);
 
   const config = await prisma.linkedInAutomationConfig.upsert({

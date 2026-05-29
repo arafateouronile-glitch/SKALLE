@@ -5,8 +5,8 @@
  *   1. Cookie check : vérifie li_at avant tout envoi (abort si expiré)
  *   2. Warm-up : limites réduites les 21 premiers jours
  *   3. Batch splitté en 2 sessions avec 2h d'intervalle (≥4 actions)
- *   4. Proxy résidentiel Apify (opt-in APIFY_PROXY_ENABLED=true)
- *   5. Abort immédiat sur challenge / rate-limit → automation désactivée
+ *   4. Abort immédiat sur challenge / rate-limit → automation désactivée
+ *   5. Envoi via Voyager API directe (li_at + JSESSIONID CSRF)
  */
 
 import { inngest } from "../client";
@@ -33,12 +33,12 @@ type SessionStats = { sent: number; failed: number; aborted: boolean; abortCode?
 async function runSessionAndUpdateSteps(
   batch: Array<LinkedInAction & { stepId: string }>,
   liAt: string,
-  cfg: { connectActor: string; messageActor: string; proxyCountry: string }
+  jsessionId?: string | null
 ): Promise<SessionStats> {
   const { results, aborted, abortCode } = await processBatch(
     batch.map(({ stepId: _id, ...action }) => action),
     liAt,
-    cfg
+    jsessionId
   );
 
   let sent = 0;
@@ -70,14 +70,16 @@ export const linkedInOutreachDaily = inngest.createFunction(
   },
   { cron: "0 10 * * 1-5" },
   async ({ step, logger }) => {
+    // Jitter humain : ±15 min aléatoire pour casser la signature bot d'un cron heure fixe
+    await step.sleep("human-jitter", `${Math.floor(Math.random() * 30)}m`);
+
     const configs = await step.run("load-active-configs", async () => {
       return prisma.linkedInAutomationConfig.findMany({
         where: { isActive: true },
         select: {
-          id: true, workspaceId: true, liAt: true,
+          id: true, workspaceId: true, liAt: true, jsessionId: true,
           dailyConnectLimit: true, dailyMessageLimit: true,
-          connectActor: true, messageActor: true,
-          warmupDay: true, warmupStartedAt: true, proxyCountry: true,
+          warmupDay: true, warmupStartedAt: true,
         },
       });
     });
@@ -128,7 +130,7 @@ export const linkedInOutreachDaily = inngest.createFunction(
           },
           include: { sequence: { include: { prospect: { select: { linkedInUrl: true, name: true } } } } },
           orderBy: { createdAt: "asc" },
-          take: Math.max(effectiveConnect, effectiveMessage),
+          take: effectiveConnect + effectiveMessage,
         });
 
         const connectSteps = pendingSteps.filter((s) => s.linkedInAction === "connect").slice(0, effectiveConnect);
@@ -159,19 +161,13 @@ export const linkedInOutreachDaily = inngest.createFunction(
         continue;
       }
 
-      const sessionCfg = {
-        connectActor: cfg.connectActor,
-        messageActor: cfg.messageActor,
-        proxyCountry: cfg.proxyCountry,
-      };
-
       // ── 3. Split batch → 2 sessions espacées de 2h ────────────────────────
       const splitAt = prepared.batch.length >= 4 ? Math.ceil(prepared.batch.length / 2) : prepared.batch.length;
       const batch1 = prepared.batch.slice(0, splitAt);
       const batch2 = prepared.batch.slice(splitAt);
 
       const stats1 = await step.run(`session1-${cfg.workspaceId}`, async () => {
-        return runSessionAndUpdateSteps(batch1, cfg.liAt, sessionCfg);
+        return runSessionAndUpdateSteps(batch1, cfg.liAt, cfg.jsessionId);
       });
 
       let totalSent   = stats1.sent;
@@ -183,7 +179,7 @@ export const linkedInOutreachDaily = inngest.createFunction(
         await step.sleep(`gap-${cfg.workspaceId}`, "2h");
 
         const stats2 = await step.run(`session2-${cfg.workspaceId}`, async () => {
-          return runSessionAndUpdateSteps(batch2, cfg.liAt, sessionCfg);
+          return runSessionAndUpdateSteps(batch2, cfg.liAt, cfg.jsessionId);
         });
 
         totalSent   += stats2.sent;
@@ -237,7 +233,10 @@ export const linkedInOutreachManual = inngest.createFunction(
     const { workspaceId } = event.data as { workspaceId: string };
 
     return step.run("process", async () => {
-      const cfg = await prisma.linkedInAutomationConfig.findUnique({ where: { workspaceId } });
+      const cfg = await prisma.linkedInAutomationConfig.findUnique({
+        where: { workspaceId },
+        select: { isActive: true, liAt: true, jsessionId: true, warmupDay: true, warmupStartedAt: true, dailyConnectLimit: true, dailyMessageLimit: true },
+      });
       if (!cfg?.isActive || !cfg.liAt) return { error: "Automation non configurée" };
 
       // Cookie check
@@ -268,7 +267,7 @@ export const linkedInOutreachManual = inngest.createFunction(
         },
         include: { sequence: { include: { prospect: { select: { linkedInUrl: true } } } } },
         orderBy: { createdAt: "asc" },
-        take: Math.max(effectiveConnect, effectiveMessage),
+        take: effectiveConnect + effectiveMessage,
       });
 
       if (!pendingSteps.length) return { sent: 0, failed: 0, message: "Queue vide", warmupPct };
@@ -280,11 +279,7 @@ export const linkedInOutreachManual = inngest.createFunction(
         ...messageSteps.map((s) => ({ stepId: s.id, profileUrl: s.sequence.prospect.linkedInUrl, message: s.content, type: "message" as const })),
       ];
 
-      const { sent, failed, aborted, abortCode } = await runSessionAndUpdateSteps(batch, cfg.liAt, {
-        connectActor: cfg.connectActor,
-        messageActor: cfg.messageActor,
-        proxyCountry: cfg.proxyCountry,
-      });
+      const { sent, failed, aborted, abortCode } = await runSessionAndUpdateSteps(batch, cfg.liAt, cfg.jsessionId);
 
       const abortReason = aborted && abortCode ? (ABORT_LABELS[abortCode] ?? abortCode) : undefined;
 

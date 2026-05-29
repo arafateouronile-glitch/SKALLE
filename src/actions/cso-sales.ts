@@ -22,6 +22,8 @@ import {
   type LocalLeadEvaluated,
 } from "@/lib/services/sales/local-scraper";
 import { hasEnoughCredits, useCredits, CREDIT_COSTS, type OperationType } from "@/lib/credits";
+import { findQualifiedLeads } from "@/lib/prospection/enrichment";
+import { inngest } from "@/inngest/client";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔒 AUTH
@@ -590,7 +592,7 @@ export async function bulkImportLocalLeadsAction(
   try {
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
-    const result = await bulkProcessLocalLeads(workspaceId, leads);
+    const result = await bulkProcessLocalLeads(workspaceId, leads, session.user!.id!);
     return { success: true, imported: result.imported, prospects: result.prospects };
   } catch (error) {
     console.error("bulkImportLocalLeadsAction:", error);
@@ -735,7 +737,7 @@ export async function bulkImportNewbornLeadsAction(
   try {
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
-    const result = await bulkSaveNewbornLeads(workspaceId, leads);
+    const result = await bulkSaveNewbornLeads(workspaceId, leads, session.user!.id!);
     return { success: true, imported: result.imported, prospects: result.prospects };
   } catch (error) {
     console.error("bulkImportNewbornLeadsAction:", error);
@@ -743,6 +745,213 @@ export async function bulkImportNewbornLeadsAction(
       success: false,
       error: error instanceof Error ? error.message : "Erreur lors de l'import",
     };
+  }
+}
+
+/**
+ * Sauvegarde le hook et les messages générés par le Reply Assistant.
+ * Appelé en arrière-plan après chaque génération — non bloquant.
+ */
+export async function saveProspectGeneratedMessagesAction(
+  prospectId: string,
+  workspaceId: string,
+  payload: {
+    incomingMessage: string;
+    optionA: string;
+    optionB: string;
+    strategicNote: string;
+    intention: string;
+  }
+): Promise<{ success: boolean }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+    await prisma.prospect.update({
+      where: { id: prospectId, workspaceId },
+      data: {
+        suggestedHook: payload.optionA,
+        messages: {
+          incomingMessage: payload.incomingMessage,
+          optionA: payload.optionA,
+          optionB: payload.optionB,
+          strategicNote: payload.strategicNote,
+          intention: payload.intention,
+          generatedAt: new Date().toISOString(),
+        },
+      },
+    });
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
+}
+
+/**
+ * Met à jour le statut d'un prospect (avancement dans le pipeline).
+ */
+export async function updateProspectStatusAction(
+  prospectId: string,
+  workspaceId: string,
+  status: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+    await prisma.$executeRaw`UPDATE "Prospect" SET status = ${status}::"ProspectStatus" WHERE id = ${prospectId} AND "workspaceId" = ${workspaceId}`;
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Erreur" };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎯 APOLLO PEOPLE SEARCH — Recherche de contacts qualifiés (275M LinkedIn)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ApolloProspectLead {
+  name: string;
+  email?: string;
+  company: string;
+  jobTitle?: string;
+  linkedInUrl?: string;
+  emailVerified?: boolean;
+  emailScore?: number;
+  industry?: string;
+  location?: string;
+  companySize?: string;
+}
+
+/**
+ * Recherche des contacts LinkedIn via Apollo.io par poste(s) + localisation.
+ * Retourne jusqu'à 25 leads enrichis (email inclus si disponible).
+ */
+export async function apolloProspectSearchAction(
+  workspaceId: string,
+  params: { jobTitles: string[]; locations: string[]; perPage?: number }
+): Promise<{ success: boolean; leads?: ApolloProspectLead[]; error?: string }> {
+  try {
+    if (!process.env.APOLLO_API_KEY) {
+      return { success: false, error: "APOLLO_API_KEY non configurée — ajoutez-la dans .env.local" };
+    }
+
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const result = await findQualifiedLeads({
+      jobTitles: params.jobTitles,
+      locations: params.locations,
+      provider: "apollo",
+      limit: params.perPage ?? 25,
+    });
+
+    if (!result.success || !result.leads) {
+      return { success: false, error: result.error ?? "Aucun résultat Apollo" };
+    }
+
+    return {
+      success: true,
+      leads: result.leads.map((l) => ({
+        name: l.name,
+        email: l.email,
+        company: l.company,
+        jobTitle: l.jobTitle,
+        linkedInUrl: l.linkedInUrl,
+        emailVerified: l.emailVerified,
+        emailScore: l.emailScore,
+        industry: l.industry,
+        location: l.location,
+        companySize: l.companySize,
+      })),
+    };
+  } catch (error) {
+    console.error("apolloProspectSearchAction:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Erreur Apollo" };
+  }
+}
+
+/**
+ * Sauvegarde des leads Apollo dans le CRM (upsert sur email+workspace).
+ * Les leads sans email déclenchent un enrichissement Inngest automatique.
+ */
+export async function bulkSaveApolloLeadsAction(
+  workspaceId: string,
+  leads: ApolloProspectLead[]
+): Promise<{
+  success: boolean;
+  imported?: number;
+  prospects?: { id: string; name: string }[];
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const saved: { id: string; name: string }[] = [];
+
+    for (const lead of leads) {
+      try {
+        const linkedInUrl =
+          lead.linkedInUrl ??
+          `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${lead.name} ${lead.company}`)}`;
+
+        const baseData = {
+          name: lead.name,
+          company: lead.company,
+          jobTitle: lead.jobTitle ?? null,
+          email: lead.email ?? null,
+          emailVerified: lead.emailVerified ?? false,
+          linkedInUrl,
+          industry: lead.industry ?? null,
+          location: lead.location ?? null,
+          companySize: lead.companySize ?? null,
+          source: "LINKEDIN" as const,
+          temperature: lead.emailVerified ? "WARM" : "COLD",
+          score: lead.emailVerified ? 75 : lead.email ? 65 : 55,
+          workspaceId,
+          enrichmentData: {
+            provider: "apollo",
+            emailScore: lead.emailScore ?? null,
+            enrichedAt: new Date().toISOString(),
+          },
+        };
+
+        let prospect;
+        if (lead.email) {
+          prospect = await prisma.prospect.upsert({
+            where: { email_workspaceId: { email: lead.email, workspaceId } },
+            update: {
+              jobTitle: baseData.jobTitle,
+              industry: baseData.industry,
+              location: baseData.location,
+              emailVerified: baseData.emailVerified,
+              score: baseData.score,
+              temperature: baseData.temperature,
+              enrichmentData: baseData.enrichmentData,
+            },
+            create: { ...baseData, status: "NEW" },
+            select: { id: true, name: true },
+          });
+        } else {
+          prospect = await prisma.prospect.create({
+            data: { ...baseData, status: "NEW" },
+            select: { id: true, name: true },
+          });
+          await inngest.send({
+            name: "prospect/created",
+            data: { prospectId: prospect.id, workspaceId, userId: session.user!.id! },
+          });
+        }
+
+        saved.push({ id: prospect.id, name: prospect.name });
+      } catch {
+        // Skip duplicates / DB constraint violations
+      }
+    }
+
+    return { success: true, imported: saved.length, prospects: saved };
+  } catch (error) {
+    console.error("bulkSaveApolloLeadsAction:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Erreur lors de l'import" };
   }
 }
 
@@ -782,5 +991,118 @@ export async function bulkAddSignalsToCrmAction(
       success: false,
       error: error instanceof Error ? error.message : "Erreur lors de l'import",
     };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 📬 QUEUE LINKEDIN WORKFLOW — Connexion J0 → DM J+1 à 10h
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Retourne le prochain jour ouvré à 10h UTC, en s'assurant d'avoir au moins
+ * `minDaysAhead` jours d'avance par rapport à `from`.
+ */
+function nextWeekday10amUtc(from: Date, minDaysAhead: number): Date {
+  const d = new Date(from.getTime() + minDaysAhead * 24 * 60 * 60 * 1_000);
+  d.setUTCHours(10, 0, 0, 0);
+  const day = d.getUTCDay();
+  if (day === 6) d.setUTCDate(d.getUTCDate() + 2); // Samedi → Lundi
+  if (day === 0) d.setUTCDate(d.getUTCDate() + 1); // Dimanche → Lundi
+  return d;
+}
+
+/**
+ * Met en file un workflow LinkedIn en 2 étapes :
+ *   1. Demande de connexion (scheduledAt: null → prochain cron 10h)
+ *   2. DM (scheduledAt: lendemain ouvré 10h UTC)
+ *
+ * Les deux steps sont indépendants — si la connexion est déjà acceptée,
+ * le DM partira quand même à J+1.
+ */
+export async function queueLinkedInMessageAction(
+  prospectId: string,
+  workspaceId: string,
+  message: string
+): Promise<{ success: boolean; stepIds?: { connect: string; message: string }; error?: string }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    // Guard: prevent duplicate queue (prospect already has PENDING LinkedIn steps)
+    const existingPending = await prisma.sequenceStep.findFirst({
+      where: {
+        status: "PENDING",
+        channel: "LINKEDIN",
+        sequence: { prospectId, workspaceId },
+      },
+      select: { id: true },
+    });
+    if (existingPending) {
+      return { success: false, error: "Ce prospect a déjà des étapes LinkedIn en attente" };
+    }
+
+    // Find or create the sequence for this prospect
+    let sequence = await prisma.outreachSequence.findFirst({
+      where: { prospectId, workspaceId },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!sequence) {
+      const prospect = await prisma.prospect.findUnique({
+        where: { id: prospectId, workspaceId },
+        select: { name: true },
+      });
+      sequence = await prisma.outreachSequence.create({
+        data: {
+          prospectId,
+          workspaceId,
+          name: `LinkedIn — ${prospect?.name ?? "Prospect"}`,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+    }
+
+    // Next step number
+    const lastStep = await prisma.sequenceStep.findFirst({
+      where: { sequenceId: sequence.id },
+      orderBy: { stepNumber: "desc" },
+      select: { stepNumber: true },
+    });
+    const baseStep = (lastStep?.stepNumber ?? 0) + 1;
+
+    // J0 : demande de connexion (note vide — meilleur taux d'acceptation)
+    const connectStep = await prisma.sequenceStep.create({
+      data: {
+        sequenceId: sequence.id,
+        stepNumber: baseStep,
+        channel: "LINKEDIN",
+        content: "",
+        status: "PENDING",
+        linkedInAction: "connect",
+        scheduledAt: null, // prochain cron 10h
+      },
+      select: { id: true },
+    });
+
+    // J+1 : DM, prochain jour ouvré à 10h UTC
+    const messageScheduledAt = nextWeekday10amUtc(new Date(), 1);
+    const messageStep = await prisma.sequenceStep.create({
+      data: {
+        sequenceId: sequence.id,
+        stepNumber: baseStep + 1,
+        channel: "LINKEDIN",
+        content: message,
+        status: "PENDING",
+        linkedInAction: "message",
+        scheduledAt: messageScheduledAt,
+      },
+      select: { id: true },
+    });
+
+    return { success: true, stepIds: { connect: connectStep.id, message: messageStep.id } };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Erreur" };
   }
 }

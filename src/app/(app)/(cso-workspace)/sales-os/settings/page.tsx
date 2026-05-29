@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { CalendarLinkForm } from "@/components/modules/calendar-link-form";
+import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
+import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
 
 const PLAN_LABELS: Record<string, string> = {
   FREE: "Gratuit",
@@ -165,6 +167,16 @@ export default async function SalesSettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* SMTP — Compte email d'envoi */}
+      {workspace && (
+        <SmtpConfigForm workspaceId={workspace.id} />
+      )}
+
+      {/* LinkedIn Automation */}
+      {workspace && (
+        <LinkedInAutomationSettings workspaceId={workspace.id} />
+      )}
 
       {/* Lien de réservation d'appel */}
       {workspace && (

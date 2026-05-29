@@ -91,8 +91,11 @@ export async function fetchLinkedInReplies(
   const replies: ParsedLinkedInReply[] = [];
 
   try {
+    // Guard : si on ne sait pas qui on est, on ne peut pas distinguer "moi" des autres
+    if (!myId) return [];
+
     const res = await fetch(
-      `${VOYAGER}/messaging/conversations?keyVersion=LEGACY_INBOX&q=participants&count=40`,
+      `${VOYAGER}/messaging/conversations?keyVersion=LEGACY_INBOX&q=conversations&count=40`,
       {
         headers: liHeaders(liAt),
         signal: AbortSignal.timeout(15_000),
@@ -113,7 +116,7 @@ export async function fetchLinkedInReplies(
       // Participant (l'autre personne, pas moi)
       const otherParticipant = (conv.participants ?? [])
         .map((p) => p["com.linkedin.voyager.messaging.MessagingMember"])
-        .find((m) => m?.miniProfile?.publicIdentifier !== myId);
+        .find((m) => m?.miniProfile?.publicIdentifier !== myId && m?.miniProfile?.publicIdentifier != null);
 
       if (!otherParticipant?.miniProfile?.publicIdentifier) continue;
 
