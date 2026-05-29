@@ -39,6 +39,28 @@ interface KpiPerf {
   postsByDay: Record<string, { total: number; published: number }>;
 }
 
+interface AgentSquadItem {
+  name: string;
+  status: "active" | "thinking" | "idle";
+  task: string;
+  executed: number;
+  total: number;
+  color: string;
+}
+
+interface SignalItem {
+  text: string;
+  createdAt: string;
+  sev: "high" | "good" | "warn" | "info";
+}
+
+interface ChannelActivityItem {
+  name: string;
+  count: number;
+  pct: number;
+  color: string;
+}
+
 interface DashboardClientProps {
   firstName: string;
   plan: string;
@@ -49,32 +71,22 @@ interface DashboardClientProps {
   isAutopilotActive: boolean;
   hasAlerts: boolean;
   workspaceId: string;
+  agentSquad: AgentSquadItem[];
+  signalFeed: SignalItem[];
+  channelActivity: ChannelActivityItem[];
 }
 
-// ─── Mock data for unrewired metrics (à brancher Prisma) ─────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const MOCK_AGENTS = [
-  { name: "SEO Sentinel", status: "thinking", task: "Audit sémantique — 47/120 pages", color: "emerald" },
-  { name: "Ads Optimizer", status: "active", task: "Bid pacing Meta + Google", color: "violet" },
-  { name: "Content Factory", status: "idle", task: "En attente de brief", color: "amber" },
-  { name: "Lead Scorer", status: "active", task: "Re-score 1 248 prospects", color: "emerald" },
-  { name: "Brand Watcher", status: "thinking", task: "Veille mentions × 14 sources", color: "violet" },
-];
-
-const MOCK_SIGNALS = [
-  { time: "2 min", text: "Hubspot a lancé une campagne sur vos mots-clés stratégiques", sev: "high" },
-  { time: "14 min", text: "Pic d'engagement sur LinkedIn — post \"AI for Marketing\"", sev: "info" },
-  { time: "38 min", text: "47 nouveaux backlinks gagnés cette semaine (+18%)", sev: "good" },
-  { time: "1 h", text: "Drop de trafic organique sur 3 pages produit", sev: "warn" },
-];
-
-const MOCK_CHANNELS = [
-  { name: "Organic Search", pct: 42, revenue: "€77.4k", color: "emerald" },
-  { name: "Paid Ads", pct: 28, revenue: "€51.6k", color: "violet" },
-  { name: "Email", pct: 14, revenue: "€25.8k", color: "amber" },
-  { name: "Social", pct: 9, revenue: "€16.6k", color: "emerald" },
-  { name: "Direct / Ref.", pct: 7, revenue: "€12.9k", color: "violet" },
-];
+function relTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diff / 60_000);
+  if (min < 2) return "à l'instant";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h`;
+  return `${Math.floor(h / 24)} j`;
+}
 
 const QUICK_ACTIONS = [
   { title: "Studio", desc: "Créer du contenu", href: "/marketing-os/studio", icon: <FileText className="h-4 w-4" />, accent: "emerald" as const },
@@ -213,6 +225,9 @@ export function CMODashboardClientV2({
   isAutopilotActive,
   hasAlerts,
   workspaceId,
+  agentSquad,
+  signalFeed,
+  channelActivity,
 }: DashboardClientProps) {
   const [decisions, setDecisions] = useState(todayDecisions);
   const pendingDecisions = decisions.filter((d) => d.status === "PENDING");
@@ -475,11 +490,13 @@ export function CMODashboardClientV2({
                 <p className="font-display font-semibold text-[15px]" style={{ color: "var(--fg)" }}>Squad IA</p>
                 <div className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--emerald-fg)" }} />
-                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>3 actifs</span>
+                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
+                    {agentSquad.filter((a) => a.status !== "idle").length} actifs
+                  </span>
                 </div>
               </div>
               <div className="space-y-2">
-                {MOCK_AGENTS.map((a) => (
+                {agentSquad.map((a) => (
                   <div key={a.name} className="flex items-center gap-3 py-1.5">
                     <span
                       className="h-2 w-2 rounded-full shrink-0"
@@ -496,7 +513,7 @@ export function CMODashboardClientV2({
                         color: a.status === "idle" ? "var(--fg-mute)" : `var(--${a.color}-fg)`,
                       }}
                     >
-                      {a.status}
+                      {a.status === "active" ? "actif" : a.status === "thinking" ? "planifié" : "inactif"}
                     </span>
                   </div>
                 ))}
@@ -510,52 +527,67 @@ export function CMODashboardClientV2({
             >
               <div className="flex items-center justify-between mb-4">
                 <p className="font-display font-semibold text-[15px]" style={{ color: "var(--fg)" }}>Signal Feed</p>
-                <span className="text-[10px] font-mono" style={{ color: "var(--fg-mute)" }}>live</span>
+                <span className="text-[10px] font-mono" style={{ color: "var(--fg-mute)" }}>48h</span>
               </div>
-              <div className="space-y-3">
-                {MOCK_SIGNALS.map((s, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <span
-                      className="h-1.5 w-1.5 rounded-full mt-1.5 shrink-0"
-                      style={{ background: signalStyle(s.sev) }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] leading-snug" style={{ color: "var(--fg-dim)" }}>{s.text}</p>
+              {signalFeed.length === 0 ? (
+                <p className="text-[12px] text-center py-4" style={{ color: "var(--fg-mute)" }}>
+                  Aucune activité agent dans les 48 dernières heures.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {signalFeed.map((s, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <span
+                        className="h-1.5 w-1.5 rounded-full mt-1.5 shrink-0"
+                        style={{ background: signalStyle(s.sev) }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] leading-snug" style={{ color: "var(--fg-dim)" }}>{s.text}</p>
+                      </div>
+                      <span className="text-[10px] font-mono shrink-0" style={{ color: "var(--fg-mute)" }}>
+                        {relTime(s.createdAt)}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-mono shrink-0" style={{ color: "var(--fg-mute)" }}>{s.time}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Channel attribution */}
+            {/* Channel activity (real — executed decisions by agent type) */}
             <div
               className="rounded-[18px] p-5"
               style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
             >
-              <p className="font-display font-semibold text-[15px] mb-4" style={{ color: "var(--fg)" }}>Attribution Canaux</p>
-              <div className="space-y-2.5">
-                {MOCK_CHANNELS.map((ch) => (
-                  <div key={ch.name}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px]" style={{ color: "var(--fg-dim)" }}>{ch.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-mute)" }}>{ch.pct}%</span>
-                        <span className="text-[11px] font-semibold tabular-nums" style={{ color: "var(--fg)" }}>{ch.revenue}</span>
+              <p className="font-display font-semibold text-[15px] mb-4" style={{ color: "var(--fg)" }}>Activité IA par canal</p>
+              {channelActivity.every((c) => c.count === 0) ? (
+                <p className="text-[12px] text-center py-2" style={{ color: "var(--fg-mute)" }}>
+                  Aucune décision exécutée ce mois — lancez l&apos;Agent Brain.
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  {channelActivity.map((ch) => (
+                    <div key={ch.name}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[12px]" style={{ color: "var(--fg-dim)" }}>{ch.name}</span>
+                        <span className="text-[11px] font-mono tabular-nums font-semibold" style={{ color: "var(--fg)" }}>
+                          {ch.count} exec.
+                        </span>
+                      </div>
+                      <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--line-strong)" }}>
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${Math.max(ch.pct, ch.count > 0 ? 4 : 0)}%`, background: `var(--${ch.color}-fg)` }}
+                        />
                       </div>
                     </div>
-                    <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--line-strong)" }}>
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${ch.pct}%`, background: `var(--${ch.color}-fg)` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
               <div className="mt-4 pt-3 flex items-center justify-between text-[11px]" style={{ borderTop: "1px solid var(--line)" }}>
-                <span style={{ color: "var(--fg-mute)" }}>Revenu total attribué</span>
-                <span className="font-bold tabular-nums" style={{ color: "var(--fg)" }}>€184 320</span>
+                <span style={{ color: "var(--fg-mute)" }}>Total exécutées (30j)</span>
+                <span className="font-bold tabular-nums" style={{ color: "var(--fg)" }}>
+                  {channelActivity.reduce((s, c) => s + c.count, 0)}
+                </span>
               </div>
             </div>
           </div>

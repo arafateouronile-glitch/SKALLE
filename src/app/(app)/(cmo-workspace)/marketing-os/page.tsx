@@ -4,6 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { PLAN_LIMITS } from "@/lib/credits";
 import { CMODashboardClientV2 } from "@/components/modules/cmo-dashboard/dashboard-client-v2";
 
+// ─── Agent squad config ───────────────────────────────────────────────────────
+
+const AGENT_DEFS = [
+  { name: "SEO Sentinel",   types: ["SEO_ARTICLE", "SEO_REGENERATE"],          color: "emerald" },
+  { name: "Social Factory", types: ["SOCIAL_POST", "AD_REMIX"],                 color: "violet"  },
+  { name: "Discovery",      types: ["DISCOVERY_SCAN", "COMPETITOR_REACT"],      color: "amber"   },
+  { name: "Prospection",    types: ["PROSPECT_DM"],                              color: "cold"    },
+] as const;
+
+// ─── Data fetcher ─────────────────────────────────────────────────────────────
+
 async function getCommandCenterData(userId: string) {
   const workspace = await prisma.workspace.findFirst({
     where: { userId },
@@ -30,18 +41,24 @@ async function getCommandCenterData(userId: string) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const todayDecisions = await prisma.agentDecision.findMany({
-    where: { workspaceId: workspace.id, createdAt: { gte: todayStart } },
-    orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
-    include: {
-      linkedPost: { select: { id: true, type: true, title: true, status: true } },
-    },
-  });
-
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const [decisionStats, agentPosts, posts] = await Promise.all([
+  // Fetch in parallel — today's decisions (for pending queue) + 30-day window (for squad + signals)
+  const [todayDecisions, last30Decisions, decisionStats, agentPosts, posts] = await Promise.all([
+    prisma.agentDecision.findMany({
+      where: { workspaceId: workspace.id, createdAt: { gte: todayStart } },
+      orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
+      include: {
+        linkedPost: { select: { id: true, type: true, title: true, status: true } },
+      },
+    }),
+    prisma.agentDecision.findMany({
+      where: { workspaceId: workspace.id, createdAt: { gte: thirtyDaysAgo } },
+      select: { actionType: true, status: true, reasoning: true, priority: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    }),
     prisma.agentDecision.groupBy({
       by: ["status"],
       where: { workspaceId: workspace.id, createdAt: { gte: thirtyDaysAgo } },
@@ -62,6 +79,7 @@ async function getCommandCenterData(userId: string) {
     }),
   ]);
 
+  // ── postsByDay ────────────────────────────────────────────────────────────
   const postsByDay: Record<string, { total: number; published: number }> = {};
   for (const post of posts) {
     const day = post.createdAt.toISOString().split("T")[0];
@@ -83,8 +101,68 @@ async function getCommandCenterData(userId: string) {
     postsByDay,
   };
 
-  return { workspace, user, todayDecisions, kpiPerf, hasAlerts };
+  // ── Agent Squad (real) ────────────────────────────────────────────────────
+  const agentSquad = AGENT_DEFS.map(({ name, types, color }) => {
+    const relevant = last30Decisions.filter((d) =>
+      (types as readonly string[]).includes(d.actionType)
+    );
+    const latest = relevant[0]; // already desc
+    let status: "active" | "thinking" | "idle" = "idle";
+    let task = "Aucune activité ce mois";
+    if (latest) {
+      if (latest.status === "EXECUTED") status = "active";
+      else if (latest.status === "PENDING" || latest.status === "APPROVED") status = "thinking";
+      const r = latest.reasoning;
+      task = r.length > 58 ? r.slice(0, 55) + "…" : r;
+    }
+    const executed = relevant.filter((d) => d.status === "EXECUTED").length;
+    return { name, status, task, executed, total: relevant.length, color };
+  });
+
+  // ── Signal Feed (real — last 48h decisions) ───────────────────────────────
+  const fortyEightHoursAgo = new Date(Date.now() - 48 * 3600 * 1000);
+  const signalFeed = last30Decisions
+    .filter((d) => d.createdAt >= fortyEightHoursAgo)
+    .slice(0, 6)
+    .map((d) => {
+      let sev: "high" | "good" | "warn" | "info" = "info";
+      if (d.status === "FAILED") sev = "high";
+      else if (d.status === "EXECUTED") sev = "good";
+      else if (d.priority === 1 && d.status === "PENDING") sev = "warn";
+      const r = d.reasoning;
+      return {
+        text: r.length > 90 ? r.slice(0, 87) + "…" : r,
+        createdAt: d.createdAt.toISOString(),
+        sev,
+      };
+    });
+
+  // ── Channel Activity (executed decisions grouped by agent category, 30j) ──
+  const channelDefs = [
+    { name: "SEO / Articles",   types: ["SEO_ARTICLE", "SEO_REGENERATE"],     color: "emerald" },
+    { name: "Social & Ads",     types: ["SOCIAL_POST", "AD_REMIX"],            color: "violet"  },
+    { name: "Prospection DMs",  types: ["PROSPECT_DM"],                         color: "cold"    },
+    { name: "Discovery",        types: ["DISCOVERY_SCAN", "COMPETITOR_REACT"], color: "amber"   },
+  ] as const;
+
+  const channelActivity = (() => {
+    const executedOnly = last30Decisions.filter((d) => d.status === "EXECUTED");
+    const raw = channelDefs.map(({ name, types, color }) => ({
+      name,
+      color,
+      count: executedOnly.filter((d) => (types as readonly string[]).includes(d.actionType)).length,
+    }));
+    const maxCount = Math.max(1, ...raw.map((c) => c.count));
+    return raw.map((c) => ({ ...c, pct: Math.round((c.count / maxCount) * 100) }));
+  })();
+
+  return {
+    workspace, user, todayDecisions, kpiPerf, hasAlerts,
+    agentSquad, signalFeed, channelActivity,
+  };
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -93,7 +171,7 @@ export default async function DashboardPage() {
   const data = await getCommandCenterData(session.user.id);
   if (!data) redirect("/login");
 
-  const { workspace, user, todayDecisions, kpiPerf, hasAlerts } = data;
+  const { workspace, user, todayDecisions, kpiPerf, hasAlerts, agentSquad, signalFeed, channelActivity } = data;
   const isAutopilotActive = workspace.autopilotConfig?.isActive ?? false;
   const firstName = user?.name?.split(" ")[0] ?? session.user.name?.split(" ")[0] ?? "là";
   const plan = user?.plan ?? "FREE";
@@ -122,7 +200,9 @@ export default async function DashboardPage() {
       isAutopilotActive={isAutopilotActive}
       hasAlerts={hasAlerts}
       workspaceId={workspace.id}
+      agentSquad={agentSquad}
+      signalFeed={signalFeed}
+      channelActivity={channelActivity}
     />
   );
 }
-

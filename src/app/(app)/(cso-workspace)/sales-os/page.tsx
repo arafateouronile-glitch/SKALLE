@@ -14,37 +14,93 @@ async function getSalesDashboardData(userId: string) {
 
   if (!workspace) return null;
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { credits: true, plan: true, name: true },
-  });
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
 
-  const prospectsByStatus = await prisma.prospect.groupBy({
-    by: ["status"],
-    where: { workspaceId: workspace.id },
-    _count: true,
-  });
+  const [
+    user,
+    prospectsByStatus,
+    newThisWeek,
+    activeSequences,
+    csoPendingCount,
+    hotLeads,
+    recentReplies,
+    recentDecisions,
+  ] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { credits: true, plan: true, name: true },
+    }),
+    prisma.prospect.groupBy({
+      by: ["status"],
+      where: { workspaceId: workspace.id },
+      _count: true,
+    }),
+    prisma.prospect.count({
+      where: { workspaceId: workspace.id, createdAt: { gte: weekAgo } },
+    }),
+    prisma.outreachSequence.count({
+      where: { workspaceId: workspace.id, isActive: true },
+    }),
+    prisma.agentDecision.count({
+      where: {
+        workspaceId: workspace.id,
+        status: "PENDING",
+        actionType: { in: ["CSO_LAUNCH_LINKEDIN", "CSO_LAUNCH_EMAIL", "CSO_FOLLOWUP", "CSO_STALE_REJECT"] },
+      },
+    }),
+    prisma.prospect.findMany({
+      where: {
+        workspaceId: workspace.id,
+        OR: [{ temperature: "HOT" }, { score: { gte: 75 } }],
+      },
+      orderBy: { score: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        name: true,
+        jobTitle: true,
+        company: true,
+        score: true,
+        source: true,
+        aiSummary: true,
+        suggestedHook: true,
+        temperature: true,
+      },
+    }),
+    prisma.prospect.findMany({
+      where: {
+        workspaceId: workspace.id,
+        status: { in: ["RESPONDED", "REPLIED", "MEETING_BOOKED"] },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 4,
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        status: true,
+        updatedAt: true,
+        notes: true,
+      },
+    }),
+    prisma.agentDecision.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      select: {
+        id: true,
+        actionType: true,
+        reasoning: true,
+        status: true,
+        priority: true,
+        createdAt: true,
+      },
+    }),
+  ]);
 
   const statusCount = (status: string) =>
     prospectsByStatus.find((p) => p.status === status)?._count ?? 0;
-
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  const newThisWeek = await prisma.prospect.count({
-    where: { workspaceId: workspace.id, createdAt: { gte: weekAgo } },
-  });
-
-  const activeSequences = await prisma.outreachSequence.count({
-    where: { workspaceId: workspace.id, isActive: true },
-  });
-
-  const csoPendingCount = await prisma.agentDecision.count({
-    where: {
-      workspaceId: workspace.id,
-      status: "PENDING",
-      actionType: { in: ["CSO_LAUNCH_LINKEDIN", "CSO_LAUNCH_EMAIL", "CSO_FOLLOWUP", "CSO_STALE_REJECT"] },
-    },
-  });
 
   const totalProspects = prospectsByStatus.reduce((s, p) => s + p._count, 0);
 
@@ -52,6 +108,16 @@ async function getSalesDashboardData(userId: string) {
     workspace,
     user,
     csoPendingCount,
+    hotLeads: hotLeads.map((l) => ({ ...l, source: l.source as string | null })),
+    recentReplies: recentReplies.map((r) => ({
+      ...r,
+      updatedAt: r.updatedAt.toISOString(),
+      status: r.status as string,
+    })),
+    recentDecisions: recentDecisions.map((d) => ({
+      ...d,
+      createdAt: d.createdAt.toISOString(),
+    })),
     kpis: {
       total: totalProspects,
       newThisWeek,
@@ -71,7 +137,7 @@ export default async function SalesDashboardPage() {
   const data = await getSalesDashboardData(session.user.id);
   if (!data) redirect("/login");
 
-  const { user, kpis, isAutopilotActive, csoPendingCount } = data;
+  const { user, kpis, isAutopilotActive, csoPendingCount, hotLeads, recentReplies, recentDecisions } = data;
   const firstName = user?.name?.split(" ")[0] ?? session.user.name?.split(" ")[0] ?? "là";
   const plan = user?.plan ?? "FREE";
 
@@ -82,6 +148,9 @@ export default async function SalesDashboardPage() {
       kpis={kpis}
       isAutopilotActive={isAutopilotActive}
       csoPendingCount={csoPendingCount}
+      hotLeads={hotLeads}
+      recentReplies={recentReplies}
+      recentDecisions={recentDecisions}
     />
   );
 }

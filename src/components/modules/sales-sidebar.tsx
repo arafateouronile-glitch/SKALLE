@@ -25,6 +25,7 @@ import {
   AlertCircle,
   FlaskConical,
   Brain,
+  UserSearch,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -91,6 +92,7 @@ const sections: NavSection[] = [
   {
     label: "Prospection",
     items: [
+      { name: "Personas", href: "/sales-os/personas", icon: UserSearch },
       { name: "Prospection", href: "/sales-os/prospection", icon: Users },
       {
         name: "Séquences",

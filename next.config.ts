@@ -64,7 +64,7 @@ const nextConfig: NextConfig = {
       { source: "/sales-os/newborn-radar/:path*", destination: "/sales-os/hunt", permanent: true },
       { source: "/sales-os/partnerships", destination: "/sales-os/hunt", permanent: true },
       { source: "/sales-os/partnerships/:path*", destination: "/sales-os/hunt", permanent: true },
-      { source: "/sales-os/agent", destination: "/sales-os/leads", permanent: true },
+      // /sales-os/agent is now a real page — redirect removed
       { source: "/sales-os/analytics", destination: "/sales-os/insights", permanent: true },
       { source: "/sales-os/analytics/:path*", destination: "/sales-os/insights", permanent: true },
       // ─── Redirections CMO → CSO : outils Sales migrés vers Sales OS ──────────

@@ -8,14 +8,41 @@ import {
   Search,
   Mail,
   TrendingUp,
-  Target,
   Send,
   AlertCircle,
-  Brain,
-  CheckCircle2,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface HotLead {
+  id: string;
+  name: string;
+  jobTitle: string | null;
+  company: string;
+  score: number;
+  source: string | null;
+  aiSummary: string | null;
+  suggestedHook: string | null;
+  temperature: string;
+}
+
+interface RecentReply {
+  id: string;
+  name: string;
+  company: string;
+  status: string;
+  updatedAt: string;
+  notes: string | null;
+}
+
+interface RecentDecision {
+  id: string;
+  actionType: string;
+  reasoning: string;
+  status: string;
+  priority: number;
+  createdAt: string;
+}
 
 interface SalesDashboardClientProps {
   firstName: string;
@@ -30,69 +57,57 @@ interface SalesDashboardClientProps {
   };
   isAutopilotActive: boolean;
   csoPendingCount: number;
+  hotLeads: HotLead[];
+  recentReplies: RecentReply[];
+  recentDecisions: RecentDecision[];
 }
-
-// ─── Mock data (à brancher Prisma) ───────────────────────────────────────────
-
-const MOCK_HOT_LEADS = [
-  {
-    id: 1, name: "Sarah Nguyen", role: "Head of Growth", co: "Skyward SaaS",
-    score: 95, source: "Signals · recrute Sales Mgr × 3",
-    insight: "Series A signée · scale agressif en cours · cherche outil pour industrialiser l'outbound.",
-    hook: "\"Sarah, j'ai vu que Skyward recrute 3 SDR. Plutôt que d'embaucher, on aide à faire le travail de 3 SDR avec 1 personne — 15min ?\"",
-    initials: "SN", color: "rose",
-  },
-  {
-    id: 2, name: "Marc Tessier", role: "VP Sales", co: "Vega Capital",
-    score: 92, source: "LinkedIn · a liké votre post",
-    insight: "VP Sales chez VC tier-1 · 1 200 connexions communes · engagement chaud (3 likes en 7j).",
-    hook: "\"Marc, sympa de voir vos likes sur les posts AI Sales. Vous testez quoi en interne côté outbound ?\"",
-    initials: "MT", color: "violet",
-  },
-  {
-    id: 3, name: "Anaïs Dupont", role: "CMO", co: "Helix BioTech",
-    score: 91, source: "Signals · levée €4.2M + recrute CMO ext.",
-    insight: "Series A · phase d'expansion · son profil match exactement notre meilleur cohort clients.",
-    hook: "\"Anaïs, félicitations pour la levée. Helix prévoit de muscler son outbound 'side' ?\"",
-    initials: "AD", color: "emerald",
-  },
-];
-
-const MOCK_REPLIES = [
-  { name: "Émilie Blanc", co: "Pixel Forge", intent: "INTÉRESSÉE", color: "emerald", snippet: "Oui, ça m'intéresse — 15min cette semaine ?", time: "12min" },
-  { name: "Thomas Vidal", co: "Stellar SaaS", intent: "REFUS POLI", color: "amber", snippet: "Pas pour l'instant, déjà un outil. Merci !", time: "1h" },
-  { name: "Hugo Charpentier", co: "Drift Studio", intent: "OBJECTION", color: "violet", snippet: "Comment vous différenciez de Hubspot ?", time: "2h" },
-  { name: "Léa Martin", co: "Lumen Coffee", intent: "PAS MAINTENANT", color: "amber", snippet: "Recontactez-moi en septembre svp", time: "hier" },
-];
-
-const MOCK_AGENTS = [
-  { name: "Hunter", task: "Scan Signals — 142/200 entreprises", status: "thinking" },
-  { name: "Scorer", task: "Re-score 1 248 prospects", status: "active" },
-  { name: "Outreach", task: "Compose 24 messages perso.", status: "thinking" },
-  { name: "Replier", task: "Analyse 5 réponses entrantes", status: "active" },
-  { name: "Closer", task: "Suggère 8 relances", status: "active" },
-];
-
-const MOCK_SIGNALS = [
-  { time: "8 min", text: "Helix BioTech recrute un CMO externe (signal d'achat)", sev: "high" },
-  { time: "32 min", text: "Email Q2 envoyé à 84 leads — 64% d'ouverture", sev: "good" },
-  { time: "1 h", text: "Skyward vient de lever en Series A", sev: "high" },
-  { time: "2 h", text: "8 nouvelles entreprises créées dans votre secteur", sev: "info" },
-];
-
-const QUICK_ACTIONS = [
-  { title: "Hunt", desc: "Trouver des leads", href: "/sales-os/hunt", icon: Search, accent: "violet" as const },
-  { title: "Séquence", desc: "Lancer une campagne", href: "/sales-os/outreach", icon: Zap, accent: "amber" as const },
-  { title: "Magic DM", desc: "Message personnalisé IA", href: "/sales-os/leads", icon: Send, accent: "violet" as const },
-  { title: "Analyser", desc: "Insights pipeline", href: "/sales-os/insights", icon: TrendingUp, accent: "emerald" as const },
-];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function getInitials(name: string) {
+  return name.split(" ").map((p) => p[0] ?? "").join("").toUpperCase().slice(0, 2);
+}
+
+function getLeadColor(score: number, temperature: string): string {
+  if (temperature === "HOT" || score >= 85) return "rose";
+  if (score >= 70) return "violet";
+  return "emerald";
+}
+
+function getIntentBadge(status: string) {
+  if (status === "MEETING_BOOKED") return { label: "RDV BOOKÉ", color: "emerald" };
+  if (status === "CONVERTED") return { label: "CONVERTI", color: "emerald" };
+  return { label: "A RÉPONDU", color: "violet" };
+}
+
+function timeAgo(iso: string): string {
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 60) return `${min}min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}j`;
+}
+
+const AGENT_NAMES: Record<string, string> = {
+  CSO_LAUNCH_LINKEDIN: "Hunter",
+  CSO_LAUNCH_EMAIL: "Outreach",
+  CSO_FOLLOWUP: "Closer",
+  CSO_STALE_REJECT: "Nettoyeur",
+  PROSPECT_DM: "Prospector",
+  SEO_ARTICLE: "Content",
+  SOCIAL_POST: "Social",
+  COMPETITOR_REACT: "Veille",
+  SEO_REGENERATE: "SEO",
+};
+
 function agentStatusDot(status: string) {
-  if (status === "active") return "var(--emerald-fg)";
-  if (status === "thinking") return "var(--amber-fg)";
+  if (status === "EXECUTED") return "var(--emerald-fg)";
+  if (status === "PENDING") return "var(--amber-fg)";
   return "var(--fg-mute)";
+}
+
+function signalSev(priority: number): string {
+  return priority === 1 ? "high" : priority === 2 ? "warn" : "good";
 }
 
 function signalStyle(sev: string) {
@@ -102,6 +117,13 @@ function signalStyle(sev: string) {
   return "var(--fg-mute)";
 }
 
+const QUICK_ACTIONS = [
+  { title: "Hunt", desc: "Trouver des leads", href: "/sales-os/hunt", icon: Search, accent: "violet" as const },
+  { title: "Séquence", desc: "Lancer une campagne", href: "/sales-os/outreach", icon: Zap, accent: "amber" as const },
+  { title: "Magic DM", desc: "Message personnalisé IA", href: "/sales-os/leads", icon: Send, accent: "violet" as const },
+  { title: "Analyser", desc: "Insights pipeline", href: "/sales-os/insights", icon: TrendingUp, accent: "emerald" as const },
+];
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function CSODashboardClientV2({
@@ -110,8 +132,12 @@ export function CSODashboardClientV2({
   kpis,
   isAutopilotActive,
   csoPendingCount,
+  hotLeads,
+  recentReplies,
+  recentDecisions,
 }: SalesDashboardClientProps) {
   const replyRate = kpis.contacted > 0 ? Math.round((kpis.replied / kpis.contacted) * 100) : 0;
+  const hotCount = hotLeads.length;
 
   return (
     <>
@@ -120,7 +146,7 @@ export function CSODashboardClientV2({
         breadcrumb="sales-os / dashboard"
         subtitle={isAutopilotActive ? "Autopilot ON" : "Autopilot OFF"}
         accent="violet"
-        cta="Actionner les 12 HOT →"
+        cta={hotCount > 0 ? `Actionner les ${hotCount} HOT →` : "Trouver des leads →"}
       />
 
       <div className="p-6 space-y-5 max-w-[1400px]">
@@ -148,9 +174,15 @@ export function CSODashboardClientV2({
                 </div>
                 <h1 className="font-display text-[38px] leading-[1.08] font-semibold" style={{ color: "var(--fg)" }}>
                   Bonjour <span style={{ color: "var(--violet-fg)" }}>{firstName}</span>.<br />
-                  <span style={{ color: "var(--fg-dim)" }}>Votre chasseur a trouvé </span>
-                  <span className="tabular-nums" style={{ color: "var(--danger-fg)" }}>12 leads HOT</span>
-                  <span style={{ color: "var(--fg-dim)" }}> cette nuit.</span>
+                  {hotCount > 0 ? (
+                    <>
+                      <span style={{ color: "var(--fg-dim)" }}>Votre chasseur a trouvé </span>
+                      <span className="tabular-nums" style={{ color: "var(--danger-fg)" }}>{hotCount} leads HOT</span>
+                      <span style={{ color: "var(--fg-dim)" }}> à actionner.</span>
+                    </>
+                  ) : (
+                    <span style={{ color: "var(--fg-dim)" }}>Votre pipeline est prêt.</span>
+                  )}
                 </h1>
                 <p className="mt-4 text-[15px] leading-relaxed max-w-xl" style={{ color: "var(--fg-dim)" }}>
                   <strong style={{ color: "var(--fg)" }}>{kpis.total} prospects</strong> dans votre pipeline,{" "}
@@ -177,7 +209,7 @@ export function CSODashboardClientV2({
                   className="px-5 py-2.5 rounded-lg font-semibold text-[13px] transition-all hover:brightness-110"
                   style={{ background: "var(--danger-fg)", color: "white" }}
                 >
-                  Actionner les 12 HOT →
+                  {hotCount > 0 ? `Actionner les ${hotCount} HOT →` : "Voir le pipeline →"}
                 </Link>
                 <Link
                   href="/sales-os/hunt"
@@ -239,10 +271,10 @@ export function CSODashboardClientV2({
 
         {/* ── KPI Strip ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <KpiCard label="Leads HOT" value="12" delta="+5 cette nuit" deltaPositive spark={[4,6,5,8,7,10,9,11,13,15,14,17]} accent="danger" />
-          <KpiCard label="Pipeline ouvert" value="€612k" delta="+€84k" deltaPositive sub={`${kpis.total} opportunités`} spark={[180,210,200,240,265,280,310,340,360,380,420,460]} accent="violet" />
-          <KpiCard label="Taux de réponse 7j" value={`${replyRate}%`} delta="+2.1pts" deltaPositive sub="vs. semaine préc." spark={[9,10,9.5,11,12,11.5,12.4]} accent="emerald" />
-          <KpiCard label="Deals gagnés MTD" value={String(kpis.converted)} delta="€42k MRR" deltaPositive sub="objectif mensuel 12" spark={[1,1,2,2,3,4,5,5,6,7,kpis.converted]} accent="emerald" />
+          <KpiCard label="Leads HOT" value={String(hotCount)} delta={hotCount > 0 ? `${hotCount} à actionner` : "Aucun pour l'instant"} deltaPositive={hotCount > 0} spark={[4,6,5,8,7,10,9,11,13,15,14,hotCount]} accent="danger" />
+          <KpiCard label="Pipeline total" value={String(kpis.total)} delta={`+${kpis.newThisWeek} cette semaine`} deltaPositive={kpis.newThisWeek > 0} sub={`${kpis.contacted} contactés`} spark={[10,15,20,25,30,35,kpis.total]} accent="violet" />
+          <KpiCard label="Taux de réponse" value={`${replyRate}%`} delta={replyRate > 0 ? "vs pipeline" : "—"} deltaPositive={replyRate > 0} sub={`${kpis.replied} en discussion`} spark={[9,10,9.5,11,12,11.5,replyRate]} accent="emerald" />
+          <KpiCard label="Deals gagnés MTD" value={String(kpis.converted)} delta={kpis.activeSequences > 0 ? `${kpis.activeSequences} séq. actives` : "—"} deltaPositive={kpis.converted > 0} sub="ce mois-ci" spark={[1,1,2,2,3,4,5,kpis.converted]} accent="emerald" />
         </div>
 
         {/* ── Main grid ── */}
@@ -267,67 +299,94 @@ export function CSODashboardClientV2({
               </Link>
             </div>
 
-            <div className="space-y-3">
-              {MOCK_HOT_LEADS.map((lead) => (
-                <div
-                  key={lead.id}
-                  className="rounded-[14px] p-5 transition-all hover:-translate-y-0.5"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
+            {hotLeads.length === 0 ? (
+              <div
+                className="rounded-[14px] p-8 text-center"
+                style={{ background: "var(--bg-card)", border: "1px dashed var(--line)" }}
+              >
+                <p className="text-[14px] font-medium mb-2" style={{ color: "var(--fg-dim)" }}>Aucun lead HOT pour l'instant</p>
+                <p className="text-[12px] mb-4" style={{ color: "var(--fg-mute)" }}>Lancez un scan dans Hunt pour trouver des prospects chauds.</p>
+                <Link
+                  href="/sales-os/hunt"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition-all hover:brightness-110"
+                  style={{ background: "var(--violet-fg)", color: "white" }}
                 >
-                  <div className="flex items-start gap-4">
-                    {/* Avatar */}
+                  <Search className="h-3.5 w-3.5" />
+                  Lancer un scan Hunt
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {hotLeads.map((lead) => {
+                  const color = getLeadColor(lead.score, lead.temperature);
+                  return (
                     <div
-                      className="h-10 w-10 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0"
-                      style={{ background: `var(--${lead.color}-soft)`, color: `var(--${lead.color}-fg)`, border: `1px solid var(--${lead.color}-line)` }}
+                      key={lead.id}
+                      className="rounded-[14px] p-5 transition-all hover:-translate-y-0.5"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
                     >
-                      {lead.initials}
+                      <div className="flex items-start gap-4">
+                        <div
+                          className="h-10 w-10 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0"
+                          style={{ background: `var(--${color}-soft)`, color: `var(--${color}-fg)`, border: `1px solid var(--${color}-line)` }}
+                        >
+                          {getInitials(lead.name)}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-semibold text-[14px]" style={{ color: "var(--fg)" }}>{lead.name}</p>
+                            <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
+                              {lead.jobTitle ? `${lead.jobTitle} · ` : ""}{lead.company}
+                            </span>
+                            <span
+                              className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full"
+                              style={{ background: "var(--danger-soft)", color: "var(--danger-fg)", border: "1px solid var(--danger-line)" }}
+                            >
+                              {lead.score} HOT
+                            </span>
+                          </div>
+                          {lead.source && (
+                            <p className="text-[11px] mb-2" style={{ color: "var(--fg-mute)" }}>{lead.source}</p>
+                          )}
+                          {lead.aiSummary && (
+                            <p className="text-[12.5px] leading-relaxed mb-3" style={{ color: "var(--fg-dim)" }}>{lead.aiSummary}</p>
+                          )}
+
+                          {lead.suggestedHook && (
+                            <div
+                              className="rounded-[10px] p-3 mb-3"
+                              style={{ background: "var(--bg)", border: "1px dashed var(--violet-line)" }}
+                            >
+                              <p className="text-[11px] font-mono mb-1.5" style={{ color: "var(--violet-fg)" }}>✦ Magic DM</p>
+                              <p className="text-[12px] leading-relaxed italic" style={{ color: "var(--fg-dim)" }}>{lead.suggestedHook}</p>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href={`/sales-os/reply-assistant?prospectId=${lead.id}`}
+                              className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md transition-all hover:brightness-110"
+                              style={{ background: "var(--violet-fg)", color: "white" }}
+                            >
+                              <Send className="h-3.5 w-3.5" />
+                              ✦ Envoyer le DM
+                            </Link>
+                            <Link
+                              href={`/sales-os/leads`}
+                              className="text-[12px] font-medium px-3 py-1.5 rounded-md transition-all hover:bg-black/[0.04]"
+                              style={{ background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                            >
+                              Voir profil
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-[14px]" style={{ color: "var(--fg)" }}>{lead.name}</p>
-                        <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>{lead.role} · {lead.co}</span>
-                        <span
-                          className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: "var(--danger-soft)", color: "var(--danger-fg)", border: "1px solid var(--danger-line)" }}
-                        >
-                          {lead.score} HOT
-                        </span>
-                      </div>
-                      <p className="text-[11px] mb-2" style={{ color: "var(--fg-mute)" }}>{lead.source}</p>
-                      <p className="text-[12.5px] leading-relaxed mb-3" style={{ color: "var(--fg-dim)" }}>{lead.insight}</p>
-
-                      {/* Magic DM */}
-                      <div
-                        className="rounded-[10px] p-3 mb-3"
-                        style={{ background: "var(--bg)", border: "1px dashed var(--violet-line)" }}
-                      >
-                        <p className="text-[11px] font-mono mb-1.5" style={{ color: "var(--violet-fg)" }}>✦ Magic DM</p>
-                        <p className="text-[12px] leading-relaxed italic" style={{ color: "var(--fg-dim)" }}>{lead.hook}</p>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href="/sales-os/outreach"
-                          className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md transition-all hover:brightness-110"
-                          style={{ background: "var(--violet-fg)", color: "white" }}
-                        >
-                          <Send className="h-3.5 w-3.5" />
-                          ✦ Envoyer le DM
-                        </Link>
-                        <Link
-                          href="/sales-os/leads"
-                          className="text-[12px] font-medium px-3 py-1.5 rounded-md transition-all hover:bg-black/[0.04]"
-                          style={{ background: "oklch(0.21 0.03 260 / 0.04)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
-                        >
-                          Voir profil
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Right — Inbox + Agents + Signals (4 cols) */}
@@ -344,28 +403,42 @@ export function CSODashboardClientV2({
                   Voir tout →
                 </Link>
               </div>
-              <div className="space-y-3">
-                {MOCK_REPLIES.map((r, i) => (
-                  <div key={i} className="flex items-start gap-3 py-1.5" style={{ borderBottom: i < MOCK_REPLIES.length - 1 ? "1px solid var(--line)" : "none" }}>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <p className="text-[12.5px] font-medium truncate" style={{ color: "var(--fg)" }}>{r.name}</p>
-                        <span
-                          className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
-                          style={{ background: `var(--${r.color}-soft)`, color: `var(--${r.color}-fg)` }}
-                        >
-                          {r.intent}
+              {recentReplies.length === 0 ? (
+                <div className="py-4 text-center">
+                  <Mail className="h-6 w-6 mx-auto mb-2 opacity-20" style={{ color: "var(--fg-mute)" }} />
+                  <p className="text-[12px]" style={{ color: "var(--fg-mute)" }}>Aucune réponse récente</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentReplies.map((r, i) => {
+                    const badge = getIntentBadge(r.status);
+                    return (
+                      <div key={r.id} className="flex items-start gap-3 py-1.5" style={{ borderBottom: i < recentReplies.length - 1 ? "1px solid var(--line)" : "none" }}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <p className="text-[12.5px] font-medium truncate" style={{ color: "var(--fg)" }}>{r.name}</p>
+                            <span
+                              className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
+                              style={{ background: `var(--${badge.color}-soft)`, color: `var(--${badge.color}-fg)` }}
+                            >
+                              {badge.label}
+                            </span>
+                          </div>
+                          <p className="text-[11.5px] truncate" style={{ color: "var(--fg-mute)" }}>
+                            {r.notes ? r.notes.slice(0, 50) : r.company}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-mono shrink-0 mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                          {timeAgo(r.updatedAt)}
                         </span>
                       </div>
-                      <p className="text-[11.5px] truncate" style={{ color: "var(--fg-mute)" }}>{r.snippet}</p>
-                    </div>
-                    <span className="text-[10px] font-mono shrink-0 mt-0.5" style={{ color: "var(--fg-mute)" }}>{r.time}</span>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Sales Squad */}
+            {/* Agent Activity */}
             <div
               className="rounded-[18px] p-5"
               style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
@@ -374,20 +447,35 @@ export function CSODashboardClientV2({
                 <p className="font-display font-semibold text-[15px]" style={{ color: "var(--fg)" }}>Sales Squad</p>
                 <div className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--emerald-fg)" }} />
-                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>3 actifs</span>
+                  <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
+                    {recentDecisions.filter((d) => d.status === "PENDING").length} en attente
+                  </span>
                 </div>
               </div>
-              <div className="space-y-2">
-                {MOCK_AGENTS.map((a) => (
-                  <div key={a.name} className="flex items-center gap-3 py-1">
-                    <span className="h-2 w-2 rounded-full shrink-0" style={{ background: agentStatusDot(a.status) }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-medium" style={{ color: "var(--fg)" }}>{a.name}</p>
-                      <p className="text-[11px] truncate" style={{ color: "var(--fg-mute)" }}>{a.task}</p>
+              {recentDecisions.length === 0 ? (
+                <div className="py-4 text-center">
+                  <p className="text-[12px]" style={{ color: "var(--fg-mute)" }}>L'agent n'a pas encore analysé votre pipeline.</p>
+                  <Link href="/sales-os/agent" className="text-[11px] font-medium mt-1.5 inline-block" style={{ color: "var(--violet-fg)" }}>
+                    Lancer une analyse →
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentDecisions.slice(0, 5).map((d) => (
+                    <div key={d.id} className="flex items-center gap-3 py-1">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ background: agentStatusDot(d.status) }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-medium" style={{ color: "var(--fg)" }}>
+                          {AGENT_NAMES[d.actionType] ?? d.actionType}
+                        </p>
+                        <p className="text-[11px] truncate" style={{ color: "var(--fg-mute)" }}>
+                          {d.reasoning.slice(0, 55)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Signal Feed */}
@@ -396,20 +484,33 @@ export function CSODashboardClientV2({
               style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
             >
               <div className="flex items-center justify-between mb-4">
-                <p className="font-display font-semibold text-[15px]" style={{ color: "var(--fg)" }}>Signaux</p>
-                <span className="text-[10px] font-mono" style={{ color: "var(--fg-mute)" }}>live</span>
+                <p className="font-display font-semibold text-[15px]" style={{ color: "var(--fg)" }}>Activité Agent</p>
+                <span className="text-[10px] font-mono" style={{ color: "var(--fg-mute)" }}>récent</span>
               </div>
-              <div className="space-y-3">
-                {MOCK_SIGNALS.map((s, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <span className="h-1.5 w-1.5 rounded-full mt-1.5 shrink-0" style={{ background: signalStyle(s.sev) }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] leading-snug" style={{ color: "var(--fg-dim)" }}>{s.text}</p>
-                    </div>
-                    <span className="text-[10px] font-mono shrink-0" style={{ color: "var(--fg-mute)" }}>{s.time}</span>
-                  </div>
-                ))}
-              </div>
+              {recentDecisions.length === 0 ? (
+                <div className="py-4 text-center">
+                  <p className="text-[12px]" style={{ color: "var(--fg-mute)" }}>Aucune activité récente</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentDecisions.slice(0, 4).map((d) => {
+                    const sev = signalSev(d.priority);
+                    return (
+                      <div key={d.id} className="flex items-start gap-3">
+                        <span className="h-1.5 w-1.5 rounded-full mt-1.5 shrink-0" style={{ background: signalStyle(sev) }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[12px] leading-snug" style={{ color: "var(--fg-dim)" }}>
+                            {d.reasoning.slice(0, 75)}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-mono shrink-0" style={{ color: "var(--fg-mute)" }}>
+                          {timeAgo(d.createdAt)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
