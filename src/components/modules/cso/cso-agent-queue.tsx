@@ -15,9 +15,75 @@ import {
   Zap,
   Clock,
   AlertTriangle,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Circle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+
+// ─── Analysis step tracker ────────────────────────────────────────────────────
+
+type StepStatus = "pending" | "running" | "done" | "error";
+
+interface StepState {
+  status: StepStatus;
+  label: string;
+}
+
+const STEP_DEFS = [
+  { id: "observe",     defaultLabel: "Observation du pipeline"   },
+  { id: "research",    defaultLabel: "Recherche de signaux"       },
+  { id: "generate",    defaultLabel: "Analyse IA"                 },
+  { id: "personalize", defaultLabel: "Personnalisation messages"  },
+  { id: "store",       defaultLabel: "Sauvegarde"                 },
+] as const;
+
+type StepId = (typeof STEP_DEFS)[number]["id"];
+
+function StepIcon({ status }: { status: StepStatus }) {
+  if (status === "running")
+    return <Loader2 className="h-3.5 w-3.5 text-violet-500 animate-spin shrink-0" />;
+  if (status === "done")
+    return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />;
+  if (status === "error")
+    return <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />;
+  return <Circle className="h-3.5 w-3.5 text-gray-300 shrink-0" />;
+}
+
+function AnalysisProgress({ steps }: { steps: Partial<Record<StepId, StepState>> }) {
+  return (
+    <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Loader2 className="h-3.5 w-3.5 text-violet-500 animate-spin" />
+        <span className="text-[12px] font-semibold text-violet-700">Analyse en cours…</span>
+      </div>
+      <div className="space-y-2">
+        {STEP_DEFS.map((def) => {
+          const state = steps[def.id];
+          const status = state?.status ?? "pending";
+          const label = state?.label ?? def.defaultLabel;
+          return (
+            <div key={def.id} className="flex items-center gap-2">
+              <StepIcon status={status} />
+              <span
+                className={`text-[12px] ${
+                  status === "running"  ? "text-violet-700 font-medium" :
+                  status === "done"     ? "text-gray-700"                :
+                  status === "error"    ? "text-red-600"                 :
+                                          "text-gray-400"
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,10 +185,15 @@ function DecisionCard({
   const isLoading = loading === decision.id;
   const prospectName = (data.prospectName as string) ?? "—";
 
-  // Preview of generated content
+  // Preview — pour LinkedIn on préfère le message post-connexion (plus informatif que la note courte)
   let preview: string | null = null;
-  if (decision.actionType === "CSO_LAUNCH_LINKEDIN" && data.connectNote) {
-    preview = data.connectNote as string;
+  const hasLinkedInMessages =
+    decision.actionType === "CSO_LAUNCH_LINKEDIN" &&
+    Boolean(data.connectNote || data.postConnectionMessage);
+
+  if (decision.actionType === "CSO_LAUNCH_LINKEDIN") {
+    // Afficher le message post-connexion en preview principale s'il existe
+    preview = (data.postConnectionMessage as string) ?? (data.connectNote as string) ?? null;
   } else if (decision.actionType === "CSO_LAUNCH_EMAIL" && data.content) {
     preview = `Objet : ${data.subject as string}\n\n${data.content as string}`;
   } else if (decision.actionType === "CSO_FOLLOWUP" && data.content) {
@@ -164,22 +235,73 @@ function DecisionCard({
             <p className="text-[12px] text-gray-600 line-clamp-2">{decision.reasoning}</p>
 
             {/* Expand toggle */}
-            {preview && (
+            {(preview || hasLinkedInMessages) && (
               <button
                 onClick={() => setExpanded((e) => !e)}
                 className="mt-2 flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-700 font-medium"
               >
                 {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {expanded ? "Masquer le message" : "Voir le message généré"}
+                {expanded
+                  ? "Masquer les messages"
+                  : hasLinkedInMessages && data.postConnectionMessage
+                  ? "Voir note de connexion + message post-connexion"
+                  : "Voir le message généré"}
               </button>
             )}
           </div>
         </div>
 
         {/* Expanded preview */}
-        {expanded && preview && (
-          <div className="mt-3 ml-11 p-3 rounded-lg bg-gray-50 border border-gray-100">
-            <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">{preview}</pre>
+        {expanded && (
+          <div className="mt-3 ml-11 space-y-3">
+            {/* LinkedIn : affiche les deux messages séparément */}
+            {hasLinkedInMessages ? (
+              <>
+                {data.connectNote && (
+                  <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
+                    <p className="text-[10px] font-semibold text-blue-600 mb-1.5 uppercase tracking-wide">
+                      Note de connexion (invitation)
+                    </p>
+                    <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">
+                      {data.connectNote as string}
+                    </pre>
+                    <p className="text-[10px] text-blue-400 mt-1.5">
+                      {(data.connectNote as string).length}/280 caractères
+                    </p>
+                  </div>
+                )}
+                {data.postConnectionMessage && (
+                  <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+                    <p className="text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                      Message après acceptation
+                    </p>
+                    <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">
+                      {data.postConnectionMessage as string}
+                    </pre>
+                  </div>
+                )}
+                {data._angle && (
+                  <p className="text-[10.5px] text-gray-400 italic">
+                    Angle : {data._angle as string}
+                  </p>
+                )}
+                {data.linkedInUrl && (
+                  <a
+                    href={data.linkedInUrl as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                  >
+                    <Linkedin className="h-3 w-3" />
+                    Voir le profil LinkedIn
+                  </a>
+                )}
+              </>
+            ) : preview ? (
+              <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+                <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">{preview}</pre>
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -221,9 +343,10 @@ function DecisionCard({
 export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
   const [decisions, setDecisions] = useState<AgentDecision[]>(initialDecisions);
   const [loading, setLoading] = useState<string | null>(null);
-  const [triggering, setTriggering] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisSteps, setAnalysisSteps] = useState<Partial<Record<StepId, StepState>>>({});
   const [filter, setFilter] = useState<"all" | "pending" | "done">("pending");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const reload = useCallback(async () => {
     const res = await fetch(`/api/cso-agent?workspaceId=${workspaceId}`);
@@ -276,40 +399,74 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
   }, [workspaceId]);
 
   const handleTrigger = useCallback(async () => {
-    setTriggering(true);
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    setIsAnalyzing(true);
+    setAnalysisSteps({});
+
     try {
-      const res = await fetch("/api/cso-agent", {
+      const res = await fetch("/api/cso-agent/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
+        signal: ctrl.signal,
       });
-      if (!res.ok) { toast.error("Erreur lors du déclenchement"); return; }
 
-      toast.success("Analyse déclenchée — les décisions arriveront dans quelques secondes");
+      if (!res.ok || !res.body) {
+        toast.error("Erreur lors du déclenchement");
+        setIsAnalyzing(false);
+        return;
+      }
 
-      // Poll every 3s up to 5 times (15s total), stop early if new decisions arrived
-      const prevCount = decisions.filter((d) => d.status === "PENDING").length;
-      if (pollRef.current) clearInterval(pollRef.current);
-      let attempts = 0;
-      pollRef.current = setInterval(async () => {
-        attempts++;
-        const pollRes = await fetch(`/api/cso-agent?workspaceId=${workspaceId}`);
-        if (pollRes.ok) {
-          const json = (await pollRes.json()) as { decisions: AgentDecision[]; pendingCount: number };
-          setDecisions(json.decisions);
-          if (json.pendingCount > prevCount || attempts >= 5) {
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
-          }
-        } else if (attempts >= 5) {
-          clearInterval(pollRef.current!);
-          pollRef.current = null;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const evt = JSON.parse(line.slice(6)) as
+              | { type: "step"; id: StepId; status: "running" | "done" | "error"; label: string }
+              | { type: "done"; newCount: number; totalGenerated: number }
+              | { type: "error"; message: string };
+
+            if (evt.type === "step") {
+              setAnalysisSteps((prev) => ({
+                ...prev,
+                [evt.id]: { status: evt.status, label: evt.label },
+              }));
+            } else if (evt.type === "done") {
+              await reload();
+              if (evt.newCount > 0) {
+                toast.success(`${evt.newCount} nouvelle${evt.newCount !== 1 ? "s" : ""} décision${evt.newCount !== 1 ? "s" : ""} en attente`);
+              } else {
+                toast.info("Analyse terminée — aucune nouvelle décision");
+              }
+              setIsAnalyzing(false);
+            } else if (evt.type === "error") {
+              toast.error(`Erreur : ${evt.message}`);
+              setIsAnalyzing(false);
+            }
+          } catch { /* ignore malformed SSE lines */ }
         }
-      }, 3_000);
-    } finally {
-      setTriggering(false);
+      }
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        toast.error("Analyse interrompue");
+      }
+      setIsAnalyzing(false);
     }
-  }, [workspaceId, decisions, reload]);
+  }, [workspaceId, reload]);
 
   const pendingDecisions = decisions.filter((d) => d.status === "PENDING");
   const doneDecisions = decisions.filter((d) => d.status !== "PENDING");
@@ -340,6 +497,7 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
             size="sm"
             variant="outline"
             onClick={reload}
+            disabled={isAnalyzing}
             className="h-8 text-[12px] rounded-lg border-gray-200"
           >
             <RefreshCw className="h-3 w-3 mr-1.5" />
@@ -348,18 +506,21 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
           <Button
             size="sm"
             onClick={handleTrigger}
-            disabled={triggering}
+            disabled={isAnalyzing}
             className="h-8 text-[12px] rounded-lg bg-violet-600 hover:bg-violet-700 text-white border-0"
           >
-            {triggering ? (
-              <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" />
+            {isAnalyzing ? (
+              <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
             ) : (
               <Zap className="h-3 w-3 mr-1.5" />
             )}
-            Analyser maintenant
+            {isAnalyzing ? "Analyse…" : "Analyser maintenant"}
           </Button>
         </div>
       </div>
+
+      {/* Analysis progress */}
+      {isAnalyzing && <AnalysisProgress steps={analysisSteps} />}
 
       {/* Filter tabs */}
       <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit">

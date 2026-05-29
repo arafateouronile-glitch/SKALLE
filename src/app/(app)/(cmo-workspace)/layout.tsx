@@ -58,19 +58,22 @@ export default async function CmoWorkspaceLayout({
   // Dès que la colonne existe en DB et que le client est régénéré, la vraie valeur s'applique.
   let hasCmoAccess = true;
 
+  let needsOnboarding = false;
   try {
     const workspace = await prisma.workspace.findFirst({
       where: { userId: session.user.id },
-      select: { hasCmoAccess: true },
+      select: { hasCmoAccess: true, onboardingStep: true },
     });
     if (workspace !== null) {
       hasCmoAccess = workspace.hasCmoAccess;
+      needsOnboarding = workspace.onboardingStep > 0;
     }
   } catch {
     console.warn(
       "[CMO Layout] hasCmoAccess indisponible — lancez `npx prisma db push` puis redémarrez le serveur."
     );
   }
+  if (needsOnboarding) redirect("/onboarding");
 
   const headersList = await headers();
   const pathname = headersList.get("x-pathname") ?? headersList.get("x-invoke-path") ?? "";

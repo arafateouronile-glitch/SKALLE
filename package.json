@@ -24,7 +24,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "zip:extension": "cd chrome-extension && zip -r ../skalle-extension.zip . --exclude '*.DS_Store' && echo '✓ skalle-extension.zip créé'"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -73,6 +74,7 @@
     "imapflow": "^1.2.9",
     "inngest": "^3.54.2",
     "jspdf": "^4.2.0",
+    "jszip": "^3.10.1",
     "langchain": "^1.2.10",
     "lucide-react": "^0.562.0",
     "next": "^16.1.6",

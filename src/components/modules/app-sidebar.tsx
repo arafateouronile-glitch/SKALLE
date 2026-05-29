@@ -44,12 +44,13 @@ const CMO_NAV = [
 ] as const;
 
 const CSO_NAV = [
-  { id: "dashboard",  name: "Dashboard",  href: "/sales-os",            icon: LayoutDashboard, desc: "" },
-  { id: "cso-agent",  name: "Agent CSO",  href: "/sales-os/agent",      icon: Bot,             desc: "Pipeline auto" },
-  { id: "leads",      name: "Leads",      href: "/sales-os/leads",      icon: Target,          desc: "Mon pipeline" },
-  { id: "hunt",       name: "Hunt",       href: "/sales-os/hunt",       icon: Search,          desc: "Trouver des leads" },
-  { id: "outreach",   name: "Outreach",   href: "/sales-os/outreach",   icon: Mail,            desc: "Messages & relances" },
-  { id: "insights",   name: "Insights",   href: "/sales-os/insights",   icon: TrendingUp,      desc: "" },
+  { id: "dashboard",  name: "Dashboard",  href: "/sales-os",              icon: LayoutDashboard, desc: "" },
+  { id: "cso-agent",  name: "Agent CSO",  href: "/sales-os/agent",        icon: Bot,             desc: "Pipeline auto" },
+  { id: "personas",   name: "Personas",   href: "/sales-os/personas",     icon: Users,           desc: "Profils ICP" },
+  { id: "leads",      name: "Leads",      href: "/sales-os/leads",        icon: Target,          desc: "Mon pipeline" },
+  { id: "hunt",       name: "Hunt",       href: "/sales-os/hunt",         icon: Search,          desc: "Trouver des leads" },
+  { id: "outreach",   name: "Outreach",   href: "/sales-os/outreach",     icon: Mail,            desc: "Messages & relances" },
+  { id: "insights",   name: "Insights",   href: "/sales-os/insights",     icon: TrendingUp,      desc: "" },
 ] as const;
 
 const PLAN_LABELS: Record<string, string> = {

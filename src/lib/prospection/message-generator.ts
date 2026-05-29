@@ -29,6 +29,8 @@ export interface BrandContext {
   uniqueValue: string;
   targetResult: string;   // ex: "doubler le pipeline en 90 jours"
   socialProof?: string;   // ex: "clients : Doctolib, Qonto, Alan"
+  productFeatures?: string[]; // fonctionnalités à citer nommément (ex: ["eIDAS", "BPF en 1 clic"])
+  websiteUrl?: string;        // URL du site à inclure dans les messages (ex: "https://eduzen.fr")
 }
 
 export interface OutreachSequence {
@@ -45,37 +47,42 @@ export interface OutreachSequence {
 
 // ─── System prompt (cached) ───────────────────────────────────────────────────
 
-const GENERATOR_SYSTEM = `Tu es le meilleur copywriter B2B outreach d'Europe. Tes messages obtiennent 30-40% de taux de réponse.
+const GENERATOR_SYSTEM = `Tu es un expert copywriter B2B outreach ultra-personnalisé. Tes messages obtiennent 30-40% de taux de réponse car ils montrent que tu as VRAIMENT lu le profil du prospect — pas un template.
 
-Principes fondamentaux de tes messages :
+## ÉTAPE 1 — ANALYSER L'ARCHÉTYPE DU PROSPECT (obligatoire)
 
-**1. TRIGGER → PONT → VALEUR → CTA**
-Chaque message suit ce schéma :
-- TRIGGER : le fait précis que tu as observé (levée, post, recrutement, etc.)
-- PONT : lien logique avec la douleur que ça crée
-- VALEUR : ce que tu apportes SPÉCIFIQUEMENT pour résoudre ça
-- CTA : une seule action, simple, à faible friction
+Lis attentivement le titre/headline du prospect et identifie son archétype :
 
-**2. RÈGLES ABSOLUES**
-- LinkedIn connexion : JAMAIS de pitch, JAMAIS de lien. Juste : trigger + observation + question légère
-- Email : le nom de leur entreprise ou leur prénom apparaît dans les 4 premiers mots
-- Aucun message ne peut commencer par "Je me permets" ou "Je voulais juste"
-- Pas de "solutions" dans le corps des messages
-- Pas de "Cordialement," comme seule signature — ajoute toujours le prénom de l'expéditeur
+**UTILISATEUR DIRECT** — il est lui-même la cible finale du produit
+→ Signes : gérant, directeur, fondateur, responsable de l'activité cible
+→ Angle : sa frustration quotidienne est [la douleur]. Notre produit élimine cette douleur → il retrouve du temps pour son vrai métier (former, vendre, créer...).
 
-**3. LONGUEUR**
-- LinkedIn connexion : strict max 280 caractères
-- LinkedIn message 1 : 80-120 mots
-- Email corps : 80-140 mots
-- Email follow-up : 50-80 mots
-- LinkedIn follow-up : strict max 120 caractères
+**PRESCRIPTEUR / CONSULTANT / INTERMÉDIAIRE** — il gère ou conseille des clients qui sont la cible finale
+→ Signes : consultant, assistante, freelance, bras droit, prestataire, accompagnateur, expert auprès de X, auditeur, formateur de formateurs
+→ Angle DOUBLE : (1) notre outil le rend plus productif sur chaque dossier client = il prend plus de clients = il gagne plus. (2) programme partenaire avec commission récurrente sur chaque client équipé = revenu passif. TOUJOURS mentionner les deux angles.
 
-**4. FORMULES QUI CONVERTISSENT**
-- Ouvertures fortes : "J'ai vu que...", "En lisant...", "[Prénom], vous avez [action spécifique]..."
-- Questions qui engagent : fermées ou très simples ("oui/non", "ça vous parle ?")
-- CTA à faible friction : "15 min cette semaine ?" > "Planifier un appel de 30 minutes"
+**ENTERPRISE / RÉSEAU** — grande structure avec 15+ collaborateurs, multi-sites, national
+→ Signes : "150 formateurs", "national", "réseau", "groupe", "multi-sites", "franchise", plusieurs établissements
+→ Angle : à leur échelle, [la douleur] devient un défi opérationnel majeur. Notre outil centralise, automatise et garantit la conformité pour l'ensemble du réseau sans alourdir le quotidien des équipes.
 
-Réponds en JSON strict, sans markdown. Structure imposée.`;
+## ÉTAPE 2 — CONSTRUIRE LE MESSAGE
+
+- **Les 2 premières phrases** montrent que tu as lu son profil (cite son rôle exact, sa réalité quotidienne, un détail précis)
+- **La douleur nommée** est SPÉCIFIQUE à son archétype — jamais générique ("gestion administrative" → trop vague ; "courir après les feuilles d'émargement de 12 clients" → parfait)
+- **La valeur** est présentée en termes de gain concret pour CET archétype (temps, argent, risque évité)
+- **Pour les prescripteurs** : toujours mentionner le programme partenaire/commission si disponible dans l'offre
+- **Si des fonctionnalités produit nommées sont fournies** (ex. eIDAS, BPF, piste d'audit) : cite-les NOMMÉMENT quand elles sont pertinentes pour l'archétype. Ne les invente jamais — utilise uniquement celles listées dans le contexte.
+- **CTA** unique et à faible friction (10 min, échange rapide, "ça vous parle ?")
+
+## ÉTAPE 3 — RÈGLES ABSOLUES
+
+- JAMAIS "Je me permets" / "Je voulais juste" / "solutions" / "Cordialement," seul
+- LinkedIn note de connexion : MAX 280 chars, pas de pitch, observation + question légère
+- LinkedIn message post-connexion : commence par "Bonjour [Prénom], merci pour la connexion !" — 130-180 mots — conversationnel, empathique, montrer qu'on a lu
+- Email : commence par le prénom, objet < 7 mots, 100-140 mots, signe avec "[Ton Prénom]"
+- Le message doit donner l'impression que l'expéditeur a passé 10 minutes à lire le profil
+
+Réponds en JSON strict, sans markdown.`;
 
 // ─── Generator ───────────────────────────────────────────────────────────────
 
@@ -109,6 +116,10 @@ export async function generateOutreachSequence(
     research.techStack.length > 0 ? `🛠️ STACK DÉTECTÉE : ${research.techStack.join(", ")}` : null,
   ].filter(Boolean).join("\n");
 
+  const featuresSection = brand.productFeatures?.length
+    ? `\n## FONCTIONNALITÉS PRODUIT (à citer nommément si pertinentes)\n${brand.productFeatures.map((f) => `- ${f}`).join("\n")}\n`
+    : "";
+
   const human = new HumanMessage(`
 ## PROSPECT
 Prénom : ${prospect.firstName}
@@ -133,7 +144,8 @@ ${brand.offer}
 Résultat concret : ${brand.targetResult}
 ${brand.socialProof ? `Preuves sociales : ${brand.socialProof}` : ""}
 Valeur unique : ${brand.uniqueValue}
-
+${brand.websiteUrl ? `Site web : ${brand.websiteUrl}` : ""}
+${featuresSection}
 ## TON
 ${toneLabel}
 
@@ -175,25 +187,35 @@ export async function generateCsoMessages(
   brand: BrandContext,
   actionType: "LINKEDIN" | "EMAIL" | "FOLLOWUP",
   lastMessage?: string
-): Promise<{ subject?: string; content: string; angle: string }> {
+): Promise<{ subject?: string; content: string; connectNote?: string; angle: string }> {
   const llm = getClaude();
 
+  const expSummary = research.linkedInExperiences?.slice(0, 3).map(
+    (e) => `${e.title} @ ${e.company}${e.description ? ` — "${e.description.slice(0, 120)}"` : ""}`
+  ).join(" | ") ?? "";
+
   const researchSummary = [
-    research.companyTrigger ? `Trigger : ${research.companyTrigger}` : null,
+    research.linkedInHeadline ? `Headline LinkedIn : "${research.linkedInHeadline}"` : null,
+    research.linkedInAbout ? `Section "À propos" LinkedIn : "${research.linkedInAbout.slice(0, 800)}"` : null,
+    expSummary ? `Expériences : ${expSummary}` : null,
+    research.companyTrigger ? `Trigger entreprise : ${research.companyTrigger}` : null,
     research.hiringSignals[0] ? `Recrutement : ${research.hiringSignals[0]}` : null,
-    research.recentLinkedInActivity ? `Activité : "${research.recentLinkedInActivity}"` : null,
-    `Douleur : ${research.topPainPoint}`,
-    `Urgence : ${research.urgencySignal}`,
-    `Icebreaker : "${research.icebreakerLine}"`,
+    research.recentLinkedInActivity ? `Activité LinkedIn récente : "${research.recentLinkedInActivity}"` : null,
+    `Douleur identifiée : ${research.topPainPoint}`,
+    research.urgencySignal !== "N/A" ? `Urgence : ${research.urgencySignal}` : null,
+    research.icebreakerLine ? `Icebreaker suggéré : "${research.icebreakerLine}"` : null,
   ].filter(Boolean).join("\n");
 
   const instructions: Record<typeof actionType, string> = {
-    LINKEDIN: `Génère une note de connexion LinkedIn. MAX 280 chars. Pas de pitch. Utilise le trigger.
-Retourne : { "content": "...", "angle": "..." }`,
-    EMAIL: `Génère un email (objet + corps ~120 mots). Corps commence par le prénom.
+    LINKEDIN: `Génère DEUX éléments :
+1. "connectNote" : note de connexion LinkedIn. MAX 280 chars. Pas de pitch. Observation sur son rôle + question légère.
+2. "content" : MESSAGE POST-CONNEXION (envoyé après acceptation). Commence OBLIGATOIREMENT par "Bonjour [Prénom], merci pour la connexion !". 130-180 mots. Montre que tu as lu son profil. Identifie son archétype. Nomme sa douleur spécifique. Présente la solution en termes de gain concret pour cet archétype. CTA : échange de 10 min.
+3. "angle" : archétype identifié + angle choisi (ex: "Prescripteur → double productivité + commission")
+Retourne : { "connectNote": "...", "content": "...", "angle": "..." }`,
+    EMAIL: `Génère un email (objet + corps 100-140 mots). Corps commence par le prénom. Analyse l'archétype du prospect depuis son titre.
 Retourne : { "subject": "...", "content": "...", "angle": "..." }`,
-    FOLLOWUP: `Génère un message de relance (${lastMessage ? "suite à : " + lastMessage.slice(0, 80) : "pas de contexte"}).
-Angle différent du premier message. ~70 mots max.
+    FOLLOWUP: `Génère un message de relance (${lastMessage ? "contexte : " + lastMessage.slice(0, 100) : "pas de contexte"}).
+Angle différent du premier message. 60-80 mots max. CTA différent du précédent.
 Retourne : { "subject": "...", "content": "...", "angle": "..." }`,
   };
 
@@ -205,13 +227,29 @@ Retourne : { "subject": "...", "content": "...", "angle": "..." }`,
     }],
   });
 
-  const human = new HumanMessage(`
-PROSPECT : ${prospect.firstName} ${prospect.name} — ${prospect.jobTitle} @ ${prospect.company}
-SIGNALS :
-${researchSummary}
-OFFRE : ${brand.offer} | Résultat : ${brand.targetResult}
-TON : ${brand.tone}
+  const csoFeaturesSection = brand.productFeatures?.length
+    ? `\nFonctionnalités à citer nommément si pertinentes :\n${brand.productFeatures.map((f) => `- ${f}`).join("\n")}`
+    : "";
 
+  const human = new HumanMessage(`
+## PROSPECT
+Prénom : ${prospect.firstName}
+Nom complet : ${prospect.name}
+TITRE / HEADLINE LINKEDIN : "${prospect.jobTitle || "non disponible"}"
+Entreprise : ${prospect.company || "non disponible"}
+
+## SIGNAUX TERRAIN
+${researchSummary || "Pas de signal externe — utilise le titre LinkedIn pour personnaliser"}
+
+## NOTRE PRODUIT — ${brand.companyName}
+Offre : ${brand.offer}
+Valeur unique : ${brand.uniqueValue}
+Résultat concret : ${brand.targetResult}
+${brand.socialProof ? `Références : ${brand.socialProof}` : ""}
+${brand.websiteUrl ? `Site web : ${brand.websiteUrl}` : ""}${csoFeaturesSection}
+Ton : ${brand.tone}
+
+## MISSION
 ${instructions[actionType]}`);
 
   const response = await llm.invoke([system, human]);
@@ -220,7 +258,7 @@ ${instructions[actionType]}`);
     : (response.content as Array<{ text?: string }>)[0]?.text ?? "";
 
   const cleaned = raw.replace(/^```[\w]*\s*/m, "").replace(/```\s*$/m, "").trim();
-  return JSON.parse(cleaned) as { subject?: string; content: string; angle: string };
+  return JSON.parse(cleaned) as { subject?: string; content: string; connectNote?: string; angle: string };
 }
 
 // ─── Brand context builder ─────────────────────────────────────────────────
@@ -231,13 +269,60 @@ export function buildBrandContext(
 ): BrandContext {
   const bv = brandVoice ?? {};
   const persona = (bv.marketingPersona ?? {}) as Record<string, unknown>;
+  const icp = (bv.icp ?? {}) as Record<string, unknown>;
+
+  const keywords = Array.isArray(bv.keywords) ? (bv.keywords as string[]) : [];
+  const icpPainPoints = Array.isArray(icp.painPoints) ? (icp.painPoints as string[]) : [];
+  const icpJobTitles = Array.isArray(icp.jobTitles) ? (icp.jobTitles as string[]) : [];
+  const targetAudience = (bv.targetAudience as string) ?? "";
+
+  const rawOffer = (bv.offer ?? persona.uniqueValueProp) as string | undefined;
+  const productKeywords = keywords
+    .filter((k) => !["essai gratuit", "formation"].includes(k.toLowerCase()))
+    .slice(0, 5);
+  const offer =
+    rawOffer ??
+    (targetAudience
+      ? [
+          `Logiciel de gestion pour ${targetAudience}.`,
+          productKeywords.length > 0 ? `Automatise : ${productKeywords.join(", ")}.` : null,
+          icpPainPoints.length > 0 ? `Résout : ${icpPainPoints.slice(0, 2).join(" et ")}.` : null,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : (process.env.COMPANY_OFFER ?? "Solution d'automatisation commerciale IA"));
+
+  const toneStr = (persona.tone ?? bv.tone ?? "professional") as string;
+  const tone: BrandContext["tone"] =
+    toneStr.includes("amical") || toneStr.includes("friend") ? "friendly" : "professional";
+
+  const uniqueValue =
+    ((persona.uniqueValueProp as string | undefined) ??
+      (bv.differentiator as string | undefined)) ??
+    (icpPainPoints.length > 0
+      ? `Élimine ${icpPainPoints[0]}${icpJobTitles.length > 0 ? ` pour les ${icpJobTitles[0]}` : ""}`
+      : "Solution spécialisée pour votre secteur");
+
+  const targetResult =
+    (bv.targetResult as string | undefined) ??
+    (targetAudience
+      ? `Supprimer la charge administrative pour ${targetAudience.split(" ").slice(0, 6).join(" ")}`
+      : "Automatiser les tâches chronophages pour se concentrer sur le cœur de métier");
+
+  const productFeatures = Array.isArray(bv.productFeatures)
+    ? (bv.productFeatures as string[]).filter((f) => typeof f === "string" && f.length > 0)
+    : undefined;
+
+  const websiteUrl = (bv.websiteUrl as string | undefined)?.trim() || undefined;
 
   return {
     companyName: workspaceName,
-    offer: (bv.offer ?? persona.uniqueValueProp ?? process.env.COMPANY_OFFER ?? "Solution d'automatisation commerciale IA") as string,
-    tone: ((persona.tone ?? bv.tone ?? "professional") as string).includes("amical") || ((persona.tone ?? bv.tone ?? "") as string).includes("friend") ? "friendly" : "professional",
-    uniqueValue: (persona.uniqueValueProp ?? bv.differentiator ?? "IA spécialisée en prospection B2B") as string,
-    targetResult: (bv.targetResult ?? "doubler le pipeline commercial en 90 jours") as string,
+    offer,
+    tone,
+    uniqueValue,
+    targetResult,
     socialProof: (bv.socialProof ?? persona.socialProof ?? "") as string,
+    ...(productFeatures?.length ? { productFeatures } : {}),
+    ...(websiteUrl ? { websiteUrl } : {}),
   };
 }

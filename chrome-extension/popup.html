@@ -4,51 +4,158 @@
   <meta charset="UTF-8">
   <style>
     * { box-sizing: border-box; }
-    body { width: 380px; padding: 16px; font-family: system-ui, -apple-system, sans-serif; margin: 0; }
-    h1 { font-size: 16px; margin: 0 0 12px; color: #1a1a1a; }
+    body { width: 380px; padding: 16px; font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #fafafa; }
+    h1 { font-size: 15px; margin: 0 0 14px; color: #1a1a1a; display: flex; align-items: center; gap: 8px; }
     label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
-    input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
-    input:focus { outline: none; border-color: #10b981; }
-    button { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }
-    .btn-primary { background: linear-gradient(135deg, #10b981, #059669); color: white; }
-    .btn-primary:hover { opacity: 0.95; }
-    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
-    .status { font-size: 12px; padding: 8px; border-radius: 6px; margin-top: 12px; display: none; }
-    .status.success { background: #d1fae5; color: #065f46; display: block; }
-    .status.error { background: #fee2e2; color: #991b1b; display: block; }
-    .status.info { background: #dbeafe; color: #1e40af; display: block; }
-    .link { color: #10b981; text-decoration: none; font-size: 12px; margin-top: 8px; display: inline-block; }
+    input[type="password"], input[type="text"], input[type="number"] {
+      width: 100%; padding: 9px 11px; border: 1px solid #ddd; border-radius: 7px;
+      margin-bottom: 10px; font-size: 13px; background: white;
+    }
+    input:focus { outline: none; border-color: #7c3aed; }
+    button { width: 100%; padding: 11px; border: none; border-radius: 7px; font-weight: 600; cursor: pointer; font-size: 13px; }
+    .btn-primary { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: white; margin-bottom: 8px; }
+    .btn-secondary { background: white; border: 1px solid #ddd; color: #333; font-size: 12px; padding: 8px; }
+    .btn-run { background: linear-gradient(135deg, #059669, #047857); color: white; margin-bottom: 6px; }
+    .btn-primary:hover, .btn-run:hover { opacity: 0.92; }
+    .btn-primary:disabled, .btn-run:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .section { background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 13px; margin-bottom: 12px; }
+    .section-title { font-size: 12px; font-weight: 600; color: #374151; margin: 0 0 10px; display: flex; align-items: center; gap-6px; }
+
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 500;
+    }
+    .pill-green { background: #d1fae5; color: #065f46; }
+    .pill-amber { background: #fef3c7; color: #92400e; }
+    .pill-gray  { background: #f3f4f6; color: #6b7280; }
+    .pill-blue  { background: #dbeafe; color: #1e40af; }
+    .pill-red   { background: #fee2e2; color: #991b1b; }
+
+    .progress-bar { height: 5px; background: #e5e7eb; border-radius: 3px; margin: 8px 0; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #059669); border-radius: 3px; transition: width 0.3s; }
+
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .toggle-label { font-size: 12px; color: #374151; font-weight: 500; }
+    .toggle { position: relative; width: 38px; height: 20px; }
+    .toggle input { display: none; }
+    .slider {
+      position: absolute; inset: 0; background: #d1d5db; border-radius: 20px; cursor: pointer; transition: 0.2s;
+    }
+    .slider:before {
+      content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+      background: white; border-radius: 50%; transition: 0.2s;
+    }
+    input:checked + .slider { background: #7c3aed; }
+    input:checked + .slider:before { transform: translateX(18px); }
+
+    .small-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .small-row label { margin: 0; flex: 1; }
+    .small-row input[type="number"] { width: 70px; margin: 0; padding: 6px 8px; font-size: 12px; }
+
+    .meta { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+    hr { border: none; border-top: 1px solid #f0f0f0; margin: 12px 0; }
+    .link { color: #7c3aed; text-decoration: none; font-size: 11px; }
     .link:hover { text-decoration: underline; }
-    .token-note { font-size: 11px; color: #888; margin-top: -8px; margin-bottom: 12px; }
-    .warning { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; }
-    .warning strong { color: #92400e; font-size: 12px; display: block; margin-bottom: 4px; }
+    .token-note { font-size: 11px; color: #9ca3af; margin: -6px 0 10px; }
+
+    .warning { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+    .warning strong { color: #92400e; font-size: 11px; display: block; margin-bottom: 4px; }
     .warning ul { margin: 0; padding-left: 16px; }
-    .warning li { font-size: 11px; color: #78350f; line-height: 1.5; }
+    .warning li { font-size: 10px; color: #78350f; line-height: 1.6; }
   </style>
 </head>
 <body>
-  <h1>🔄 SKALLE - Import Membres Groupe</h1>
+  <h1>⚡ SKALLE LinkedIn Automation</h1>
+
+  <!-- Token -->
+  <div class="section">
+    <div class="section-title">🔑 Connexion SKALLE</div>
+    <label>URL de votre instance SKALLE</label>
+    <input type="text" id="apiBase" placeholder="https://votredomaine.com (vide = localhost)" />
+    <label>Token (depuis Sales OS → Paramètres)</label>
+    <input type="password" id="token" placeholder="skl_ext_xxxxx…" />
+    <p class="token-note">Générez et copiez votre token dans les Paramètres SKALLE.</p>
+    <button id="save" class="btn-primary">Enregistrer</button>
+  </div>
+
+  <!-- Statut automation -->
+  <div class="section">
+    <div class="section-title">🤖 Automation LinkedIn CSO</div>
+
+    <div class="toggle-row">
+      <span class="toggle-label">Exécuter les décisions approuvées</span>
+      <label class="toggle">
+        <input type="checkbox" id="automationEnabled" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <span class="toggle-label">🤖 Mode autonome</span>
+        <div style="font-size:10px;color:#9ca3af;margin-top:2px">Cherche + connecte sans action humaine</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="autonomousEnabled" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="small-row">
+      <label>Actions max / jour</label>
+      <input type="number" id="dailyLimit" min="1" max="20" value="10" />
+    </div>
+
+    <div class="small-row">
+      <label>Heures actives</label>
+      <input type="number" id="hoursStart" min="0" max="23" value="9" style="width:55px" />
+      <span style="font-size:12px;color:#666">h →</span>
+      <input type="number" id="hoursEnd" min="0" max="23" value="18" style="width:55px" />
+      <span style="font-size:12px;color:#666">h</span>
+    </div>
+
+    <button id="saveConfig" class="btn-secondary">Enregistrer la config</button>
+
+    <hr />
+
+    <!-- Statut du jour -->
+    <div id="statusDisplay">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span class="toggle-label">Statut aujourd'hui</span>
+        <span id="statusPill" class="status-pill pill-gray">—</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      </div>
+      <div class="meta" id="statusMeta">Chargement…</div>
+    </div>
+
+    <hr />
+
+    <button id="runNow" class="btn-run">▶ Lancer maintenant</button>
+    <button id="refresh" class="btn-secondary">↻ Rafraîchir le statut</button>
+  </div>
+
+  <!-- Facebook (existant) -->
+  <div class="section">
+    <div class="section-title">📘 Import Facebook</div>
+    <p style="font-size:12px;color:#666;margin:0">
+      Sur la page <strong>membres</strong> d'un groupe Facebook, cliquez sur le bouton SKALLE pour importer.
+    </p>
+  </div>
 
   <div class="warning">
-    <strong>⚠️ Utilisation responsable — Conditions d'utilisation Facebook</strong>
+    <strong>⚠️ Utilisation responsable</strong>
     <ul>
-      <li>L'extraction de membres sans consentement explicite peut violer les <strong>CGU de Facebook</strong> (Section 3.2).</li>
-      <li>Un usage intensif peut entraîner une <strong>restriction ou suspension de votre compte</strong>.</li>
-      <li>N'envoyez des DM qu'aux membres avec qui vous avez un lien légitime ou une raison professionnelle claire.</li>
-      <li>Respectez le <strong>RGPD</strong> : les données extraites ne doivent pas être partagées ou revendues.</li>
+      <li>Max 10 connexions/jour recommandé — restez sous le radar LinkedIn.</li>
+      <li>L'automation ne tourne que pendant vos heures de bureau configurées.</li>
+      <li>Seules les décisions <strong>approuvées</strong> dans le queue CSO sont exécutées.</li>
     </ul>
   </div>
 
-  <label>Token d'extension (copier depuis le dashboard)</label>
-  <input type="password" id="token" placeholder="skl_ext_xxxxx..." />
-  <p class="token-note">Générez un token dans Dashboard → Social Prospector → Groupes Facebook</p>
-  <button id="save" class="btn-primary">Enregistrer le token</button>
-  <div id="status" class="status"></div>
-  <hr style="margin: 16px 0; border: none; border-top: 1px solid #eee;" />
-  <p style="font-size: 12px; color: #666; margin: 0;">
-    Sur la page <strong>membres</strong> d'un groupe Facebook, cliquez sur le bouton SKALLE dans la barre d'outils du groupe pour extraire et importer les membres.
-  </p>
   <a href="#" id="openDashboard" class="link">Ouvrir le dashboard SKALLE →</a>
-</body>
+
 <script src="popup.js"></script>
+</body>
 </html>

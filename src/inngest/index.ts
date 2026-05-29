@@ -45,6 +45,7 @@ import { linkedInReplyChecker, linkedInReplyCheckerManual } from "./functions/li
 import { emailOutreachDaily, emailOutreachManual } from "./functions/email-outreach-daily";
 import { csoAgentDaily, csoAgentManual, csoAgentExecute } from "./functions/cso-agent-daily";
 import { runPersonaPipeline } from "./functions/persona-pipeline";
+import { personaWeeklyLearning, personaLearningManual } from "./functions/persona-learning";
 
 // Export all Inngest functions
 export const functions = [
@@ -110,4 +111,7 @@ export const functions = [
   csoAgentExecute,
   // Persona Pipeline — prospection orchestrée par persona
   runPersonaPipeline,
+  // Persona Learning — analyse hebdo + suggestions ICP (lundi 8h)
+  personaWeeklyLearning,
+  personaLearningManual,
 ];

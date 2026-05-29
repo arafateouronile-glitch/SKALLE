@@ -20,6 +20,7 @@ export default async function AppLayout({
   // Redirection onboarding : uniquement si on n'est pas déjà sur /onboarding
   const isOnboardingPage = pathname && pathname.startsWith("/onboarding");
   if (pathname && !isOnboardingPage) {
+    let shouldRedirect = false;
     try {
       const workspace = await prisma.workspace.findFirst({
         where: { userId: session.user.id },
@@ -38,17 +39,12 @@ export default async function AppLayout({
           brandVoice: workspace.brandVoice,
           _count: workspace._count,
         });
-        if (step >= 1 && step <= 4) {
-          redirect("/onboarding");
-        }
+        shouldRedirect = step >= 1 && step <= 4;
       }
-    } catch (e) {
-      // Erreur Prisma/DB (ex. DATABASE_URL manquant en prod) → remonter pour afficher l'erreur
-      if (e instanceof Error && /prisma|database|connection|ECONNREFUSED/i.test(e.message)) {
-        throw e;
-      }
-      // Sinon ne pas bloquer (ex. colonne onboardingStep absente en migration)
+    } catch {
+      // Swallow DB/Prisma errors — don't block access on transient connection issues
     }
+    if (shouldRedirect) redirect("/onboarding");
   }
 
   return <>{children}</>;

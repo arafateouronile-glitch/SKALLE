@@ -15,8 +15,9 @@ function getDatasourceUrl(): string | undefined {
   const base = url.includes("?") ? url.split("?")[0] : url;
   const query = url.includes("?") ? url.split("?")[1] : "";
   const params = new URLSearchParams(query);
-  if (!params.has("connection_limit")) params.set("connection_limit", "5");
-  if (!params.has("connect_timeout")) params.set("connect_timeout", "10");
+  if (!params.has("connection_limit")) params.set("connection_limit", "10");
+  if (!params.has("connect_timeout")) params.set("connect_timeout", "15");
+  if (!params.has("pool_timeout")) params.set("pool_timeout", "30");
   return base + "?" + params.toString();
 }
 

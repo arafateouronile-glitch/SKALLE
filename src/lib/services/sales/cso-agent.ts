@@ -35,6 +35,7 @@ export interface PipelineObservation {
     id: string; name: string; company: string; jobTitle: string | null;
     email: string | null; linkedInUrl: string | null; score: number;
     hasEmail: boolean; hasLinkedIn: boolean;
+    enrichmentData: Record<string, unknown> | null;
   }>;
   stagnantContacted: Array<{
     id: string; name: string; company: string; jobTitle: string | null;
@@ -52,25 +53,35 @@ export interface PipelineObservation {
 export async function observePipeline(workspaceId: string): Promise<PipelineObservation> {
   const now = new Date();
 
-  // High-score NEW/RESEARCHED/MESSAGES_GENERATED prospects (not yet contacted)
+  // Load active persona IDs to restrict prospects to ICP-matching ones only
+  const activePersonas = await prisma.persona.findMany({
+    where: { workspaceId, status: { in: ["ACTIVE", "RUNNING"] } },
+    select: { id: true },
+  });
+  const personaFilter =
+    activePersonas.length > 0
+      ? { personaId: { in: activePersonas.map((p) => p.id) } }
+      : {};
+
+  // Prospects non contactés — pas de filtre score (Claude priorise lui-même)
   const newProspects = await prisma.prospect.findMany({
     where: {
       workspaceId,
+      ...personaFilter,
       status: { in: ["NEW", "RESEARCHED", "MESSAGES_GENERATED"] },
-      score: { gte: 50 },
     },
     select: {
       id: true, name: true, company: true, jobTitle: true,
-      email: true, linkedInUrl: true, score: true,
+      email: true, linkedInUrl: true, score: true, enrichmentData: true,
     },
     orderBy: { score: "desc" },
     take: 20,
   });
 
-  // Filter out prospects already in an active sequence
+  // Filter out prospects that already have messages actually sent (not just planned)
   const inQueue = await prisma.sequenceStep.findMany({
     where: {
-      status: "PENDING",
+      status: { in: ["SENT", "DELIVERED", "OPENED"] },
       sequence: { workspaceId },
     },
     select: { sequence: { select: { prospectId: true } } },
@@ -83,16 +94,21 @@ export async function observePipeline(workspaceId: string): Promise<PipelineObse
       ...p,
       hasEmail: !!p.email,
       hasLinkedIn: !!p.linkedInUrl,
+      enrichmentData: (p.enrichmentData ?? null) as Record<string, unknown> | null,
     }))
     .slice(0, 10);
 
-  // CONTACTED with no reply for 5+ days
+  // CONTACTED with no reply for 5+ days (or never had interaction recorded)
   const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1_000);
   const contactedProspects = await prisma.prospect.findMany({
     where: {
       workspaceId,
+      ...personaFilter,
       status: "CONTACTED",
-      lastInteractionAt: { lte: fiveDaysAgo },
+      OR: [
+        { lastInteractionAt: { lte: fiveDaysAgo } },
+        { lastInteractionAt: null },
+      ],
     },
     select: {
       id: true, name: true, company: true, jobTitle: true,
@@ -135,8 +151,12 @@ export async function observePipeline(workspaceId: string): Promise<PipelineObse
   const staleRaw = await prisma.prospect.findMany({
     where: {
       workspaceId,
+      ...personaFilter,
       status: "CONTACTED",
-      lastInteractionAt: { lte: twentyOneDaysAgo },
+      OR: [
+        { lastInteractionAt: { lte: twentyOneDaysAgo } },
+        { lastInteractionAt: null },
+      ],
     },
     select: { id: true, name: true, company: true, lastInteractionAt: true },
     orderBy: { lastInteractionAt: "asc" },
@@ -161,14 +181,37 @@ function stripMarkdownJson(raw: string): string {
   return raw.replace(/^```[\w]*\s*/m, "").replace(/```\s*$/m, "").trim();
 }
 
-function buildSystemPrompt(brandContext: string): string {
+function buildIcpSection(personas: Array<{ name: string; raw: unknown }>): string {
+  if (!personas.length) return "";
+
+  const lines = personas.map((persona) => {
+    const r = (persona.raw ?? {}) as Record<string, unknown>;
+    const parts: string[] = [`### Persona : ${persona.name}`];
+    if (r.industry) parts.push(`- Secteur : ${r.industry}`);
+    if (Array.isArray(r.jobTitles) && r.jobTitles.length)
+      parts.push(`- Titres de poste ciblés : ${r.jobTitles.join(", ")}`);
+    if (Array.isArray(r.companySizes) && r.companySizes.length)
+      parts.push(`- Taille d'entreprise : ${r.companySizes.join(", ")}`);
+    if (Array.isArray(r.locations) && r.locations.length)
+      parts.push(`- Géographies : ${r.locations.join(", ")}`);
+    if (Array.isArray(r.keywords) && r.keywords.length)
+      parts.push(`- Mots-clés ICP : ${r.keywords.join(", ")}`);
+    if (Array.isArray(r.painPoints) && r.painPoints.length)
+      parts.push(`- Points de douleur : ${r.painPoints.join(", ")}`);
+    return parts.join("\n");
+  });
+
+  return `\n## Profil client idéal (ICP) — critères de priorisation\nPriorise les prospects qui correspondent aux personas ci-dessous. Justifie toujours l'adéquation ICP dans le reasoning.\n${lines.join("\n\n")}\n`;
+}
+
+function buildSystemPrompt(brandContext: string, icpSection = ""): string {
   const brandSection = brandContext
     ? `\n## Contexte de marque (à utiliser dans tous les messages générés)\n${brandContext}\n`
     : "";
   return `Tu es le CSO Agent, un assistant autonome de gestion de pipeline commercial.
 
 Ton rôle : analyser l'état du pipeline et générer des décisions d'outreach personnalisées et priorisées.
-${brandSection}
+${brandSection}${icpSection}
 Pour chaque prospect, tu génères une décision structurée :
 - actionType : CSO_LAUNCH_LINKEDIN | CSO_LAUNCH_EMAIL | CSO_FOLLOWUP | CSO_STALE_REJECT
 - Règles :
@@ -232,18 +275,34 @@ Réponds UNIQUEMENT avec un JSON valide, tableau de décisions :
 Génère au maximum 15 décisions au total. Priorise la qualité sur la quantité.`
 }
 
+export type CsoProgressEvent =
+  | { step: "research_start"; meta: { count: number } }
+  | { step: "research_done";  meta: { count: number } }
+  | { step: "generate_start" }
+  | { step: "generate_done";  meta: { count: number } }
+  | { step: "personalize_start"; meta: { count: number } }
+  | { step: "personalize_done" };
+
 export async function generateCsoDecisions(
   obs: PipelineObservation,
-  workspaceId: string
+  workspaceId: string,
+  onProgress?: (evt: CsoProgressEvent) => void
 ): Promise<CsoDecisionDraft[]> {
   const total =
     obs.highScoreNew.length + obs.stagnantContacted.length + obs.staleProspects.length;
   if (total === 0) return [];
 
-  const workspace = await prisma.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { name: true, brandVoice: true, user: { select: { plan: true } } },
-  });
+  const [workspace, personas] = await Promise.all([
+    prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { name: true, brandVoice: true, user: { select: { plan: true } } },
+    }),
+    prisma.persona.findMany({
+      where: { workspaceId, status: { in: ["ACTIVE", "RUNNING"] } },
+      select: { name: true, raw: true },
+      take: 3,
+    }),
+  ]);
 
   const plan = workspace?.user?.plan ?? "AGENCY";
   const budgetCheck = await checkBudget(workspaceId, "cso_agent_analyze", "claude-sonnet-4-6", plan);
@@ -263,11 +322,14 @@ export async function generateCsoDecisions(
     jobTitle: p.jobTitle,
     linkedInUrl: p.linkedInUrl,
     email: p.email,
+    enrichmentData: p.enrichmentData,
   }));
 
+  onProgress?.({ step: "research_start", meta: { count: prospectInputs.length } });
   const researchMap = prospectInputs.length > 0
     ? await researchProspectsBatch(prospectInputs, 2).catch(() => new Map())
     : new Map();
+  onProgress?.({ step: "research_done", meta: { count: researchMap.size } });
 
   // ── Step B: Claude decides WHICH prospects to contact + priority ───────────
   const brandContext = [
@@ -310,11 +372,15 @@ Priorise les prospects avec des SIGNALS forts (🔥 levée, 💼 recrutement, �
 Génère les décisions. Les messages seront personnalisés séparément.
 `;
 
+  onProgress?.({ step: "generate_start" });
+
   const claude = getClaude();
   const parser = getStringParser();
 
+  const icpSection = buildIcpSection(personas);
+
   const response = await claude.invoke([
-    new SystemMessage({ content: buildSystemPrompt(brandContext) }),
+    new SystemMessage({ content: buildSystemPrompt(brandContext, icpSection) }),
     new HumanMessage({ content: humanPrompt }),
   ]);
 
@@ -331,15 +397,46 @@ Génère les décisions. Les messages seront personnalisés séparément.
     return [];
   }
 
-  // ── Step C: Replace generic messages with hyper-personalized ones ──────────
+  onProgress?.({ step: "generate_done", meta: { count: decisions.length } });
+
+  // ── Step C: Generate hyper-personalized messages for ALL decisions ──────────
+  onProgress?.({ step: "personalize_start", meta: { count: decisions.length } });
+
   const enrichedDecisions = await Promise.all(
     decisions.map(async (d): Promise<CsoDecisionDraft> => {
-      const research = researchMap.get(d.prospectId);
-      if (!research) return d;
+      if (d.actionType === "CSO_STALE_REJECT") return d;
 
       const prospectData = obs.highScoreNew.find((p) => p.id === d.prospectId)
         ?? obs.stagnantContacted.find((p) => p.id === d.prospectId);
       if (!prospectData) return d;
+
+      const rawEnrichment = "enrichmentData" in prospectData ? prospectData.enrichmentData : null;
+      const liEnrich = ((rawEnrichment as Record<string, unknown> | null)?.linkedIn ?? null) as {
+        headline?: string | null;
+        about?: string | null;
+        experiences?: Array<{ title: string; company: string; description: string | null }>;
+      } | null;
+
+      const research = researchMap.get(d.prospectId) ?? {
+        companyTrigger: null,
+        hiringSignals: [],
+        recentNews: [],
+        techStack: [],
+        recentLinkedInActivity: null,
+        recentJobChange: false,
+        linkedInHeadline: liEnrich?.headline ?? prospectData.jobTitle ?? null,
+        linkedInAbout: liEnrich?.about ?? null,
+        linkedInExperiences: liEnrich?.experiences ?? [],
+        companyStage: "PME établie",
+        topPainPoint: "gestion administrative chronophage",
+        suggestedAngle: "productivité" as const,
+        urgencySignal: "N/A",
+        icebreakerLine: "",
+        jobTenure: null,
+        confidence: "low" as const,
+        researchedAt: new Date().toISOString(),
+        serperUsed: false,
+      };
 
       const profile = {
         id: d.prospectId,
@@ -354,7 +451,15 @@ Génère les décisions. Les messages seront personnalisés séparément.
       try {
         if (d.actionType === "CSO_LAUNCH_LINKEDIN") {
           const msg = await generateCsoMessages(profile, research, brand, "LINKEDIN");
-          return { ...d, actionData: { ...d.actionData, connectNote: msg.content, _angle: msg.angle } };
+          return {
+            ...d,
+            actionData: {
+              ...d.actionData,
+              connectNote: msg.connectNote ?? msg.content.slice(0, 280),
+              postConnectionMessage: msg.content,
+              _angle: msg.angle,
+            },
+          };
 
         } else if (d.actionType === "CSO_LAUNCH_EMAIL") {
           const msg = await generateCsoMessages(profile, research, brand, "EMAIL");
@@ -374,6 +479,8 @@ Génère les décisions. Les messages seront personnalisés séparément.
     })
   );
 
+  onProgress?.({ step: "personalize_done" });
+
   return enrichedDecisions;
 }
 
@@ -385,15 +492,16 @@ export async function storeCsoDecisions(
 ): Promise<number> {
   if (!drafts.length) return 0;
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000);
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1_000);
 
-  // Skip duplicates: same prospectId + same actionType already PENDING
-  // Also skip prospects rejected for the same action type in the last 7 days (cooldown)
+  // Skip duplicates: same prospectId + same actionType already PENDING in the last 24h
+  // Also skip prospects rejected for the same action type in the last 24h (short cooldown)
   const [existing, recentRejected] = await Promise.all([
     prisma.agentDecision.findMany({
       where: {
         workspaceId,
         status: "PENDING",
+        createdAt: { gte: oneDayAgo },
         actionType: { in: drafts.map((d) => d.actionType) },
       },
       select: { actionType: true, actionData: true },
@@ -402,7 +510,7 @@ export async function storeCsoDecisions(
       where: {
         workspaceId,
         status: "REJECTED",
-        updatedAt: { gte: sevenDaysAgo },
+        updatedAt: { gte: oneDayAgo },
       },
       select: { actionType: true, actionData: true },
     }),

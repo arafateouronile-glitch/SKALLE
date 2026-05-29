@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CSODashboardClientV2 } from "@/components/modules/cso/dashboard-client-v2";
+import { CsoMetricsDashboard } from "@/components/modules/cso/cso-metrics-dashboard";
 
 async function getSalesDashboardData(userId: string) {
   const workspace = await prisma.workspace.findFirst({
@@ -142,15 +143,20 @@ export default async function SalesDashboardPage() {
   const plan = user?.plan ?? "FREE";
 
   return (
-    <CSODashboardClientV2
-      firstName={firstName}
-      plan={plan}
-      kpis={kpis}
-      isAutopilotActive={isAutopilotActive}
-      csoPendingCount={csoPendingCount}
-      hotLeads={hotLeads}
-      recentReplies={recentReplies}
-      recentDecisions={recentDecisions}
-    />
+    <div className="space-y-6">
+      <CSODashboardClientV2
+        firstName={firstName}
+        plan={plan}
+        kpis={kpis}
+        isAutopilotActive={isAutopilotActive}
+        csoPendingCount={csoPendingCount}
+        hotLeads={hotLeads}
+        recentReplies={recentReplies}
+        recentDecisions={recentDecisions}
+      />
+      <div className="max-w-2xl">
+        <CsoMetricsDashboard workspaceId={data.workspace.id} />
+      </div>
+    </div>
   );
 }

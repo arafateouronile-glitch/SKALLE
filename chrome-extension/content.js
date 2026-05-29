@@ -6,7 +6,14 @@
  */
 
 const BATCH_SIZE = 50;
-const API_BASE = "http://localhost:3000";
+
+async function getApiBase() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get({ skalleApiBase: "" }, (r) => {
+      resolve(r.skalleApiBase?.trim() || "http://localhost:3000");
+    });
+  });
+}
 
 async function getToken() {
   return new Promise((resolve) => {
@@ -130,12 +137,12 @@ async function scrollToLoadMore(limit = 200) {
  * Envoie un batch de membres à l'API SKALLE
  */
 async function sendBatch(groupId, groupName, groupUrl, members) {
-  const token = await getToken();
+  const [token, apiBase] = await Promise.all([getToken(), getApiBase()]);
   if (!token) {
     throw new Error("Token non configuré. Ouvrez la popup de l'extension.");
   }
 
-  const res = await fetch(`${API_BASE}/api/facebook-groups/import-members`, {
+  const res = await fetch(`${apiBase}/api/facebook-groups/import-members`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

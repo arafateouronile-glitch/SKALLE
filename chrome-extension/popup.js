@@ -1,23 +1,128 @@
+// ── Config ────────────────────────────────────────────────────────────────────
+
+async function getApiBase() {
+  const { skalleApiBase } = await chrome.storage.sync.get({ skalleApiBase: "" });
+  return skalleApiBase?.trim() || "http://localhost:3000";
+}
+
+// ── Token ─────────────────────────────────────────────────────────────────────
+
 document.getElementById("save").addEventListener("click", async () => {
   const token = document.getElementById("token").value.trim();
-  const status = document.getElementById("status");
-  if (!token) {
-    status.className = "status error";
-    status.textContent = "Veuillez coller votre token d'extension.";
-    return;
-  }
-  await chrome.storage.sync.set({ skalleToken: token });
-  status.className = "status success";
-  status.textContent = "Token enregistré !";
+  const rawUrl = document.getElementById("apiBase").value.trim();
+  const apiBase = rawUrl.replace(/\/$/, "") || "";   // vide = localhost côté scripts
+
+  await chrome.storage.sync.set({ skalleToken: token, skalleApiBase: apiBase });
+  const btn = document.getElementById("save");
+  btn.textContent = "✓ Enregistré !";
+  setTimeout(() => { btn.textContent = "Enregistrer"; }, 2000);
 });
 
-chrome.storage.sync.get(["skalleToken"]).then(({ skalleToken }) => {
-  if (skalleToken) {
-    document.getElementById("token").value = skalleToken;
+// ── Config automation ─────────────────────────────────────────────────────────
+
+async function loadConfig() {
+  const config = await chrome.storage.sync.get({
+    skalleToken: "",
+    skalleApiBase: "",
+    automationEnabled: true,
+    dailyLimit: 10,
+    businessHoursStart: 9,
+    businessHoursEnd: 18,
+  });
+
+  if (config.skalleToken) {
+    document.getElementById("token").value = config.skalleToken;
   }
+  document.getElementById("apiBase").value = config.skalleApiBase || "";
+  document.getElementById("automationEnabled").checked = config.automationEnabled;
+  document.getElementById("autonomousEnabled").checked = config.autonomousEnabled ?? false;
+  document.getElementById("dailyLimit").value = config.dailyLimit;
+  document.getElementById("hoursStart").value = config.businessHoursStart;
+  document.getElementById("hoursEnd").value = config.businessHoursEnd;
+}
+
+document.getElementById("saveConfig").addEventListener("click", async () => {
+  await chrome.storage.sync.set({
+    automationEnabled: document.getElementById("automationEnabled").checked,
+    autonomousEnabled: document.getElementById("autonomousEnabled").checked,
+    dailyLimit: parseInt(document.getElementById("dailyLimit").value) || 10,
+    businessHoursStart: parseInt(document.getElementById("hoursStart").value) || 9,
+    businessHoursEnd: parseInt(document.getElementById("hoursEnd").value) || 18,
+  });
+  const btn = document.getElementById("saveConfig");
+  btn.textContent = "✓ Config enregistrée";
+  setTimeout(() => { btn.textContent = "Enregistrer la config"; }, 2000);
 });
 
-document.getElementById("openDashboard").addEventListener("click", (e) => {
+// ── Statut automation ─────────────────────────────────────────────────────────
+
+const STATUS_LABELS = {
+  no_token:                    { text: "Token manquant",        cls: "pill-red"   },
+  disabled:                    { text: "Désactivée",            cls: "pill-gray"  },
+  outside_hours:               { text: "Hors horaires",         cls: "pill-amber" },
+  limit_reached:               { text: "Limite atteinte",       cls: "pill-amber" },
+  waiting_linkedin:            { text: "LinkedIn non ouvert",   cls: "pill-amber" },
+  autonomous_waiting_linkedin: { text: "LinkedIn non ouvert",   cls: "pill-amber" },
+  autonomous_running:          { text: "🤖 Recherche…",         cls: "pill-blue"  },
+  autonomous_done:             { text: "🤖 Terminé",            cls: "pill-green" },
+  running:                     { text: "En cours…",             cls: "pill-blue"  },
+  done:                        { text: "Terminé",               cls: "pill-green" },
+  idle:                        { text: "En attente",            cls: "pill-gray"  },
+};
+
+function parseStatus(raw) {
+  if (!raw) return { key: "idle", count: 0, limit: 10 };
+  const [key, rest] = raw.split(":");
+  let count = 0, limit = 10;
+  if (rest) {
+    const m = rest.match(/(\d+)\/(\d+)/);
+    if (m) { count = parseInt(m[1]); limit = parseInt(m[2]); }
+  }
+  return { key, count, limit };
+}
+
+async function refreshStatus() {
+  const data = await chrome.runtime.sendMessage({ type: "SKALLE_GET_STATUS" });
+  const { key, count, limit } = parseStatus(data?.automationStatus);
+
+  const info = STATUS_LABELS[key] ?? { text: key, cls: "pill-gray" };
+  const pill = document.getElementById("statusPill");
+  pill.textContent = info.text;
+  pill.className = `status-pill ${info.cls}`;
+
+  const pct = limit > 0 ? Math.min(100, (count / limit) * 100) : 0;
+  document.getElementById("progressFill").style.width = `${pct}%`;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const actionDate = data?.actionDate ?? "";
+  const countToday = actionDate === today ? (data?.actionCount ?? 0) : 0;
+  document.getElementById("statusMeta").textContent =
+    `${countToday} action${countToday !== 1 ? "s" : ""} effectuée${countToday !== 1 ? "s" : ""} aujourd'hui · Prochain check dans ~30 min`;
+}
+
+document.getElementById("refresh").addEventListener("click", refreshStatus);
+
+// ── Actions manuelles ─────────────────────────────────────────────────────────
+
+document.getElementById("runNow").addEventListener("click", async () => {
+  const btn = document.getElementById("runNow");
+  btn.disabled = true;
+  btn.textContent = "⏳ Lancement…";
+  await chrome.runtime.sendMessage({ type: "SKALLE_RUN_NOW" });
+  await refreshStatus();
+  btn.disabled = false;
+  btn.textContent = "▶ Lancer maintenant";
+});
+
+// ── Dashboard link ────────────────────────────────────────────────────────────
+
+document.getElementById("openDashboard").addEventListener("click", async (e) => {
   e.preventDefault();
-  chrome.tabs.create({ url: "http://localhost:3000/dashboard/social-prospector" });
+  const base = await getApiBase();
+  chrome.tabs.create({ url: `${base}/sales-os/agent` });
 });
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+loadConfig();
+refreshStatus();

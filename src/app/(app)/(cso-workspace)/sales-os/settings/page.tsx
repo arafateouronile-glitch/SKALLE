@@ -21,6 +21,8 @@ import Link from "next/link";
 import { CalendarLinkForm } from "@/components/modules/calendar-link-form";
 import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
 import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
+import { ChromeExtensionCard } from "@/components/modules/cso/chrome-extension-card";
+import { BrandVoiceCard } from "@/components/modules/cso/brand-voice-card";
 
 const PLAN_LABELS: Record<string, string> = {
   FREE: "Gratuit",
@@ -54,6 +56,12 @@ export default async function SalesSettingsPage() {
           hasCmoAccess: true,
           hasCsoAccess: true,
           calendarLink: true,
+          brandVoice: true,
+          extensionTokens: {
+            select: { token: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
         },
         take: 1,
       },
@@ -63,6 +71,7 @@ export default async function SalesSettingsPage() {
   if (!user) redirect("/login");
 
   const workspace = user.workspaces[0];
+  const extensionToken = workspace?.extensionTokens?.[0]?.token ?? null;
   const planLabel = PLAN_LABELS[user.plan] ?? user.plan;
   const planColor = PLAN_COLORS[user.plan] ?? "bg-gray-100 text-gray-700";
 
@@ -173,9 +182,25 @@ export default async function SalesSettingsPage() {
         <SmtpConfigForm workspaceId={workspace.id} />
       )}
 
+      {/* Brand Voice — contexte produit */}
+      {workspace && (
+        <BrandVoiceCard
+          workspaceId={workspace.id}
+          initial={(workspace.brandVoice ?? {}) as Record<string, unknown>}
+        />
+      )}
+
       {/* LinkedIn Automation */}
       {workspace && (
         <LinkedInAutomationSettings workspaceId={workspace.id} />
+      )}
+
+      {/* Extension Chrome */}
+      {workspace && (
+        <ChromeExtensionCard
+          token={extensionToken}
+          workspaceId={workspace.id}
+        />
       )}
 
       {/* Lien de réservation d'appel */}

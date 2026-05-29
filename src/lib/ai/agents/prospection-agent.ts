@@ -90,6 +90,8 @@ const generateSequenceTool = new DynamicStructuredTool({
         recentNews: [],
         techStack: [],
         linkedInHeadline: null,
+        linkedInAbout: null,
+        linkedInExperiences: [],
         recentLinkedInActivity: null,
         jobTenure: null,
         recentJobChange: false,

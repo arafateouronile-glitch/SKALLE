@@ -6,6 +6,7 @@ import { getUserWorkspace } from "@/actions/leads";
 import {
   Users, Plus, Loader2, Play, Pause, Trash2, RefreshCw,
   Sparkles, Target, Mail, Linkedin, BarChart3, X,
+  TrendingUp, CheckCircle2, XCircle, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,11 +20,29 @@ interface RawPersona {
   painPoints: string[];
 }
 
+interface PersonaSuggestion {
+  id: string;
+  type: "add_job_title" | "remove_job_title" | "add_keyword" | "remove_keyword" | "add_location" | "add_pain_point";
+  value: string;
+  reason: string;
+  confidence: "high" | "medium" | "low";
+  status: "pending" | "approved" | "rejected";
+  generatedAt: string;
+  acceptedCount?: number;
+  totalCount?: number;
+}
+
+interface EnhancedPersona {
+  suggestions?: PersonaSuggestion[];
+  lastAnalyzedAt?: string;
+  analysisStats?: { accepted: number; notAccepted: number; acceptanceRate: number };
+}
+
 interface Persona {
   id: string;
   name: string;
   raw: RawPersona;
-  enhanced: unknown;
+  enhanced: EnhancedPersona | null;
   status: "DRAFT" | "RUNNING" | "ACTIVE" | "PAUSED";
   lastRunAt: string | null;
   leadsFound: number;
@@ -97,15 +116,130 @@ function StatusBadge({ status }: { status: Persona["status"] }) {
 
 // ─── Persona Card ─────────────────────────────────────────────────────────────
 
+// ─── Suggestions Panel ────────────────────────────────────────────────────────
+
+const SUGGESTION_LABELS: Record<PersonaSuggestion["type"], string> = {
+  add_job_title:    "Ajouter titre",
+  remove_job_title: "Retirer titre",
+  add_keyword:      "Ajouter keyword",
+  remove_keyword:   "Retirer keyword",
+  add_location:     "Ajouter localisation",
+  add_pain_point:   "Ajouter douleur",
+};
+
+const CONFIDENCE_COLORS: Record<PersonaSuggestion["confidence"], string> = {
+  high:   "#059669",
+  medium: "#d97706",
+  low:    "#6b7280",
+};
+
+function SuggestionsPanel({ personaId, suggestions, onUpdate }: {
+  personaId: string;
+  suggestions: PersonaSuggestion[];
+  onUpdate: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const pending = suggestions.filter((s) => s.status === "pending");
+
+  if (!pending.length) return null;
+
+  async function handle(suggestionId: string, action: "approve" | "reject") {
+    setLoading(suggestionId);
+    await fetch(`/api/personas/${personaId}/suggestions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ suggestionId, action }),
+    });
+    setLoading(null);
+    onUpdate();
+  }
+
+  return (
+    <div className="rounded-[10px] overflow-hidden"
+      style={{ border: "1px solid var(--amber-line)", background: "var(--amber-soft)" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-3.5 w-3.5" style={{ color: "var(--amber-fg)" }} />
+          <span className="text-[12px] font-semibold" style={{ color: "var(--amber-fg)" }}>
+            {pending.length} suggestion{pending.length > 1 ? "s" : ""} d'amélioration
+          </span>
+        </div>
+        {open
+          ? <ChevronUp className="h-3.5 w-3.5" style={{ color: "var(--amber-fg)" }} />
+          : <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--amber-fg)" }} />
+        }
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 space-y-2 border-t" style={{ borderColor: "var(--amber-line)" }}>
+          {pending.map((s) => (
+            <div key={s.id} className="flex items-start gap-2 pt-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] font-medium"
+                    style={{ background: "rgba(0,0,0,0.08)", color: "var(--amber-fg)" }}>
+                    {SUGGESTION_LABELS[s.type]}
+                  </span>
+                  <span className="text-[12px] font-semibold" style={{ color: "var(--fg)" }}>
+                    "{s.value}"
+                  </span>
+                  <span className="text-[10px] font-medium"
+                    style={{ color: CONFIDENCE_COLORS[s.confidence] }}>
+                    {s.confidence === "high" ? "↑ fort" : s.confidence === "medium" ? "~ moyen" : "↓ faible"}
+                  </span>
+                </div>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--fg-mute)" }}>{s.reason}</p>
+                {s.acceptedCount !== undefined && s.totalCount !== undefined && (
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                    {s.acceptedCount}/{s.totalCount} profils concernés
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button
+                  onClick={() => handle(s.id, "approve")}
+                  disabled={loading === s.id}
+                  className="p-1.5 rounded-[6px] transition-opacity hover:opacity-80 disabled:opacity-50"
+                  style={{ background: "var(--emerald-soft)" }}
+                  title="Appliquer"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--emerald-fg)" }} />
+                </button>
+                <button
+                  onClick={() => handle(s.id, "reject")}
+                  disabled={loading === s.id}
+                  className="p-1.5 rounded-[6px] transition-opacity hover:opacity-80 disabled:opacity-50"
+                  style={{ background: "var(--bg-2)" }}
+                  title="Ignorer"
+                >
+                  <XCircle className="h-3.5 w-3.5" style={{ color: "var(--fg-mute)" }} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Persona Card ─────────────────────────────────────────────────────────────
+
 function PersonaCard({
-  persona, onRun, onPause, onDelete,
+  persona, onRun, onPause, onDelete, onRefresh,
 }: {
   persona: Persona;
   onRun: (id: string) => void;
   onPause: (id: string) => void;
   onDelete: (id: string) => void;
+  onRefresh: () => void;
 }) {
   const raw = persona.raw;
+  const suggestions = persona.enhanced?.suggestions?.filter((s) => s.status === "pending") ?? [];
   return (
     <div className="rounded-[14px] p-5 flex flex-col gap-4"
       style={{ background: "var(--card)", border: "1px solid var(--line)" }}>
@@ -175,6 +309,15 @@ function PersonaCard({
         <p className="text-[10.5px] -mt-2" style={{ color: "var(--fg-mute)" }}>
           Dernier run : {new Date(persona.lastRunAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
         </p>
+      )}
+
+      {/* Suggestions d'amélioration ICP */}
+      {suggestions.length > 0 && (
+        <SuggestionsPanel
+          personaId={persona.id}
+          suggestions={suggestions}
+          onUpdate={onRefresh}
+        />
       )}
     </div>
   );
@@ -469,12 +612,28 @@ export default function PersonasPage() {
               Chaque persona déclenche les 4 canaux (Apify, Job Board, INSEE, Google Maps)
             </p>
           </div>
-          <button
-            onClick={() => setDialogOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13px] font-semibold"
-            style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}>
-            <Plus className="h-4 w-4" /> Nouveau persona
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                if (!workspaceId) return;
+                await fetch("/api/inngest/trigger", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: "persona/learning.manual", data: { workspaceId } }),
+                });
+                setTimeout(() => workspaceId && load(workspaceId), 30_000);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-medium"
+              style={{ background: "var(--bg-2)", color: "var(--fg-mute)", border: "1px solid var(--line)" }}>
+              <TrendingUp className="h-3.5 w-3.5" /> Analyser
+            </button>
+            <button
+              onClick={() => setDialogOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13px] font-semibold"
+              style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}>
+              <Plus className="h-4 w-4" /> Nouveau persona
+            </button>
+          </div>
         </div>
 
         {/* Grid */}
@@ -507,6 +666,7 @@ export default function PersonasPage() {
                 onRun={handleRun}
                 onPause={handlePause}
                 onDelete={handleDelete}
+                onRefresh={() => workspaceId && load(workspaceId)}
               />
             ))}
           </div>

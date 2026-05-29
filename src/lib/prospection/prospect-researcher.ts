@@ -15,6 +15,12 @@ import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface LinkedInExperience {
+  title: string;
+  company: string;
+  description: string | null;
+}
+
 export interface ProspectInput {
   id: string;
   name: string;
@@ -26,26 +32,29 @@ export interface ProspectInput {
   notes?: string | null;
   intentScore?: number | null;
   source?: string | null;
+  enrichmentData?: Record<string, unknown> | null;
 }
 
 export interface ProspectResearch {
   // Company triggers (les plus puissants pour l'icebreaker)
-  companyTrigger: string | null;        // ex: "vient de lever €8M Series A il y a 2 semaines"
-  companyStage: string;                 // ex: "startup en hypercroissance post-levée"
-  hiringSignals: string[];              // ex: ["recrute Head of Marketing", "10 postes ouverts"]
-  recentNews: string[];                 // headlines récentes
-  techStack: string[];                  // technologies détectées
+  companyTrigger: string | null;
+  companyStage: string;
+  hiringSignals: string[];
+  recentNews: string[];
+  techStack: string[];
 
   // Person triggers
   linkedInHeadline: string | null;
-  recentLinkedInActivity: string | null; // sujet de leur dernier post/commentaire
-  jobTenure: string | null;             // "en poste depuis 7 mois" — fenêtre idéale: 3-9 mois
+  linkedInAbout: string | null;           // Section "À propos" complète (via extension Chrome)
+  linkedInExperiences: LinkedInExperience[]; // Expériences (via extension Chrome)
+  recentLinkedInActivity: string | null;
+  jobTenure: string | null;
   recentJobChange: boolean;
 
   // Derived intelligence
-  topPainPoint: string;                 // douleur #1 pour ce rôle + contexte entreprise
-  urgencySignal: string;               // pourquoi MAINTENANT est le bon moment
-  icebreakerLine: string;              // première ligne personnalisée prête à l'emploi
+  topPainPoint: string;
+  urgencySignal: string;
+  icebreakerLine: string;
   suggestedAngle: "growth" | "efficiency" | "competitive" | "timing" | "pain";
 
   // Metadata
@@ -75,6 +84,19 @@ function inferPainPoint(jobTitle: string, companyStage: string, hiringSignals: s
   const title = jobTitle.toLowerCase();
   const isHiring = hiringSignals.length > 0;
 
+  // Formation / Qualiopi sector
+  if (
+    title.includes("organisme de formation") || title.includes("qualiopi") ||
+    title.includes(" cfa") || title.includes("formateur") ||
+    title.includes("bpf") || title.includes("nda ") ||
+    (title.includes("formation") && (title.includes("gérant") || title.includes("directeur") || title.includes("dirigeant") || title.includes("responsable")))
+  ) {
+    if (title.includes("consultant") || title.includes("assistante") || title.includes("freelance") || title.includes("prestataire") || title.includes("bras droit") || title.includes("accompagnat")) {
+      return "gérer la conformité Qualiopi de plusieurs clients OF (BPF, NDA, émargements) en perdant des heures sur chaque dossier";
+    }
+    if (isHiring) return "absorber la croissance du volume de stagiaires sans exploser la charge administrative Qualiopi";
+    return "éliminer la charge administrative (BPF, NDA, feuilles d'émargement, piste d'audit) pour se concentrer sur la pédagogie";
+  }
   if (title.includes("cmo") || title.includes("marketing") || title.includes("growth")) {
     if (isHiring) return "scaler l'acquisition sans diluer la qualité des leads";
     return "prouver le ROI marketing et générer plus de pipeline qualifié";
@@ -107,11 +129,20 @@ export async function researchProspect(
   const personName = prospect.name?.trim() || "";
   const jobTitle = prospect.jobTitle || "";
 
+  // ── 0. Pre-enriched data from Chrome extension (highest priority) ────────────
+  const liEnrich = (prospect.enrichmentData?.linkedIn ?? null) as {
+    headline?: string | null;
+    about?: string | null;
+    experiences?: LinkedInExperience[];
+  } | null;
+
   let companyTrigger: string | null = null;
   let hiringSignals: string[] = [];
   let recentNews: string[] = [];
   let techStack: string[] = [];
-  let linkedInHeadline: string | null = null;
+  let linkedInHeadline: string | null = liEnrich?.headline ?? null;
+  let linkedInAbout: string | null = liEnrich?.about ?? null;
+  let linkedInExperiences: LinkedInExperience[] = liEnrich?.experiences ?? [];
   let recentLinkedInActivity: string | null = null;
   let serperUsed = false;
 
@@ -283,6 +314,8 @@ Signal principal : ${companyTrigger ?? recentLinkedInActivity ?? hiringSignals[0
     recentNews: recentNews.filter(Boolean).slice(0, 4),
     techStack: techStack.slice(0, 5),
     linkedInHeadline,
+    linkedInAbout,
+    linkedInExperiences,
     recentLinkedInActivity,
     jobTenure: tenure,
     recentJobChange: recentChange,

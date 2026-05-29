@@ -98,7 +98,8 @@ export default auth(async (req) => {
   const isProtectedAppRoute =
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/marketing-os") ||
-    pathname.startsWith("/sales-os");
+    pathname.startsWith("/sales-os") ||
+    pathname.startsWith("/onboarding");
 
   if (isProtectedAppRoute && !isLoggedIn) {
     return applySecurityHeaders(NextResponse.redirect(new URL("/login", req.url)));
