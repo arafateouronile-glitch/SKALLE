@@ -6,7 +6,7 @@ import { AppTopBar } from "@/components/modules/app-topbar";
 import { KpiCard } from "@/components/ui/kpi-card";
 import {
   Zap, Search, Mail, TrendingUp, Send, AlertCircle,
-  Calendar, CheckCircle2, ExternalLink, Loader2,
+  Calendar, CheckCircle2, ExternalLink, Loader2, Sparkles, Copy, Check,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -157,6 +157,40 @@ export function CSODashboardClientV2({
     } finally {
       setMarkingId(null);
     }
+  }, []);
+
+  // IA reply suggestions
+  const [suggestingId, setSuggestingId] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<Record<string, {
+    intent: string;
+    intentLabel: string;
+    suggestedReply: string;
+    reasoning: string;
+  }>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const suggestReply = useCallback(async (prospectId: string) => {
+    if (suggestions[prospectId]) return; // Déjà générée
+    setSuggestingId(prospectId);
+    try {
+      const res = await fetch("/api/cso-agent/suggest-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId }),
+      });
+      const json = await res.json();
+      if (res.ok && json.suggestedReply) {
+        setSuggestions((prev) => ({ ...prev, [prospectId]: json }));
+      }
+    } finally {
+      setSuggestingId(null);
+    }
+  }, [suggestions]);
+
+  const copyReply = useCallback((prospectId: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(prospectId);
+    setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
   return (
@@ -482,57 +516,98 @@ export function CSODashboardClientV2({
 
                         {/* CTAs */}
                         {!isMeetingBooked && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {/* Envoyer Calendly */}
-                            {calendarLink ? (
-                              <a
-                                href={r.linkedInUrl ?? "#"}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title={`Ouvrir LinkedIn puis envoyer : ${calendarLink}`}
+                          <div className="space-y-2.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Rédiger avec IA */}
+                              <button
+                                onClick={() => suggestReply(r.id)}
+                                disabled={suggestingId === r.id}
                                 className="flex items-center gap-1.5 text-[11.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-all hover:brightness-110"
-                                style={{ background: "var(--emerald-soft)", border: "1px solid var(--emerald-line)", color: "var(--emerald-fg)" }}
+                                style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)", color: "var(--violet-fg)" }}
                               >
-                                <Calendar className="h-3 w-3" />
-                                Envoyer Calendly
-                              </a>
-                            ) : (
-                              <Link
-                                href="/sales-os/settings"
-                                className="flex items-center gap-1.5 text-[11.5px] px-2.5 py-1.5 rounded-lg"
+                                {suggestingId === r.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <Sparkles className="h-3 w-3" />}
+                                {suggestions[r.id] ? "Regénérer" : "Rédiger avec IA"}
+                              </button>
+
+                              {/* Envoyer Calendly */}
+                              {calendarLink ? (
+                                <a
+                                  href={r.linkedInUrl ?? "#"}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={`Ouvrir LinkedIn puis envoyer : ${calendarLink}`}
+                                  className="flex items-center gap-1.5 text-[11.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-all hover:brightness-110"
+                                  style={{ background: "var(--emerald-soft)", border: "1px solid var(--emerald-line)", color: "var(--emerald-fg)" }}
+                                >
+                                  <Calendar className="h-3 w-3" />
+                                  Calendly
+                                </a>
+                              ) : null}
+
+                              {/* Ouvrir LinkedIn */}
+                              {r.linkedInUrl && (
+                                <a
+                                  href={r.linkedInUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:brightness-105"
+                                  style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  LinkedIn
+                                </a>
+                              )}
+
+                              {/* Marquer RDV */}
+                              <button
+                                onClick={() => markMeeting(r.id)}
+                                disabled={markingId === r.id}
+                                className="ml-auto flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg transition-all hover:brightness-105"
                                 style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}
                               >
-                                <Calendar className="h-3 w-3" />
-                                Configurer Calendly
-                              </Link>
-                            )}
+                                {markingId === r.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <CheckCircle2 className="h-3 w-3" />}
+                                RDV booké
+                              </button>
+                            </div>
 
-                            {/* Ouvrir LinkedIn */}
-                            {r.linkedInUrl && (
-                              <a
-                                href={r.linkedInUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:brightness-105"
-                                style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                            {/* Suggestion IA inline */}
+                            {suggestions[r.id] && (
+                              <div
+                                className="rounded-[10px] p-3 space-y-2"
+                                style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)" }}
                               >
-                                <ExternalLink className="h-3 w-3" />
-                                LinkedIn
-                              </a>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <Sparkles className="h-3 w-3" style={{ color: "var(--violet-fg)" }} />
+                                    <span className="text-[11px] font-semibold" style={{ color: "var(--violet-fg)" }}>
+                                      Réponse IA — {suggestions[r.id].intentLabel}
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => copyReply(r.id, suggestions[r.id].suggestedReply)}
+                                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md transition-all"
+                                    style={{ background: "var(--violet-fg)", color: "white" }}
+                                  >
+                                    {copiedId === r.id
+                                      ? <><Check className="h-2.5 w-2.5" /> Copié</>
+                                      : <><Copy className="h-2.5 w-2.5" /> Copier</>}
+                                  </button>
+                                </div>
+                                <p
+                                  className="text-[12px] leading-relaxed whitespace-pre-wrap"
+                                  style={{ color: "var(--fg-dim)" }}
+                                >
+                                  {suggestions[r.id].suggestedReply}
+                                </p>
+                                <p className="text-[10.5px] italic" style={{ color: "var(--fg-mute)" }}>
+                                  {suggestions[r.id].reasoning}
+                                </p>
+                              </div>
                             )}
-
-                            {/* Marquer RDV */}
-                            <button
-                              onClick={() => markMeeting(r.id)}
-                              disabled={markingId === r.id}
-                              className="ml-auto flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg transition-all hover:brightness-105"
-                              style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}
-                            >
-                              {markingId === r.id
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : <CheckCircle2 className="h-3 w-3" />}
-                              RDV booké
-                            </button>
                           </div>
                         )}
                       </div>
