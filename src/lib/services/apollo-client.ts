@@ -5,9 +5,6 @@
  * Auth: X-Api-Key header (API key from Apollo Settings → Integrations)
  */
 
-import { prisma } from "@/lib/prisma";
-import { decryptIfNeeded } from "@/lib/encryption";
-
 const APOLLO_BASE = "https://api.apollo.io/v1";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -164,19 +161,10 @@ export async function apolloEnrichPerson(
 
 // ─── Account info (test + quotas) ─────────────────────────────────────────────
 
-// ─── DB helper ────────────────────────────────────────────────────────────────
+// ─── Clé API SKALLE (env var — pas exposée aux utilisateurs) ─────────────────
 
-export async function getApolloApiKey(workspaceId: string): Promise<string | null> {
-  const integration = await prisma.externalIntegration.findFirst({
-    where: { workspaceId, provider: "apollo" },
-    select: { encryptedApiKey: true },
-  });
-  if (!integration) return null;
-  try {
-    return decryptIfNeeded(integration.encryptedApiKey);
-  } catch {
-    return null;
-  }
+export function getApolloApiKey(_workspaceId?: string): string | null {
+  return process.env.APOLLO_API_KEY ?? null;
 }
 
 // ─── Account info (test + quotas) ─────────────────────────────────────────────
