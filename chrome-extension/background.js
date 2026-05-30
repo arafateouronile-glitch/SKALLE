@@ -47,11 +47,108 @@ async function getConfig() {
   });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Anti-ban helpers ──────────────────────────────────────────────────────────
+
+// Fêtes françaises à date fixe (MM-DD)
+const FR_FIXED_HOLIDAYS = new Set([
+  "01-01", // Jour de l'An
+  "05-01", // Fête du Travail
+  "05-08", // Victoire 1945
+  "07-14", // Fête Nationale
+  "08-15", // Assomption
+  "11-01", // Toussaint
+  "11-11", // Armistice
+  "12-25", // Noël
+]);
+
+// Calcul de Pâques (algorithme de Butcher/Anonymous Gregorian)
+function easterDate(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+function isPublicHoliday(date) {
+  const mmdd = `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  if (FR_FIXED_HOLIDAYS.has(mmdd)) return true;
+
+  // Fêtes mobiles basées sur Pâques
+  const easter = easterDate(date.getFullYear());
+  const mobileHolidays = [
+    new Date(easter.getTime() + 1 * 86400000),   // Lundi de Pâques
+    new Date(easter.getTime() + 39 * 86400000),  // Ascension
+    new Date(easter.getTime() + 50 * 86400000),  // Lundi de Pentecôte
+  ];
+  return mobileHolidays.some(h =>
+    h.getDate() === date.getDate() &&
+    h.getMonth() === date.getMonth()
+  );
+}
+
+function isWorkingDay() {
+  const now = new Date();
+  const day = now.getDay(); // 0=dim, 6=sam
+  if (day === 0 || day === 6) return false;
+  return !isPublicHoliday(now);
+}
 
 function isBusinessHours(start, end) {
   const hour = new Date().getHours();
   return hour >= start && hour < end;
+}
+
+// Limite quotidienne variable : ±30 % autour de la limite configurée
+// Recalculée une seule fois par jour et mise en cache pour la cohérence
+async function getDailyTarget(configLimit) {
+  const today = new Date().toISOString().slice(0, 10);
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["dailyTargetDate", "dailyTarget"], (r) => {
+      if (r.dailyTargetDate === today && r.dailyTarget) {
+        resolve(r.dailyTarget);
+        return;
+      }
+      const min = Math.max(1, Math.floor(configLimit * 0.7));
+      const max = Math.ceil(configLimit * 1.3);
+      const target = min + Math.floor(Math.random() * (max - min + 1));
+      chrome.storage.local.set({ dailyTargetDate: today, dailyTarget: target }, () => resolve(target));
+    });
+  });
+}
+
+// Warmup progressif : rampe sur 4 semaines pour les nouveaux comptes
+// Semaine 1 : 30% | Semaine 2 : 50% | Semaine 3 : 70% | Semaine 4+ : 100%
+async function getWarmupMultiplier() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["warmupStartDate"], (r) => {
+      if (!r.warmupStartDate) {
+        const today = new Date().toISOString().slice(0, 10);
+        chrome.storage.local.set({ warmupStartDate: today });
+        resolve(0.3);
+        return;
+      }
+      const diffDays = Math.floor((Date.now() - new Date(r.warmupStartDate).getTime()) / 86400000);
+      const week = Math.min(Math.floor(diffDays / 7), 3);
+      resolve([0.3, 0.5, 0.7, 1.0][week]);
+    });
+  });
+}
+
+// Limite effective du jour = target × warmup, arrondi vers le bas, minimum 1
+async function getEffectiveDailyLimit(configLimit) {
+  const [target, multiplier] = await Promise.all([getDailyTarget(configLimit), getWarmupMultiplier()]);
+  return Math.max(1, Math.floor(target * multiplier));
 }
 
 async function getTodayCount() {
@@ -152,14 +249,20 @@ async function runAutomation() {
     return;
   }
 
+  if (!isWorkingDay()) {
+    await setStatus("day_off");
+    return;
+  }
+
   if (!isBusinessHours(config.businessHoursStart, config.businessHoursEnd)) {
     await setStatus("outside_hours");
     return;
   }
 
+  const effectiveLimit = await getEffectiveDailyLimit(config.dailyLimit);
   const count = await getTodayCount();
-  if (count >= config.dailyLimit) {
-    await setStatus(`limit_reached:${count}/${config.dailyLimit}`);
+  if (count >= effectiveLimit) {
+    await setStatus(`limit_reached:${count}/${effectiveLimit}`);
     return;
   }
 
@@ -167,21 +270,21 @@ async function runAutomation() {
 
   const decisions = await fetchApprovedDecisions(config.skalleToken);
   if (!decisions.length) {
-    await setStatus(`idle:${count}/${config.dailyLimit}`);
+    await setStatus(`idle:${count}/${effectiveLimit}`);
     return;
   }
 
   // Seulement agir si l'utilisateur a LinkedIn ouvert — jamais ouvrir un onglet nous-mêmes
   const tab = await findLinkedInTab();
   if (!tab) {
-    await setStatus(`waiting_linkedin:${count}/${config.dailyLimit}`);
+    await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
     console.log("[SKALLE] LinkedIn n'est pas ouvert — en attente que l'utilisateur l'ouvre");
     return;
   }
 
   for (const decision of decisions) {
     const currentCount = await getTodayCount();
-    if (currentCount >= config.dailyLimit) break;
+    if (currentCount >= effectiveLimit) break;
 
     // Send action to content script
     const result = await sendToContentScript(tab.id, {
@@ -194,7 +297,7 @@ async function runAutomation() {
     await incrementCount();
 
     const newCount = await getTodayCount();
-    await setStatus(`running:${newCount}/${config.dailyLimit}`);
+    await setStatus(`running:${newCount}/${effectiveLimit}`);
 
     // Random human-like delay before next action
     if (decisions.indexOf(decision) < decisions.length - 1) {
@@ -205,7 +308,7 @@ async function runAutomation() {
   }
 
   const finalCount = await getTodayCount();
-  await setStatus(`done:${finalCount}/${config.dailyLimit}`);
+  await setStatus(`done:${finalCount}/${effectiveLimit}`);
 }
 
 // ── Tracking des réponses (12h) ───────────────────────────────────────────────
@@ -363,10 +466,12 @@ async function navigateTabAndWait(tabId, url, extraDelayMs = 2500) {
 async function runAutonomousSearch() {
   const config = await getConfig();
   if (!config.skalleToken || !config.autonomousEnabled) return;
+  if (!isWorkingDay()) return;
   if (!isBusinessHours(config.businessHoursStart, config.businessHoursEnd)) return;
 
+  const effectiveLimit = await getEffectiveDailyLimit(config.dailyLimit);
   const count = await getTodayCount();
-  if (count >= config.dailyLimit) return;
+  if (count >= effectiveLimit) return;
 
   // Récupérer les requêtes de recherche depuis le backend
   let searchData;
@@ -384,14 +489,14 @@ async function runAutonomousSearch() {
   // Trouver un onglet LinkedIn ouvert — ne jamais en créer un
   const tab = await findLinkedInTab();
   if (!tab) {
-    await setStatus(`autonomous_waiting_linkedin:${count}/${config.dailyLimit}`);
+    await setStatus(`autonomous_waiting_linkedin:${count}/${effectiveLimit}`);
     return;
   }
 
-  const remaining = config.dailyLimit - count;
+  const remaining = effectiveLimit - count;
   const maxThisCycle = Math.min(3, remaining); // Max 3 profils/cycle
 
-  await setStatus(`autonomous_running:${count}/${config.dailyLimit}`);
+  await setStatus(`autonomous_running:${count}/${effectiveLimit}`);
 
   // ── Étape 1 : Chercher des profils via l'API Voyager (sans navigation) ──────
   const profiles = await sendToContentScript(tab.id, {
@@ -401,7 +506,7 @@ async function runAutonomousSearch() {
   }, 30_000);
 
   if (!profiles?.list?.length) {
-    await setStatus(`idle:${count}/${config.dailyLimit}`);
+    await setStatus(`idle:${count}/${effectiveLimit}`);
     return;
   }
 
@@ -410,7 +515,7 @@ async function runAutonomousSearch() {
 
   for (const profile of profiles.list) {
     const currentCount = await getTodayCount();
-    if (currentCount >= config.dailyLimit) break;
+    if (currentCount >= effectiveLimit) break;
 
     // Naviguer vers le vrai profil LinkedIn (génère un page view réel)
     await navigateTabAndWait(tab.id, profile.linkedInUrl);
@@ -440,7 +545,7 @@ async function runAutonomousSearch() {
     }
 
     const newCount = await getTodayCount();
-    await setStatus(`autonomous_running:${newCount}/${config.dailyLimit}`);
+    await setStatus(`autonomous_running:${newCount}/${effectiveLimit}`);
 
     // Délai humain entre chaque profil (3-8 min)
     if (profiles.list.indexOf(profile) < profiles.list.length - 1) {
@@ -454,7 +559,7 @@ async function runAutonomousSearch() {
   chrome.tabs.update(tab.id, { url: "https://www.linkedin.com/feed/" });
 
   const finalCount = await getTodayCount();
-  await setStatus(`autonomous_done:${finalCount}/${config.dailyLimit}`);
+  await setStatus(`autonomous_done:${finalCount}/${effectiveLimit}`);
 }
 
 // ── Traitement des branches conditionnelles (24h) ─────────────────────────────

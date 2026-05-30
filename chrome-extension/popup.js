@@ -59,6 +59,7 @@ document.getElementById("saveConfig").addEventListener("click", async () => {
 const STATUS_LABELS = {
   no_token:                    { text: "Token manquant",        cls: "pill-red"   },
   disabled:                    { text: "Désactivée",            cls: "pill-gray"  },
+  day_off:                     { text: "Week-end / férié",      cls: "pill-gray"  },
   outside_hours:               { text: "Hors horaires",         cls: "pill-amber" },
   limit_reached:               { text: "Limite atteinte",       cls: "pill-amber" },
   waiting_linkedin:            { text: "LinkedIn non ouvert",   cls: "pill-amber" },
@@ -98,6 +99,27 @@ async function refreshStatus() {
   const countToday = actionDate === today ? (data?.actionCount ?? 0) : 0;
   document.getElementById("statusMeta").textContent =
     `${countToday} action${countToday !== 1 ? "s" : ""} effectuée${countToday !== 1 ? "s" : ""} aujourd'hui · Prochain check dans ~30 min`;
+
+  // Afficher la limite effective du jour et le niveau de warmup
+  const limitInfo = document.getElementById("effectiveLimitInfo");
+  if (limitInfo) {
+    const local = await chrome.storage.local.get(["dailyTargetDate", "dailyTarget", "warmupStartDate"]);
+    const isToday = local.dailyTargetDate === today;
+    const effectiveTarget = isToday ? local.dailyTarget : null;
+
+    let warmupLabel = "";
+    if (local.warmupStartDate) {
+      const diffDays = Math.floor((Date.now() - new Date(local.warmupStartDate).getTime()) / 86400000);
+      const week = Math.min(Math.floor(diffDays / 7), 3);
+      const pcts = ["30%", "50%", "70%", "100%"];
+      const weekLabels = ["Semaine 1", "Semaine 2", "Semaine 3", "Semaine 4+"];
+      warmupLabel = ` · Warmup ${weekLabels[week]} (${pcts[week]})`;
+    }
+
+    limitInfo.textContent = effectiveTarget
+      ? `Objectif du jour : ${effectiveTarget} actions${warmupLabel}`
+      : warmupLabel ? `Warmup actif${warmupLabel}` : "";
+  }
 }
 
 document.getElementById("refresh").addEventListener("click", refreshStatus);
@@ -120,6 +142,18 @@ document.getElementById("openDashboard").addEventListener("click", async (e) => 
   e.preventDefault();
   const base = await getApiBase();
   chrome.tabs.create({ url: `${base}/sales-os/agent` });
+});
+
+// ── Reset warmup ──────────────────────────────────────────────────────────────
+
+document.getElementById("resetWarmup").addEventListener("click", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  await chrome.storage.local.remove(["warmupStartDate", "dailyTargetDate", "dailyTarget"]);
+  await chrome.storage.local.set({ warmupStartDate: today });
+  await refreshStatus();
+  const btn = document.getElementById("resetWarmup");
+  btn.textContent = "✓ Warmup réinitialisé";
+  setTimeout(() => { btn.textContent = "↺ Nouveau compte LinkedIn (reset warmup)"; }, 2500);
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

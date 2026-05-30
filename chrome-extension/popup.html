@@ -54,6 +54,7 @@
     .small-row input[type="number"] { width: 70px; margin: 0; padding: 6px 8px; font-size: 12px; }
 
     .meta { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+    .effective-limit { font-size: 11px; color: #7c3aed; margin-top: 4px; font-weight: 500; }
     hr { border: none; border-top: 1px solid #f0f0f0; margin: 12px 0; }
     .link { color: #7c3aed; text-decoration: none; font-size: 11px; }
     .link:hover { text-decoration: underline; }
@@ -129,12 +130,16 @@
         <div class="progress-fill" id="progressFill" style="width:0%"></div>
       </div>
       <div class="meta" id="statusMeta">Chargement…</div>
+      <div class="effective-limit" id="effectiveLimitInfo"></div>
     </div>
 
     <hr />
 
     <button id="runNow" class="btn-run">▶ Lancer maintenant</button>
     <button id="refresh" class="btn-secondary">↻ Rafraîchir le statut</button>
+    <button id="resetWarmup" class="btn-secondary" style="margin-top:4px;font-size:11px;color:#9ca3af;">
+      ↺ Nouveau compte LinkedIn (reset warmup)
+    </button>
   </div>
 
   <!-- Facebook (existant) -->
