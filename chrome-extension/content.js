@@ -1,7 +1,7 @@
 /**
  * SKALLE - Content script pour extraction des membres de groupes Facebook
  *
- * S'exécute sur facebook.com/groups/*/members
+ * S'exécute sur facebook.com/groups/:groupId/members
  * Injecte un bouton pour lancer l'extraction et envoie les données à l'API SKALLE
  */
 
