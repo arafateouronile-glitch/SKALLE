@@ -23,6 +23,7 @@ import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
 import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
 import { ChromeExtensionCard } from "@/components/modules/cso/chrome-extension-card";
 import { BrandVoiceCard } from "@/components/modules/cso/brand-voice-card";
+import { ApolloSettingsCard } from "@/components/modules/cso/apollo-settings-card";
 
 const PLAN_LABELS: Record<string, string> = {
   FREE: "Gratuit",
@@ -72,6 +73,15 @@ export default async function SalesSettingsPage() {
 
   const workspace = user.workspaces[0];
   const extensionToken = workspace?.extensionTokens?.[0]?.token ?? null;
+
+  const personas = workspace
+    ? await prisma.persona.findMany({
+        where: { workspaceId: workspace.id, status: { in: ["ACTIVE", "RUNNING", "PAUSED"] } },
+        select: { id: true, name: true },
+        orderBy: { createdAt: "asc" },
+        take: 10,
+      })
+    : [];
   const planLabel = PLAN_LABELS[user.plan] ?? user.plan;
   const planColor = PLAN_COLORS[user.plan] ?? "bg-gray-100 text-gray-700";
 
@@ -187,6 +197,14 @@ export default async function SalesSettingsPage() {
         <BrandVoiceCard
           workspaceId={workspace.id}
           initial={(workspace.brandVoice ?? {}) as Record<string, unknown>}
+        />
+      )}
+
+      {/* Apollo — Découverte de prospects */}
+      {workspace && (
+        <ApolloSettingsCard
+          workspaceId={workspace.id}
+          personas={personas}
         />
       )}
 
