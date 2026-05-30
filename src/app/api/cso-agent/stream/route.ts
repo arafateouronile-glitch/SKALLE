@@ -5,13 +5,14 @@ import {
   observePipeline,
   generateCsoDecisions,
   storeCsoDecisions,
+  autoEnrichWithApollo,
   type CsoProgressEvent,
 } from "@/lib/services/sales/cso-agent";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-type StepId = "observe" | "research" | "generate" | "personalize" | "store";
+type StepId = "enrich" | "observe" | "research" | "generate" | "personalize" | "store";
 type StreamEvent =
   | { type: "step"; id: StepId; status: "running" | "done" | "error"; label: string }
   | { type: "done"; newCount: number; totalGenerated: number }
@@ -43,6 +44,14 @@ export async function POST(req: NextRequest) {
       };
 
       try {
+        // ── 0. Enrichissement Apollo (silencieux si pas de clé) ─────────────────
+        send({ type: "step", id: "enrich", status: "running", label: "Enrichissement emails Apollo…" });
+        const enriched = await autoEnrichWithApollo(workspaceId, 10);
+        send({
+          type: "step", id: "enrich", status: "done",
+          label: enriched > 0 ? `${enriched} email${enriched !== 1 ? "s" : ""} trouvé${enriched !== 1 ? "s" : ""} via Apollo` : "Enrichissement Apollo (aucun email manquant)",
+        });
+
         // ── 1. Observe ─────────────────────────────────────────────────────────
         send({ type: "step", id: "observe", status: "running", label: "Observation du pipeline…" });
         const obs = await observePipeline(workspaceId);

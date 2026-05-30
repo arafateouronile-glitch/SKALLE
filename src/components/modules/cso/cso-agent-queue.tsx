@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   XCircle,
   Circle,
+  Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -33,11 +34,12 @@ interface StepState {
 }
 
 const STEP_DEFS = [
-  { id: "observe",     defaultLabel: "Observation du pipeline"   },
-  { id: "research",    defaultLabel: "Recherche de signaux"       },
-  { id: "generate",    defaultLabel: "Analyse IA"                 },
-  { id: "personalize", defaultLabel: "Personnalisation messages"  },
-  { id: "store",       defaultLabel: "Sauvegarde"                 },
+  { id: "enrich",      defaultLabel: "Enrichissement emails Apollo" },
+  { id: "observe",     defaultLabel: "Observation du pipeline"      },
+  { id: "research",    defaultLabel: "Recherche de signaux"         },
+  { id: "generate",    defaultLabel: "Analyse IA"                   },
+  { id: "personalize", defaultLabel: "Personnalisation messages"    },
+  { id: "store",       defaultLabel: "Sauvegarde"                   },
 ] as const;
 
 type StepId = (typeof STEP_DEFS)[number]["id"];
@@ -345,6 +347,7 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
   const [loading, setLoading] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisSteps, setAnalysisSteps] = useState<Partial<Record<StepId, StepState>>>({});
+  const [isImporting, setIsImporting] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "done">("pending");
   const abortRef = useRef<AbortController | null>(null);
 
@@ -395,6 +398,28 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
       }
     } finally {
       setLoading(null);
+    }
+  }, [workspaceId]);
+
+  const handleApolloImport = useCallback(async () => {
+    setIsImporting(true);
+    try {
+      const res = await fetch("/api/cso-agent/apollo-discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId, limit: 25 }),
+      });
+      const json = await res.json() as { created?: number; skipped?: number; total?: number; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Erreur Apollo");
+      if ((json.created ?? 0) > 0) {
+        toast.success(`${json.created} prospect${json.created !== 1 ? "s" : ""} importé${json.created !== 1 ? "s" : ""} depuis Apollo`);
+      } else {
+        toast.info(`Tous les prospects Apollo sont déjà dans votre pipeline (${json.skipped} dédupliqués)`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de l'import Apollo");
+    } finally {
+      setIsImporting(false);
     }
   }, [workspaceId]);
 
@@ -502,6 +527,20 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
           >
             <RefreshCw className="h-3 w-3 mr-1.5" />
             Actualiser
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleApolloImport}
+            disabled={isImporting || isAnalyzing}
+            className="h-8 text-[12px] rounded-lg border-violet-200 text-violet-700 hover:bg-violet-50"
+          >
+            {isImporting ? (
+              <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+            ) : (
+              <Database className="h-3 w-3 mr-1.5" />
+            )}
+            {isImporting ? "Import…" : "Importer Apollo"}
           </Button>
           <Button
             size="sm"

@@ -13,6 +13,7 @@ import { checkBudget, trackSpend } from "@/lib/ai/budget-guard";
 import { researchProspectsBatch, type ProspectInput } from "@/lib/prospection/prospect-researcher";
 import { generateCsoMessages, buildBrandContext } from "@/lib/prospection/message-generator";
 import { FAR_FUTURE } from "@/lib/services/smart-sequence-processor";
+import { getApolloApiKey, apolloEnrichPerson } from "@/lib/services/apollo-client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,60 @@ export interface PipelineObservation {
     id: string; name: string; company: string;
     daysSinceContact: number;
   }>;
+}
+
+// ─── Step 0: Auto-enrich avec Apollo ─────────────────────────────────────────
+
+/**
+ * Enrichit silencieusement les prospects sans email via Apollo avant l'analyse CSO.
+ * Retourne le nombre de prospects enrichis.
+ */
+export async function autoEnrichWithApollo(
+  workspaceId: string,
+  limit = 10
+): Promise<number> {
+  const apiKey = await getApolloApiKey(workspaceId);
+  if (!apiKey) return 0;
+
+  const prospects = await prisma.prospect.findMany({
+    where: {
+      workspaceId,
+      status: { in: ["NEW", "RESEARCHED", "MESSAGES_GENERATED"] },
+      OR: [{ email: null }, { email: { endsWith: "@discovery.skalle" } }],
+    },
+    select: { id: true, name: true, company: true, linkedInUrl: true },
+    orderBy: { score: "desc" },
+    take: limit,
+  });
+
+  if (!prospects.length) return 0;
+
+  let enriched = 0;
+  for (const p of prospects) {
+    const parts = p.name.trim().split(/\s+/);
+    const result = await apolloEnrichPerson(apiKey, {
+      linkedInUrl: p.linkedInUrl || undefined,
+      firstName: parts[0],
+      lastName: parts.slice(1).join(" "),
+      company: p.company,
+    });
+
+    if (result?.email) {
+      await prisma.prospect.update({
+        where: { id: p.id },
+        data: {
+          email: result.email,
+          emailVerified: result.emailStatus === "verified",
+          emailStatus: result.emailStatus ?? undefined,
+        },
+      });
+      enriched++;
+    }
+    // Respecter le rate limit Apollo
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return enriched;
 }
 
 // ─── Step 1: Observe ──────────────────────────────────────────────────────────

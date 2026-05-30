@@ -7,8 +7,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { encrypt, decryptIfNeeded } from "@/lib/encryption";
-import { apolloCheckAccount } from "@/lib/services/apollo-client";
+import { encrypt } from "@/lib/encryption";
+import { apolloCheckAccount, getApolloApiKey } from "@/lib/services/apollo-client";
 
 export const dynamic = "force-dynamic";
 
@@ -85,18 +85,5 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-// ── Helper partagé : récupérer la clé déchiffrée ──────────────────────────────
-
-export async function getApolloApiKey(workspaceId: string): Promise<string | null> {
-  const integration = await prisma.externalIntegration.findFirst({
-    where: { workspaceId, provider: "apollo" },
-    select: { encryptedApiKey: true },
-  });
-  if (!integration) return null;
-
-  try {
-    return decryptIfNeeded(integration.encryptedApiKey);
-  } catch {
-    return null;
-  }
-}
+// getApolloApiKey est maintenant dans src/lib/services/apollo-client.ts
+export { getApolloApiKey } from "@/lib/services/apollo-client";

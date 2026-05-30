@@ -10,8 +10,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { apolloEnrichPerson } from "@/lib/services/apollo-client";
-import { getApolloApiKey } from "@/app/api/integrations/apollo/route";
+import { apolloEnrichPerson, getApolloApiKey } from "@/lib/services/apollo-client";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
