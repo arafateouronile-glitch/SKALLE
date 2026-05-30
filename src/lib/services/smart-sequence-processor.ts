@@ -24,9 +24,10 @@ import type { ProspectResearch } from "@/lib/prospection/prospect-researcher";
 export const FAR_FUTURE = new Date("2099-01-01T00:00:00.000Z");
 
 export type SmartBranchWaitFor =
-  | "CONNECTION_ACCEPTED"   // Step 2 — attendu après acceptation
-  | "NOT_ACCEPTED"          // Step 3 — activé si toujours NEW après N jours
-  | "NO_REPLY";             // Step 4 — activé si CONTACTED sans réponse après N jours
+  | "CONNECTION_ACCEPTED"     // Step 2 — attendu après acceptation connexion LinkedIn
+  | "NOT_ACCEPTED"            // Step 3 — activé si toujours NEW après N jours
+  | "NO_REPLY"                // Step 4 — activé si CONTACTED sans réponse après N jours
+  | "EMAIL_OPENED_NO_REPLY";  // Step 5 — activé si email ouvert mais pas répondu après N jours
 
 export interface SmartStepMeta {
   smartBranch: true;
@@ -205,6 +206,73 @@ export async function processPendingBranches(workspaceId?: string): Promise<{
     }
 
     activated++;
+  }
+
+  // ── Email ouvert sans réponse → escalade LinkedIn ────────────────────────────
+  // Cherche les steps EMAIL avec status OPENED depuis plus de daysThreshold jours
+  const openedEmailSteps = await prisma.sequenceStep.findMany({
+    where: {
+      channel: "EMAIL",
+      status: "OPENED",
+      openedAt: { not: null, lte: new Date(Date.now() - 5 * 24 * 60 * 60 * 1_000) },
+      sequence: {
+        isActive: true,
+        ...(workspaceId ? { workspaceId } : {}),
+        // S'assurer qu'il n'y a pas de step REPLIED dans la même séquence
+        steps: { none: { status: "REPLIED" } },
+      },
+    },
+    select: {
+      sequenceId: true,
+      sequence: { select: { prospectId: true, workspaceId: true } },
+    },
+    distinct: ["sequenceId"],
+  });
+
+  for (const emailStep of openedEmailSteps) {
+    // Trouver le step LinkedIn d'escalade lié à cette séquence
+    const linkedInEscalation = await prisma.sequenceStep.findFirst({
+      where: {
+        sequenceId: emailStep.sequenceId,
+        status: "PENDING",
+        scheduledAt: { gte: new Date("2090-01-01") },
+        metadata: { not: "null" },
+      },
+      select: { id: true, metadata: true, content: true },
+    });
+
+    if (!linkedInEscalation) continue;
+
+    const meta = (linkedInEscalation.metadata ?? {}) as Partial<SmartStepMeta>;
+    if (meta.waitingFor !== "EMAIL_OPENED_NO_REPLY") continue;
+
+    // Générer le contenu LinkedIn si vide
+    if (!linkedInEscalation.content?.trim()) {
+      const wsId = emailStep.sequence.workspaceId;
+      const prospect = await prisma.prospect.findUnique({
+        where: { id: emailStep.sequence.prospectId },
+        select: {
+          id: true, name: true, jobTitle: true, company: true,
+          email: true, linkedInUrl: true, enrichmentData: true, workspaceId: true,
+        },
+      });
+      if (prospect) {
+        const content = await generateFallbackContent(prospect, wsId);
+        if (content) {
+          await prisma.sequenceStep.update({
+            where: { id: linkedInEscalation.id },
+            data: { content: content.body, subject: content.subject ?? undefined, scheduledAt: null },
+          });
+          activated++;
+          continue;
+        }
+      }
+      await prisma.sequenceStep.update({ where: { id: linkedInEscalation.id }, data: { status: "SKIPPED" } });
+      skipped++;
+    } else {
+      await prisma.sequenceStep.update({ where: { id: linkedInEscalation.id }, data: { scheduledAt: null } });
+      activated++;
+    }
   }
 
   return { activated, skipped };

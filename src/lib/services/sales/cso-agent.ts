@@ -705,6 +705,7 @@ export async function executeCsoDecision(
           isActive: true,
         },
       });
+      // Step 1 : Email principal (immédiat)
       await prisma.sequenceStep.create({
         data: {
           sequenceId: sequence.id,
@@ -714,6 +715,19 @@ export async function executeCsoDecision(
           content: (data.content as string) ?? "",
           status: "PENDING",
           scheduledAt: null,
+        },
+      });
+      // Step 2 : Escalade LinkedIn si email ouvert mais pas répondu après 5 jours
+      // Contenu généré lazily par processPendingBranches quand la condition fire
+      await prisma.sequenceStep.create({
+        data: {
+          sequenceId: sequence.id,
+          stepNumber: 2,
+          channel: "LINKEDIN",
+          content: "",
+          status: "PENDING",
+          scheduledAt: FAR_FUTURE,
+          metadata: { smartBranch: true, waitingFor: "EMAIL_OPENED_NO_REPLY", daysThreshold: 5 },
         },
       });
       await prisma.prospect.update({

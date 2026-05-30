@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { onConnectionAccepted } from "@/lib/services/smart-sequence-processor";
 
 export const dynamic = "force-dynamic";
 
@@ -75,11 +76,13 @@ export async function POST(req: NextRequest) {
           data: { lastInteractionAt: now },
         });
       } else if (action === "message_sent") {
-        // Message envoyé — prospect passe en CONTACTED
+        // Prospect déjà connecté (DISTANCE_1) — message envoyé directement
+        // Avancer les branches smart sequence comme si la connexion venait d'être acceptée
         await prisma.prospect.update({
           where: { id: prospectId },
           data: { status: "CONTACTED", lastInteractionAt: now },
         });
+        await onConnectionAccepted(prospectId).catch(() => {});
       }
     }
   } else {

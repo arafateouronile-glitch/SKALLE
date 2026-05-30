@@ -20,6 +20,7 @@ import {
   LogOut,
   Users,
   Bot,
+  Inbox,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -45,6 +46,7 @@ const CMO_NAV = [
 
 const CSO_NAV = [
   { id: "dashboard",  name: "Dashboard",  href: "/sales-os",              icon: LayoutDashboard, desc: "" },
+  { id: "inbox",      name: "Inbox",      href: "/sales-os/inbox",        icon: Inbox,           desc: "Conversations" },
   { id: "cso-agent",  name: "Agent CSO",  href: "/sales-os/agent",        icon: Bot,             desc: "Pipeline auto" },
   { id: "personas",   name: "Personas",   href: "/sales-os/personas",     icon: Users,           desc: "Profils ICP" },
   { id: "leads",      name: "Leads",      href: "/sales-os/leads",        icon: Target,          desc: "Mon pipeline" },
