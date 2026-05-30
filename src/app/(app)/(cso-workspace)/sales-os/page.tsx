@@ -9,6 +9,7 @@ async function getSalesDashboardData(userId: string) {
     where: { userId },
     select: {
       id: true,
+      calendarLink: true,
       autopilotConfig: { select: { isActive: true } },
     },
   });
@@ -75,14 +76,16 @@ async function getSalesDashboardData(userId: string) {
         status: { in: ["RESPONDED", "REPLIED", "MEETING_BOOKED"] },
       },
       orderBy: { updatedAt: "desc" },
-      take: 4,
+      take: 6,
       select: {
         id: true,
         name: true,
+        jobTitle: true,
         company: true,
+        linkedInUrl: true,
         status: true,
         updatedAt: true,
-        notes: true,
+        enrichmentData: true,
       },
     }),
     prisma.agentDecision.findMany({
@@ -110,11 +113,20 @@ async function getSalesDashboardData(userId: string) {
     user,
     csoPendingCount,
     hotLeads: hotLeads.map((l) => ({ ...l, source: l.source as string | null })),
-    recentReplies: recentReplies.map((r) => ({
-      ...r,
-      updatedAt: r.updatedAt.toISOString(),
-      status: r.status as string,
-    })),
+    recentReplies: recentReplies.map((r) => {
+      const ed = (r.enrichmentData ?? {}) as Record<string, unknown>;
+      return {
+        id: r.id,
+        name: r.name,
+        jobTitle: r.jobTitle ?? null,
+        company: r.company,
+        linkedInUrl: r.linkedInUrl ?? null,
+        status: r.status as string,
+        updatedAt: r.updatedAt.toISOString(),
+        replyPreview: (ed.replyPreview as string) ?? null,
+        respondedAt: (ed.respondedAt as string) ?? null,
+      };
+    }),
     recentDecisions: recentDecisions.map((d) => ({
       ...d,
       createdAt: d.createdAt.toISOString(),
@@ -128,6 +140,7 @@ async function getSalesDashboardData(userId: string) {
       activeSequences,
     },
     isAutopilotActive: workspace.autopilotConfig?.isActive ?? false,
+    calendarLink: workspace.calendarLink ?? null,
   };
 }
 
@@ -138,7 +151,7 @@ export default async function SalesDashboardPage() {
   const data = await getSalesDashboardData(session.user.id);
   if (!data) redirect("/login");
 
-  const { user, kpis, isAutopilotActive, csoPendingCount, hotLeads, recentReplies, recentDecisions } = data;
+  const { user, kpis, isAutopilotActive, csoPendingCount, hotLeads, recentReplies, recentDecisions, calendarLink } = data;
   const firstName = user?.name?.split(" ")[0] ?? session.user.name?.split(" ")[0] ?? "là";
   const plan = user?.plan ?? "FREE";
 
@@ -153,6 +166,7 @@ export default async function SalesDashboardPage() {
         hotLeads={hotLeads}
         recentReplies={recentReplies}
         recentDecisions={recentDecisions}
+        calendarLink={calendarLink}
       />
       <div className="max-w-2xl">
         <CsoMetricsDashboard workspaceId={data.workspace.id} />

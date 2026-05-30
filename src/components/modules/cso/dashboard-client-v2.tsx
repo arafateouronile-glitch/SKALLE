@@ -1,15 +1,12 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { KpiCard } from "@/components/ui/kpi-card";
 import {
-  Zap,
-  Search,
-  Mail,
-  TrendingUp,
-  Send,
-  AlertCircle,
+  Zap, Search, Mail, TrendingUp, Send, AlertCircle,
+  Calendar, CheckCircle2, ExternalLink, Loader2,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -29,10 +26,13 @@ interface HotLead {
 interface RecentReply {
   id: string;
   name: string;
+  jobTitle: string | null;
   company: string;
+  linkedInUrl: string | null;
   status: string;
   updatedAt: string;
-  notes: string | null;
+  replyPreview: string | null;
+  respondedAt: string | null;
 }
 
 interface RecentDecision {
@@ -60,6 +60,7 @@ interface SalesDashboardClientProps {
   hotLeads: HotLead[];
   recentReplies: RecentReply[];
   recentDecisions: RecentDecision[];
+  calendarLink: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -135,9 +136,28 @@ export function CSODashboardClientV2({
   hotLeads,
   recentReplies,
   recentDecisions,
+  calendarLink,
 }: SalesDashboardClientProps) {
   const replyRate = kpis.contacted > 0 ? Math.round((kpis.replied / kpis.contacted) * 100) : 0;
   const hotCount = hotLeads.length;
+
+  // Mark meeting state (optimistic)
+  const [markedMeeting, setMarkedMeeting] = useState<Set<string>>(new Set());
+  const [markingId, setMarkingId] = useState<string | null>(null);
+
+  const markMeeting = useCallback(async (prospectId: string) => {
+    setMarkingId(prospectId);
+    try {
+      await fetch("/api/cso-agent/mark-meeting", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId }),
+      });
+      setMarkedMeeting((prev) => new Set([...prev, prospectId]));
+    } finally {
+      setMarkingId(null);
+    }
+  }, []);
 
   return (
     <>
@@ -392,45 +412,129 @@ export function CSODashboardClientV2({
           {/* Right — Inbox + Agents + Signals (4 cols) */}
           <div className="col-span-12 lg:col-span-4 space-y-4">
 
-            {/* Inbox réponses */}
+            {/* Inbox réponses — Hot conversations */}
             <div
               className="rounded-[18px] p-5"
               style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}
             >
               <div className="flex items-center justify-between mb-4">
-                <p className="font-display font-semibold text-[15px]" style={{ color: "var(--fg)" }}>Inbox réponses</p>
-                <Link href="/sales-os/outreach" className="text-[11px] font-mono" style={{ color: "var(--violet-fg)" }}>
-                  Voir tout →
-                </Link>
+                <div>
+                  <p className="font-display font-semibold text-[15px]" style={{ color: "var(--fg)" }}>Prospects chauds</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--fg-mute)" }}>Ils ont répondu — à toi de jouer</p>
+                </div>
+                {recentReplies.length > 0 && (
+                  <span
+                    className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: "var(--danger-soft)", color: "var(--danger-fg)" }}
+                  >
+                    {recentReplies.filter((r) => !markedMeeting.has(r.id) && r.status !== "MEETING_BOOKED").length} à traiter
+                  </span>
+                )}
               </div>
               {recentReplies.length === 0 ? (
-                <div className="py-4 text-center">
+                <div className="py-6 text-center">
                   <Mail className="h-6 w-6 mx-auto mb-2 opacity-20" style={{ color: "var(--fg-mute)" }} />
-                  <p className="text-[12px]" style={{ color: "var(--fg-mute)" }}>Aucune réponse récente</p>
+                  <p className="text-[12px]" style={{ color: "var(--fg-mute)" }}>Aucune réponse pour l'instant</p>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--fg-mute)" }}>L'extension détecte les réponses LinkedIn toutes les 12h.</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {recentReplies.map((r, i) => {
-                    const badge = getIntentBadge(r.status);
+                    const isMeetingBooked = markedMeeting.has(r.id) || r.status === "MEETING_BOOKED";
                     return (
-                      <div key={r.id} className="flex items-start gap-3 py-1.5" style={{ borderBottom: i < recentReplies.length - 1 ? "1px solid var(--line)" : "none" }}>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <p className="text-[12.5px] font-medium truncate" style={{ color: "var(--fg)" }}>{r.name}</p>
-                            <span
-                              className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
-                              style={{ background: `var(--${badge.color}-soft)`, color: `var(--${badge.color}-fg)` }}
-                            >
-                              {badge.label}
+                      <div
+                        key={r.id}
+                        className="rounded-[12px] p-3.5 space-y-2.5"
+                        style={{
+                          background: isMeetingBooked ? "var(--emerald-soft)" : "var(--bg)",
+                          border: `1px solid ${isMeetingBooked ? "var(--emerald-line)" : "var(--line)"}`,
+                          borderBottom: i < recentReplies.length - 1 ? undefined : "none",
+                          opacity: isMeetingBooked ? 0.8 : 1,
+                        }}
+                      >
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>{r.name}</p>
+                              <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
+                                {r.jobTitle ? `${r.jobTitle} · ` : ""}{r.company}
+                              </span>
+                            </div>
+                            {r.replyPreview && (
+                              <p
+                                className="text-[12px] mt-1 leading-relaxed italic"
+                                style={{ color: "var(--fg-dim)" }}
+                              >
+                                "{r.replyPreview.slice(0, 120)}{r.replyPreview.length > 120 ? "…" : ""}"
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isMeetingBooked && (
+                              <CheckCircle2 className="h-4 w-4" style={{ color: "var(--emerald-fg)" }} />
+                            )}
+                            <span className="text-[10px] font-mono" style={{ color: "var(--fg-mute)" }}>
+                              {timeAgo(r.respondedAt ?? r.updatedAt)}
                             </span>
                           </div>
-                          <p className="text-[11.5px] truncate" style={{ color: "var(--fg-mute)" }}>
-                            {r.notes ? r.notes.slice(0, 50) : r.company}
-                          </p>
                         </div>
-                        <span className="text-[10px] font-mono shrink-0 mt-0.5" style={{ color: "var(--fg-mute)" }}>
-                          {timeAgo(r.updatedAt)}
-                        </span>
+
+                        {/* CTAs */}
+                        {!isMeetingBooked && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Envoyer Calendly */}
+                            {calendarLink ? (
+                              <a
+                                href={r.linkedInUrl ?? "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`Ouvrir LinkedIn puis envoyer : ${calendarLink}`}
+                                className="flex items-center gap-1.5 text-[11.5px] font-semibold px-2.5 py-1.5 rounded-lg transition-all hover:brightness-110"
+                                style={{ background: "var(--emerald-soft)", border: "1px solid var(--emerald-line)", color: "var(--emerald-fg)" }}
+                              >
+                                <Calendar className="h-3 w-3" />
+                                Envoyer Calendly
+                              </a>
+                            ) : (
+                              <Link
+                                href="/sales-os/settings"
+                                className="flex items-center gap-1.5 text-[11.5px] px-2.5 py-1.5 rounded-lg"
+                                style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}
+                              >
+                                <Calendar className="h-3 w-3" />
+                                Configurer Calendly
+                              </Link>
+                            )}
+
+                            {/* Ouvrir LinkedIn */}
+                            {r.linkedInUrl && (
+                              <a
+                                href={r.linkedInUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:brightness-105"
+                                style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                LinkedIn
+                              </a>
+                            )}
+
+                            {/* Marquer RDV */}
+                            <button
+                              onClick={() => markMeeting(r.id)}
+                              disabled={markingId === r.id}
+                              className="ml-auto flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg transition-all hover:brightness-105"
+                              style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}
+                            >
+                              {markingId === r.id
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : <CheckCircle2 className="h-3 w-3" />}
+                              RDV booké
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
