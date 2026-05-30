@@ -457,6 +457,26 @@ async function runAutonomousSearch() {
   await setStatus(`autonomous_done:${finalCount}/${config.dailyLimit}`);
 }
 
+// ── Traitement des branches conditionnelles (24h) ─────────────────────────────
+
+async function processBranches() {
+  const config = await getConfig();
+  if (!config.skalleToken) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cso-agent/process-branches`, {
+      headers: { Authorization: `Bearer ${config.skalleToken}` },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.activated > 0 || data.skipped > 0) {
+        console.log(`[SKALLE] Branches : ${data.activated} activée(s), ${data.skipped} annulée(s)`);
+      }
+    }
+  } catch { /* silencieux */ }
+}
+
 // ── Vérification des connexions acceptées (24h) ───────────────────────────────
 
 async function checkAcceptedConnections() {
@@ -549,8 +569,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await runAutomation();
   }
   if (alarm.name === ALARM_CHECK_CONNECTIONS) {
+    await processBranches();       // Traite les branches conditionnelles en premier
     await checkAcceptedConnections();
-    await checkFollowups(); // Lance les relances dans le même cycle 24h
+    await checkFollowups();
   }
   if (alarm.name === ALARM_CHECK_REPLIES) {
     await checkReplies();

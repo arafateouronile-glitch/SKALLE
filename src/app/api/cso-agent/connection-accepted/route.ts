@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { onConnectionAccepted } from "@/lib/services/smart-sequence-processor";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,9 @@ export async function POST(req: NextRequest) {
       } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
     },
   });
+
+  // Activer step 2 (post-connexion) et annuler step 3 (fallback not-accepted)
+  await onConnectionAccepted(prospectId).catch(() => {/* silencieux — non bloquant */});
 
   return NextResponse.json({ ok: true });
 }
