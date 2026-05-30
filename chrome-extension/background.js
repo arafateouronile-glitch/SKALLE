@@ -104,9 +104,96 @@ function isWorkingDay() {
   return !isPublicHoliday(now);
 }
 
+// Accepte des heures fractionnaires (ex: 9.25 = 9h15)
 function isBusinessHours(start, end) {
-  const hour = new Date().getHours();
-  return hour >= start && hour < end;
+  const now = new Date();
+  const nowH = now.getHours() + now.getMinutes() / 60;
+  return nowH >= start && nowH < end;
+}
+
+// ─── 2. Fenêtre d'activité variable ──────────────────────────────────────────
+// Générée une fois par jour avec ±45 min d'offset sur le début ET la fin.
+// Un humain ne commence pas exactement à 9h00 et ne s'arrête pas à 18h00 pile.
+
+async function getDailyWindow(configStart, configEnd) {
+  const today = new Date().toISOString().slice(0, 10);
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["windowDate", "windowStart", "windowEnd"], (r) => {
+      if (r.windowDate === today && r.windowStart != null) {
+        resolve({ start: r.windowStart, end: r.windowEnd });
+        return;
+      }
+      const startOffset = (Math.floor(Math.random() * 91) - 45) / 60; // -45min → +45min
+      const endOffset   = (Math.floor(Math.random() * 91) - 45) / 60;
+      const start = configStart + startOffset;
+      const end   = configEnd   + endOffset;
+      chrome.storage.local.set({ windowDate: today, windowStart: start, windowEnd: end }, () => {
+        resolve({ start, end });
+      });
+    });
+  });
+}
+
+// ─── 3. Cooldown post-action ──────────────────────────────────────────────────
+// Après chaque action, on impose un silence de 45–90 min avant la suivante.
+// Évite les bursts visibles et simule le comportement d'un humain distrait.
+
+async function isInCooldown() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["nextActionAt"], (r) => {
+      resolve(!!(r.nextActionAt && Date.now() < r.nextActionAt));
+    });
+  });
+}
+
+async function setCooldown() {
+  const ms = (45 + Math.floor(Math.random() * 46)) * 60_000; // 45–90 min
+  chrome.storage.local.set({ nextActionAt: Date.now() + ms });
+}
+
+// ─── 4. Rythme hebdomadaire ───────────────────────────────────────────────────
+// Si la semaine précédente était chargée (>80% de la limite), on réduit de 30%.
+// Si elle était légère (<50%), on augmente légèrement de 10%.
+
+function getMondayKey() {
+  const now = new Date();
+  const day = now.getDay() || 7; // 1=Lun, 7=Dim
+  const monday = new Date(now.getTime() - (day - 1) * 86400000);
+  return monday.toISOString().slice(0, 10);
+}
+
+async function getWeeklyFactor(dailyLimit) {
+  const monday = getMondayKey();
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["wkMonday", "wkCount", "prevWkCount"], (r) => {
+      let prevCount = r.prevWkCount ?? 0;
+      let thisCount = r.wkCount ?? 0;
+
+      if (r.wkMonday !== monday) {
+        // Nouvelle semaine — archiver la précédente
+        prevCount = r.wkMonday ? (r.wkCount ?? 0) : 0;
+        thisCount = 0;
+        chrome.storage.local.set({ wkMonday: monday, wkCount: 0, prevWkCount: prevCount });
+      }
+
+      // Intensité de la semaine précédente vs limite théorique (5 jours × limite)
+      const weekCap = dailyLimit * 5;
+      const intensity = weekCap > 0 ? prevCount / weekCap : 0;
+      const factor = intensity > 0.8 ? 0.7 : intensity < 0.5 ? 1.1 : 1.0;
+
+      resolve(factor);
+    });
+  });
+}
+
+async function incrementWeekCount() {
+  const monday = getMondayKey();
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["wkMonday", "wkCount"], (r) => {
+      const count = (r.wkMonday === monday ? r.wkCount ?? 0 : 0) + 1;
+      chrome.storage.local.set({ wkMonday: monday, wkCount: count }, resolve);
+    });
+  });
 }
 
 // Limite quotidienne variable : ±30 % autour de la limite configurée
@@ -145,10 +232,14 @@ async function getWarmupMultiplier() {
   });
 }
 
-// Limite effective du jour = target × warmup, arrondi vers le bas, minimum 1
+// Limite effective du jour = target × warmup × rythme_semaine, minimum 1
 async function getEffectiveDailyLimit(configLimit) {
-  const [target, multiplier] = await Promise.all([getDailyTarget(configLimit), getWarmupMultiplier()]);
-  return Math.max(1, Math.floor(target * multiplier));
+  const [target, warmup, weekly] = await Promise.all([
+    getDailyTarget(configLimit),
+    getWarmupMultiplier(),
+    getWeeklyFactor(configLimit),
+  ]);
+  return Math.max(1, Math.floor(target * warmup * weekly));
 }
 
 async function getTodayCount() {
@@ -254,8 +345,16 @@ async function runAutomation() {
     return;
   }
 
-  if (!isBusinessHours(config.businessHoursStart, config.businessHoursEnd)) {
+  // Fenêtre d'activité variable (±45 min autour des heures configurées)
+  const window = await getDailyWindow(config.businessHoursStart, config.businessHoursEnd);
+  if (!isBusinessHours(window.start, window.end)) {
     await setStatus("outside_hours");
+    return;
+  }
+
+  // Cooldown post-action (45–90 min depuis la dernière action)
+  if (await isInCooldown()) {
+    await setStatus("cooldown");
     return;
   }
 
@@ -274,41 +373,23 @@ async function runAutomation() {
     return;
   }
 
-  // Seulement agir si l'utilisateur a LinkedIn ouvert — jamais ouvrir un onglet nous-mêmes
   const tab = await findLinkedInTab();
   if (!tab) {
     await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
-    console.log("[SKALLE] LinkedIn n'est pas ouvert — en attente que l'utilisateur l'ouvre");
     return;
   }
 
-  for (const decision of decisions) {
-    const currentCount = await getTodayCount();
-    if (currentCount >= effectiveLimit) break;
+  // ── 1 action par cycle (l'alarme 30 min gère la suivante) ─────────────────
+  const decision = decisions[0];
+  const result = await sendToContentScript(tab.id, { type: "SKALLE_EXECUTE", decision });
 
-    // Send action to content script
-    const result = await sendToContentScript(tab.id, {
-      type: "SKALLE_EXECUTE",
-      decision,
-    });
+  await reportExecuted(config.skalleToken, decision.id, result);
+  await incrementCount();
+  await incrementWeekCount();
+  await setCooldown(); // 45–90 min avant la prochaine action
 
-    // Report back to backend
-    await reportExecuted(config.skalleToken, decision.id, result);
-    await incrementCount();
-
-    const newCount = await getTodayCount();
-    await setStatus(`running:${newCount}/${effectiveLimit}`);
-
-    // Random human-like delay before next action
-    if (decisions.indexOf(decision) < decisions.length - 1) {
-      const delay = randomDelay();
-      console.log(`[SKALLE] Prochaine action dans ${Math.round(delay / 60_000)} min`);
-      await sleep(delay);
-    }
-  }
-
-  const finalCount = await getTodayCount();
-  await setStatus(`done:${finalCount}/${effectiveLimit}`);
+  const newCount = await getTodayCount();
+  await setStatus(`done:${newCount}/${effectiveLimit}`);
 }
 
 // ── Tracking des réponses (12h) ───────────────────────────────────────────────
@@ -467,7 +548,10 @@ async function runAutonomousSearch() {
   const config = await getConfig();
   if (!config.skalleToken || !config.autonomousEnabled) return;
   if (!isWorkingDay()) return;
-  if (!isBusinessHours(config.businessHoursStart, config.businessHoursEnd)) return;
+
+  const window = await getDailyWindow(config.businessHoursStart, config.businessHoursEnd);
+  if (!isBusinessHours(window.start, window.end)) return;
+  if (await isInCooldown()) return;
 
   const effectiveLimit = await getEffectiveDailyLimit(config.dailyLimit);
   const count = await getTodayCount();
@@ -494,7 +578,7 @@ async function runAutonomousSearch() {
   }
 
   const remaining = effectiveLimit - count;
-  const maxThisCycle = Math.min(3, remaining); // Max 3 profils/cycle
+  const maxThisCycle = Math.min(1, remaining); // 1 profil/cycle — le reste attend le prochain alarm
 
   await setStatus(`autonomous_running:${count}/${effectiveLimit}`);
 
@@ -537,6 +621,8 @@ async function runAutonomousSearch() {
 
     if (result?.ok) {
       await incrementCount();
+      await incrementWeekCount();
+      await setCooldown(); // 45–90 min avant la prochaine action
       await reportExecuted(config.skalleToken, null, {
         ...result,
         autonomous: true,

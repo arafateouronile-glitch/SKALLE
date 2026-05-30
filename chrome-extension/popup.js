@@ -61,6 +61,7 @@ const STATUS_LABELS = {
   disabled:                    { text: "Désactivée",            cls: "pill-gray"  },
   day_off:                     { text: "Week-end / férié",      cls: "pill-gray"  },
   outside_hours:               { text: "Hors horaires",         cls: "pill-amber" },
+  cooldown:                    { text: "⏸ Cooldown",           cls: "pill-amber" },
   limit_reached:               { text: "Limite atteinte",       cls: "pill-amber" },
   waiting_linkedin:            { text: "LinkedIn non ouvert",   cls: "pill-amber" },
   autonomous_waiting_linkedin: { text: "LinkedIn non ouvert",   cls: "pill-amber" },
@@ -100,25 +101,48 @@ async function refreshStatus() {
   document.getElementById("statusMeta").textContent =
     `${countToday} action${countToday !== 1 ? "s" : ""} effectuée${countToday !== 1 ? "s" : ""} aujourd'hui · Prochain check dans ~30 min`;
 
-  // Afficher la limite effective du jour et le niveau de warmup
+  // Afficher fenêtre active, cooldown, limite du jour, warmup, rythme semaine
   const limitInfo = document.getElementById("effectiveLimitInfo");
   if (limitInfo) {
-    const local = await chrome.storage.local.get(["dailyTargetDate", "dailyTarget", "warmupStartDate"]);
+    const local = await chrome.storage.local.get([
+      "dailyTargetDate", "dailyTarget", "warmupStartDate",
+      "windowDate", "windowStart", "windowEnd",
+      "nextActionAt", "wkCount",
+    ]);
     const isToday = local.dailyTargetDate === today;
     const effectiveTarget = isToday ? local.dailyTarget : null;
+    const parts = [];
 
-    let warmupLabel = "";
-    if (local.warmupStartDate) {
-      const diffDays = Math.floor((Date.now() - new Date(local.warmupStartDate).getTime()) / 86400000);
-      const week = Math.min(Math.floor(diffDays / 7), 3);
-      const pcts = ["30%", "50%", "70%", "100%"];
-      const weekLabels = ["Semaine 1", "Semaine 2", "Semaine 3", "Semaine 4+"];
-      warmupLabel = ` · Warmup ${weekLabels[week]} (${pcts[week]})`;
+    // Fenêtre active du jour
+    if (local.windowDate === today && local.windowStart != null) {
+      const toHM = (h) => {
+        const hh = Math.floor(h);
+        const mm = Math.round((h - hh) * 60);
+        return `${hh}h${mm > 0 ? String(mm).padStart(2, "0") : ""}`;
+      };
+      parts.push(`Fenêtre : ${toHM(local.windowStart)}–${toHM(local.windowEnd)}`);
     }
 
-    limitInfo.textContent = effectiveTarget
-      ? `Objectif du jour : ${effectiveTarget} actions${warmupLabel}`
-      : warmupLabel ? `Warmup actif${warmupLabel}` : "";
+    // Objectif du jour
+    if (effectiveTarget) parts.push(`Objectif : ${effectiveTarget} actions`);
+
+    // Warmup
+    if (local.warmupStartDate) {
+      const diffDays = Math.floor((Date.now() - new Date(local.warmupStartDate).getTime()) / 86400000);
+      const w = Math.min(Math.floor(diffDays / 7), 3);
+      parts.push(`Warmup S${w + 1} (${["30%","50%","70%","✓"][w]})`);
+    }
+
+    // Actions cette semaine
+    if (local.wkCount > 0) parts.push(`${local.wkCount} cette semaine`);
+
+    // Cooldown
+    if (local.nextActionAt && Date.now() < local.nextActionAt) {
+      const minLeft = Math.ceil((local.nextActionAt - Date.now()) / 60_000);
+      parts.push(`Cooldown : encore ${minLeft} min`);
+    }
+
+    limitInfo.textContent = parts.join(" · ");
   }
 }
 
