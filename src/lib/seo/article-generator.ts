@@ -18,6 +18,7 @@ import { getOpenAI, getStringParser } from "@/lib/ai/langchain";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { searchCompetitorContent, getRelatedKeywords } from "@/lib/ai/serper";
 import { generateArticleOutline } from "./outline-generator";
+import { crawlSerpIntelligence } from "./serp-crawler";
 import { scoreArticleContent } from "./content-optimizer";
 import type { ArticleOutline, GeneratedArticle } from "@/types/seo";
 import type { SeoContentMode } from "@/actions/seo-setup";
@@ -434,28 +435,32 @@ export async function generateEnhancedArticle(
   const domain = domainUrl ? normalizeDomain(domainUrl) : null;
   const baseUrl = domain ? `https://${domain}` : undefined;
 
-  // 1. Générer l'outline si non fourni
-  const outline = params.outline || (await generateArticleOutline(keyword, brandVoice));
+  // 1. SERP crawl + sources + mots-clés liés (parallèle)
+  const [serpResult, sourcesResult, relatedKwsResult] = await Promise.allSettled([
+    !params.outline ? crawlSerpIntelligence(keyword) : Promise.resolve(null),
+    searchCompetitorContent(keyword),
+    getRelatedKeywords(keyword),
+  ]);
 
-  // 2. Rechercher des sources
+  const serpIntelligence =
+    serpResult.status === "fulfilled" ? (serpResult.value ?? undefined) : undefined;
+
   let sourcesText = "Pas de sources disponibles.";
-  try {
-    const sources = await searchCompetitorContent(keyword);
-    sourcesText = sources
+  if (sourcesResult.status === "fulfilled" && sourcesResult.value.length > 0) {
+    sourcesText = sourcesResult.value
       .slice(0, 5)
       .map((s) => `- ${s.title}: ${s.snippet}`)
       .join("\n");
-  } catch {
-    // Continuer sans sources
   }
 
-  // 3. Mots-clés liés
   let relatedKws: string[] = [];
-  try {
-    relatedKws = await getRelatedKeywords(keyword);
-  } catch {
-    // Continuer sans mots-clés liés
+  if (relatedKwsResult.status === "fulfilled") {
+    relatedKws = relatedKwsResult.value;
   }
+
+  // 2. Générer l'outline (alimenté par SERP intelligence si disponible)
+  const outline =
+    params.outline || (await generateArticleOutline(keyword, brandVoice, serpIntelligence));
 
   // 4. Construire le texte du plan
   const outlineText = outline.sections
@@ -499,17 +504,25 @@ export async function generateEnhancedArticle(
     : "TON : Professionnel et accessible, expertise sectorielle";
 
   // 8. Construire les messages selon le mode
-  const targetWords = outline.estimatedWordCount || 2000;
+  const targetWords = serpIntelligence?.targetWordCount ?? outline.estimatedWordCount ?? 2000;
   const systemContent = getModeSystemPrompt(contentMode, targetWords, brandVoiceSection, businessActivity, siteType, baseUrl);
 
+  const serpSection = serpIntelligence
+    ? `\n═══════════════════════════════════════════════════════════
+INTELLIGENCE SERP — TOP-${serpIntelligence.pages.length} GOOGLE
+═══════════════════════════════════════════════════════════
+${serpIntelligence.serpContext}
+═══════════════════════════════════════════════════════════\n`
+    : "";
+
   const humanTemplate = getModeHumanPrompt(contentMode);
-  const humanContent = humanTemplate
+  const humanContent = (humanTemplate
     .replace("{keyword}", keyword)
     .replace("{outlineText}", outlineText)
     .replace("{sourcesText}", sourcesText)
     .replace("{relatedKeywords}", relatedKws.slice(0, 8).join(", ") || keyword)
     .replace("{faqQuestions}", faqQuestions)
-    .replace("{internalLinksSection}", internalLinksSection);
+    .replace("{internalLinksSection}", internalLinksSection)) + serpSection;
 
   // 9. Générer l'article
   const openai = getOpenAI();

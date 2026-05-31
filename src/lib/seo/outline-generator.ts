@@ -8,6 +8,7 @@
 import { getOpenAI, getStringParser } from "@/lib/ai/langchain";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import type { ArticleOutline } from "@/types/seo";
+import type { SerpIntelligence } from "./serp-crawler";
 
 const articleOutlinePrompt = ChatPromptTemplate.fromMessages([
   [
@@ -50,6 +51,7 @@ Règles:
     "human",
     `Crée un plan d'article SEO pour le mot-clé: "{keyword}"
 {brandVoiceSection}
+{serpSection}
 
 Génère le plan en JSON.`,
   ],
@@ -57,15 +59,34 @@ Génère le plan en JSON.`,
 
 export async function generateArticleOutline(
   keyword: string,
-  brandVoice?: Record<string, unknown>
+  brandVoice?: Record<string, unknown>,
+  serpIntelligence?: SerpIntelligence
 ): Promise<ArticleOutline> {
   const chain = articleOutlinePrompt.pipe(getOpenAI()).pipe(getStringParser());
+
+  // Construire le bloc SERP à injecter dans le prompt
+  let serpSection = "";
+  if (serpIntelligence) {
+    const paaBlock =
+      serpIntelligence.paaQuestions.length > 0
+        ? `\nQuestions "People Also Ask" à traiter en FAQ :\n${serpIntelligence.paaQuestions.map((q) => `- ${q}`).join("\n")}`
+        : "";
+    serpSection = `
+ANALYSE SERP — TOP-${serpIntelligence.pages.length} GOOGLE (utiliser impérativement pour construire le plan) :
+Longueur cible recommandée : ${serpIntelligence.targetWordCount} mots (basée sur les top-3 concurrents).
+${paaBlock}
+
+${serpIntelligence.serpContext}
+
+INSTRUCTION : le plan doit couvrir les thèmes communs, exploiter les angles manquants, et intégrer les questions PAA dans la section FAQ.`;
+  }
 
   const response = await chain.invoke({
     keyword,
     brandVoiceSection: brandVoice
       ? `Ton de voix de la marque: ${JSON.stringify(brandVoice)}`
       : "",
+    serpSection,
   });
 
   // Extraire le JSON de la réponse
@@ -88,7 +109,7 @@ export async function generateArticleOutline(
       suggestedWordCount: typeof s.suggestedWordCount === "number" ? s.suggestedWordCount : 200,
     })),
     faqQuestions: Array.isArray(parsed.faqQuestions) ? parsed.faqQuestions : [],
-    estimatedWordCount: parsed.estimatedWordCount || 2000,
+    estimatedWordCount: serpIntelligence?.targetWordCount ?? parsed.estimatedWordCount ?? 2000,
     internalLinkSuggestions: Array.isArray(parsed.internalLinkSuggestions)
       ? parsed.internalLinkSuggestions
       : [],

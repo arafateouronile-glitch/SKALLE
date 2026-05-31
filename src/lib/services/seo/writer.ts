@@ -14,6 +14,7 @@ import { getClaude, getStringParser } from "@/lib/ai/langchain";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { searchCompetitorContent, getRelatedKeywords } from "@/lib/ai/serper";
 import { generateArticleOutline } from "@/lib/seo/outline-generator";
+import { crawlSerpIntelligence } from "@/lib/seo/serp-crawler";
 import { scoreArticleContent } from "@/lib/seo/content-optimizer";
 import {
   generateNanoBananaImage,
@@ -228,6 +229,7 @@ PERSONA CIBLE (adapter le niveau de langage et les exemples) :
 {targetPersona}
 {brandVoiceSection}
 {internalLinksSection}
+{serpSection}
 RAPPELS TECHNIQUES :
 - Insère [IMAGE_PROMPT: ...] immédiatement après chaque ## (H2)
 - Génère au moins 2 tableaux Markdown là où c'est pertinent
@@ -384,18 +386,28 @@ export async function generateEliteArticle(
     generateImages = false,
   } = data;
 
-  // ── Étape A : Outline ─────────────────────────────────────────────────
-  const outline =
-    data.outline ?? (await generateArticleOutline(keyword, brandVoice));
-
-  // ── Étape B : Sources + LSI (parallèle si non fournies) ───────────────
+  // ── Étape A : SERP crawl + Outline (parallèle si outline non fourni) ──
   let sources = data.sources ?? [];
   let lsiKeywords = data.lsiKeywords ?? [];
 
-  const [sourcesResult, lsiResult] = await Promise.allSettled([
+  // SERP crawl toujours lancé (sauf si outline déjà fourni) — parallèle avec sources + LSI
+  const shouldCrawlSerp = !data.outline;
+
+  const [serpResult, sourcesResult, lsiResult] = await Promise.allSettled([
+    shouldCrawlSerp
+      ? crawlSerpIntelligence(keyword)
+      : Promise.resolve(null),
     sources.length === 0 ? searchCompetitorContent(keyword) : Promise.resolve([]),
     lsiKeywords.length === 0 ? getRelatedKeywords(keyword) : Promise.resolve([]),
   ]);
+
+  const serpIntelligence =
+    serpResult.status === "fulfilled" ? serpResult.value ?? undefined : undefined;
+
+  // ── Étape B : Outline (alimenté par la SERP intelligence) ─────────────
+  const outline =
+    data.outline ??
+    (await generateArticleOutline(keyword, brandVoice, serpIntelligence ?? undefined));
 
   if (sourcesResult.status === "fulfilled" && sourcesResult.value.length > 0) {
     sources = sourcesResult.value.slice(0, 5).map((s) => ({
@@ -506,18 +518,28 @@ export async function generateEliteArticle(
   // ── Étape D : Génération de l'article avec Claude ─────────────────────
   const chain = eliteWriterPrompt.pipe(getClaude()).pipe(getStringParser());
 
+  // Bloc SERP à injecter dans le prompt de rédaction
+  const serpSection = serpIntelligence
+    ? `\n═══════════════════════════════════════════════════════════
+INTELLIGENCE SERP — TOP-${serpIntelligence.pages.length} GOOGLE (utiliser pour différencier l'article)
+═══════════════════════════════════════════════════════════
+${serpIntelligence.serpContext}
+═══════════════════════════════════════════════════════════\n`
+    : "";
+
   const rawArticle = await chain.invoke({
     keyword,
     outlineText,
     sourcesText,
     lsiKeywords: lsiKeywords.join(", ") || keyword,
     faqQuestions,
-    targetWords,
+    targetWords: serpIntelligence?.targetWordCount ?? targetWords,
     targetPersona:
       data.targetPersona ??
       "professionnels et décideurs francophones cherchant des informations fiables et actionnables",
     brandVoiceSection,
     internalLinksSection,
+    serpSection,
   });
 
   // ── Étape E : Extraire META TITLE et META DESCRIPTION ─────────────────
