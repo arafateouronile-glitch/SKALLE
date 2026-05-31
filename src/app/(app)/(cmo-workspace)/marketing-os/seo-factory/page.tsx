@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -64,6 +64,10 @@ import {
   Users,
   Flag,
   Columns3,
+  Save,
+  X,
+  RefreshCw,
+  PenLine,
 } from "lucide-react";
 import {
   runSEOAudit,
@@ -71,6 +75,7 @@ import {
   generateSingleArticle,
   listArticles,
   getArticle,
+  updateArticle,
   deleteArticle,
   duplicateArticle,
   exportArticle,
@@ -81,6 +86,7 @@ import {
   updateSeoAudit,
   type SeoAuditListItem,
 } from "@/actions/seo";
+import type { ContentOptimizationScore } from "@/types/seo";
 import {
   getSeoSetup,
   saveSeoSetup,
@@ -170,6 +176,19 @@ export default function SEOFactoryPage() {
   const [isGeneratingSingle, setIsGeneratingSingle] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState<string>("");
+
+  // ── Éditeur inline ──────────────────────────────────────────────────────
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorArticleId, setEditorArticleId] = useState<string | null>(null);
+  const [editorTitle, setEditorTitle] = useState("");
+  const [editorContent, setEditorContent] = useState("");
+  const [editorMetaTitle, setEditorMetaTitle] = useState("");
+  const [editorMetaDesc, setEditorMetaDesc] = useState("");
+  const [editorKeyword, setEditorKeyword] = useState("");
+  const [editorScore, setEditorScore] = useState<ContentOptimizationScore | null>(null);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorSaveStatus, setEditorSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Generation bulk
   const [keywords, setKeywords] = useState("");
@@ -621,6 +640,93 @@ export default function SEOFactoryPage() {
     }
   };
 
+  const handleOpenEditor = async (articleId: string) => {
+    if (!workspaceId) return;
+    try {
+      const result = await getArticle(workspaceId, articleId);
+      if (result.success && result.data) {
+        const data = result.data as any;
+        setEditorArticleId(articleId);
+        setEditorTitle(data.title || "");
+        setEditorContent(data.content || "");
+        setEditorMetaTitle(data.metaTitle || "");
+        setEditorMetaDesc(data.metaDescription || "");
+        setEditorKeyword(data.keywords?.[0] || "");
+        setEditorScore(data.seoFeedback || null);
+        setEditorSaveStatus("idle");
+        setEditorOpen(true);
+      }
+    } catch {
+      toast.error("Erreur lors du chargement de l'article");
+    }
+  };
+
+  const performSave = useCallback(async (
+    articleId: string,
+    content: string,
+    title: string,
+    metaTitle: string,
+    metaDesc: string
+  ) => {
+    if (!workspaceId) return;
+    setEditorSaving(true);
+    setEditorSaveStatus("saving");
+    try {
+      const result = await updateArticle(workspaceId, articleId, {
+        content,
+        title: title || undefined,
+        metaTitle: metaTitle || undefined,
+        metaDescription: metaDesc || undefined,
+      });
+      if (result.success) {
+        const updated = result.data as any;
+        if (updated?.seoFeedback) setEditorScore(updated.seoFeedback);
+        setEditorSaveStatus("saved");
+        // Mettre à jour la liste locale
+        setArticles((prev) =>
+          prev.map((a) =>
+            a.id === articleId
+              ? {
+                  ...a,
+                  title: title || a.title,
+                  seoScore: updated?.seoScore ?? a.seoScore,
+                  wordCount: updated?.wordCount ?? a.wordCount,
+                }
+              : a
+          )
+        );
+        setTimeout(() => setEditorSaveStatus("idle"), 2000);
+      } else {
+        setEditorSaveStatus("error");
+      }
+    } catch {
+      setEditorSaveStatus("error");
+    } finally {
+      setEditorSaving(false);
+    }
+  }, [workspaceId]);
+
+  const scheduleAutoSave = useCallback((
+    content: string,
+    title: string,
+    metaTitle: string,
+    metaDesc: string
+  ) => {
+    if (!editorArticleId) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    setEditorSaveStatus("idle");
+    autoSaveTimerRef.current = setTimeout(() => {
+      void performSave(editorArticleId, content, title, metaTitle, metaDesc);
+    }, 1500);
+  }, [editorArticleId, performSave]);
+
+  const handleCloseEditor = () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    setEditorOpen(false);
+    setEditorArticleId(null);
+    setEditorSaveStatus("idle");
+  };
+
   const handleDelete = async (articleId: string) => {
     if (!workspaceId) return;
     if (!confirm("Êtes-vous sûr de vouloir supprimer cet article ?")) return;
@@ -967,6 +1073,9 @@ export default function SEOFactoryPage() {
                             style={{ color: "var(--fg-mute)" }}>⋯</button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleOpenEditor(article.id)}>
+                            <PenLine className="h-4 w-4 mr-2" />Éditer
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handlePreview(article.id)}>
                             <Eye className="h-4 w-4 mr-2" />Prévisualiser
                           </DropdownMenuItem>
@@ -2081,6 +2190,330 @@ export default function SEOFactoryPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Éditeur inline avec score live ──────────────────────────── */}
+      {editorOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+            onClick={handleCloseEditor}
+          />
+
+          {/* Panel full-screen */}
+          <div
+            className="fixed inset-0 z-50 flex flex-col overflow-hidden"
+            style={{
+              background: "var(--bg-card)",
+              borderLeft: "1px solid var(--line)",
+            }}
+          >
+            {/* ── Header ── */}
+            <div
+              className="flex items-center gap-4 px-6 py-3 shrink-0"
+              style={{ borderBottom: "1px solid var(--line)", background: "var(--bg)" }}
+            >
+              {/* Titre éditable */}
+              <input
+                value={editorTitle}
+                onChange={(e) => {
+                  setEditorTitle(e.target.value);
+                  scheduleAutoSave(editorContent, e.target.value, editorMetaTitle, editorMetaDesc);
+                }}
+                className="flex-1 text-[15px] font-semibold bg-transparent outline-none min-w-0"
+                style={{ color: "var(--fg)" }}
+                placeholder="Titre de l'article…"
+              />
+
+              {/* Save status */}
+              <div className="flex items-center gap-2 shrink-0">
+                {editorSaveStatus === "saving" && (
+                  <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--fg-mute)" }}>
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    Sauvegarde…
+                  </div>
+                )}
+                {editorSaveStatus === "saved" && (
+                  <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: E.fg }}>
+                    <Save className="h-3 w-3" />
+                    Sauvegardé
+                  </div>
+                )}
+                {editorSaveStatus === "error" && (
+                  <span className="text-[11.5px]" style={{ color: D.fg }}>Erreur de sauvegarde</span>
+                )}
+
+                {/* Keyword badge */}
+                {editorKeyword && (
+                  <span
+                    className="text-[10.5px] font-mono px-2 py-0.5 rounded"
+                    style={{ background: V.soft, color: V.fg, border: `1px solid ${V.line}` }}
+                  >
+                    {editorKeyword}
+                  </span>
+                )}
+
+                <button
+                  onClick={handleCloseEditor}
+                  className="p-1.5 rounded-lg transition-all hover:brightness-95"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--line)" }}
+                >
+                  <X className="h-4 w-4" style={{ color: "var(--fg-mute)" }} />
+                </button>
+              </div>
+            </div>
+
+            {/* ── Body : éditeur + score ── */}
+            <div className="flex flex-1 overflow-hidden">
+              {/* Markdown textarea */}
+              <div className="flex-1 flex flex-col overflow-hidden" style={{ borderRight: "1px solid var(--line)" }}>
+                <div
+                  className="px-4 py-2 text-[10px] font-mono uppercase tracking-wider shrink-0"
+                  style={{ color: "var(--fg-mute)", borderBottom: "1px solid var(--line)", background: "var(--bg)" }}
+                >
+                  Contenu Markdown — auto-sauvegarde 1.5s
+                </div>
+                <textarea
+                  value={editorContent}
+                  onChange={(e) => {
+                    setEditorContent(e.target.value);
+                    scheduleAutoSave(e.target.value, editorTitle, editorMetaTitle, editorMetaDesc);
+                  }}
+                  className="flex-1 resize-none outline-none px-8 py-6 text-[13.5px] leading-[1.85] font-mono"
+                  style={{
+                    background: "var(--bg)",
+                    color: "var(--fg)",
+                    fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                  }}
+                  spellCheck={false}
+                  placeholder="Contenu Markdown de l'article…"
+                />
+              </div>
+
+              {/* Score panel */}
+              <div
+                className="w-[320px] shrink-0 flex flex-col overflow-y-auto"
+                style={{ background: "var(--bg-card)" }}
+              >
+                {editorScore ? (
+                  <div className="p-5 space-y-5">
+                    {/* Score global */}
+                    <div className="flex items-center gap-4">
+                      <div className="relative w-20 h-20 shrink-0">
+                        <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                          <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--line-strong)" strokeWidth="3" />
+                          <circle
+                            cx="18" cy="18" r="15.9" fill="none" strokeWidth="3"
+                            stroke={editorScore.overallScore >= 80 ? E.fg : editorScore.overallScore >= 60 ? A.fg : D.fg}
+                            strokeDasharray={`${editorScore.overallScore} 100`}
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span
+                            className="font-display text-[22px] font-bold tabular"
+                            style={{ color: editorScore.overallScore >= 80 ? E.fg : editorScore.overallScore >= 60 ? A.fg : D.fg }}
+                          >
+                            {editorScore.overallScore}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-[14px]" style={{ color: "var(--fg)" }}>
+                          Score SEO
+                        </p>
+                        <p className="text-[11.5px] mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                          {editorScore.contentLength.wordCount} mots · mis à jour à la sauvegarde
+                        </p>
+                        <button
+                          onClick={() => editorArticleId && void performSave(editorArticleId, editorContent, editorTitle, editorMetaTitle, editorMetaDesc)}
+                          disabled={editorSaving}
+                          className="flex items-center gap-1.5 mt-2 text-[11px] font-medium px-2.5 py-1 rounded-md transition-all hover:brightness-95 disabled:opacity-50"
+                          style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                        >
+                          <RefreshCw className={`h-3 w-3 ${editorSaving ? "animate-spin" : ""}`} />
+                          Recalculer
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Dimensions */}
+                    {[
+                      {
+                        label: "Densité mot-clé",
+                        score: editorScore.keywordDensity.score,
+                        detail: `${editorScore.keywordDensity.value.toFixed(1)}%`,
+                        rec: editorScore.keywordDensity.recommendation,
+                      },
+                      {
+                        label: "Lisibilité",
+                        score: editorScore.readability.score,
+                        detail: editorScore.readability.level,
+                        rec: editorScore.readability.recommendation,
+                      },
+                      {
+                        label: "Structure Hn",
+                        score: editorScore.headingStructure.score,
+                        detail: "",
+                        rec: editorScore.headingStructure.issues[0] ?? "Structure correcte",
+                      },
+                      {
+                        label: "Longueur",
+                        score: editorScore.contentLength.score,
+                        detail: `${editorScore.contentLength.wordCount} mots`,
+                        rec: editorScore.contentLength.recommendation,
+                      },
+                      {
+                        label: "Meta",
+                        score: Math.round((editorScore.metaQuality.titleScore + editorScore.metaQuality.descriptionScore) / 2),
+                        detail: "",
+                        rec: editorScore.metaQuality.issues[0] ?? "Meta correctes",
+                      },
+                      {
+                        label: "Liens internes",
+                        score: editorScore.internalLinks.score,
+                        detail: `${editorScore.internalLinks.count}`,
+                        rec: editorScore.internalLinks.suggestion,
+                      },
+                    ].map(({ label, score, detail, rec }) => {
+                      const color = score >= 80 ? E.fg : score >= 60 ? A.fg : D.fg;
+                      const bg = score >= 80 ? E.soft : score >= 60 ? A.soft : D.soft;
+                      return (
+                        <div key={label} className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded tabular"
+                                style={{ background: bg, color }}
+                              >
+                                {score}
+                              </span>
+                              <span className="text-[12px] font-medium" style={{ color: "var(--fg)" }}>
+                                {label}
+                              </span>
+                              {detail && (
+                                <span className="text-[10.5px] font-mono" style={{ color: "var(--fg-mute)" }}>
+                                  {detail}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {/* Bar */}
+                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--line-strong)" }}>
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${score}%`, background: color }}
+                            />
+                          </div>
+                          {score < 80 && rec && (
+                            <p className="text-[10.5px] leading-snug" style={{ color: "var(--fg-mute)" }}>
+                              → {rec}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* FAQ indicator */}
+                    <div
+                      className="flex items-center justify-between px-3 py-2 rounded-lg text-[11.5px]"
+                      style={{ background: editorScore.faq.present ? E.soft : "var(--bg)", border: `1px solid ${editorScore.faq.present ? E.line : "var(--line)"}` }}
+                    >
+                      <span style={{ color: editorScore.faq.present ? E.fg : "var(--fg-dim)" }}>
+                        {editorScore.faq.present ? `✓ FAQ présente (${editorScore.faq.questionCount} questions)` : "✗ Section FAQ absente"}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
+                    <Gauge className="h-8 w-8 opacity-20" style={{ color: E.fg }} />
+                    <p className="text-[13px]" style={{ color: "var(--fg-mute)" }}>
+                      Éditez le contenu pour voir le score SEO.
+                    </p>
+                    <button
+                      onClick={() => editorArticleId && void performSave(editorArticleId, editorContent, editorTitle, editorMetaTitle, editorMetaDesc)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-semibold transition-all hover:brightness-110"
+                      style={{ background: E.fg, color: "white" }}
+                    >
+                      <Gauge className="h-3.5 w-3.5" />
+                      Analyser maintenant
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Footer : meta + actions ── */}
+            <div
+              className="shrink-0 px-6 py-3 flex items-center gap-4"
+              style={{ borderTop: "1px solid var(--line)", background: "var(--bg)" }}
+            >
+              <div className="flex-1 grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[9.5px] font-mono uppercase tracking-wider mb-1" style={{ color: "var(--fg-mute)" }}>
+                    Meta title ({editorMetaTitle.length}/60)
+                  </p>
+                  <input
+                    value={editorMetaTitle}
+                    onChange={(e) => {
+                      setEditorMetaTitle(e.target.value);
+                      scheduleAutoSave(editorContent, editorTitle, e.target.value, editorMetaDesc);
+                    }}
+                    maxLength={70}
+                    className="w-full text-[12px] px-2.5 py-1.5 rounded-md outline-none"
+                    style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg)" }}
+                    placeholder="Meta title optimisé…"
+                  />
+                </div>
+                <div>
+                  <p className="text-[9.5px] font-mono uppercase tracking-wider mb-1" style={{ color: "var(--fg-mute)" }}>
+                    Meta description ({editorMetaDesc.length}/155)
+                  </p>
+                  <input
+                    value={editorMetaDesc}
+                    onChange={(e) => {
+                      setEditorMetaDesc(e.target.value);
+                      scheduleAutoSave(editorContent, editorTitle, e.target.value, editorMetaDesc);
+                    }}
+                    maxLength={170}
+                    className="w-full text-[12px] px-2.5 py-1.5 rounded-md outline-none"
+                    style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg)" }}
+                    placeholder="Meta description engageante…"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => editorArticleId && handleExport(editorArticleId, "markdown")}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-all hover:brightness-95"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export MD
+                </button>
+                <button
+                  onClick={() => editorArticleId && void handlePublishWordPress(editorArticleId)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12.5px] font-semibold transition-all hover:brightness-110"
+                  style={{ background: V.fg, color: "white" }}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Publier WordPress
+                </button>
+                <button
+                  onClick={() => editorArticleId && void performSave(editorArticleId, editorContent, editorTitle, editorMetaTitle, editorMetaDesc)}
+                  disabled={editorSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12.5px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
+                  style={{ background: E.fg, color: "white" }}
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Sauvegarder
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Preview Dialog */}
