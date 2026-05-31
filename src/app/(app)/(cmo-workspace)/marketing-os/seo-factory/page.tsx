@@ -189,6 +189,12 @@ export default function SEOFactoryPage() {
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorSaveStatus, setEditorSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [optimizingMeta, setOptimizingMeta] = useState(false);
+  const [rewritingSection, setRewritingSection] = useState(false);
+  const [selectedText, setSelectedText] = useState("");
+  const [selectionStart, setSelectionStart] = useState(0);
+  const [selectionEnd, setSelectionEnd] = useState(0);
+  const editorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // ── Generation bulk
   const [keywords, setKeywords] = useState("");
@@ -725,6 +731,54 @@ export default function SEOFactoryPage() {
     setEditorOpen(false);
     setEditorArticleId(null);
     setEditorSaveStatus("idle");
+    setSelectedText("");
+  };
+
+  const handleOptimizeMeta = async () => {
+    if (!editorContent || !editorKeyword || optimizingMeta) return;
+    setOptimizingMeta(true);
+    try {
+      const res = await fetch("/api/seo/meta-optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: editorContent, keyword: editorKeyword, title: editorTitle }),
+      });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as { metaTitle: string; metaDescription: string };
+      setEditorMetaTitle(data.metaTitle);
+      setEditorMetaDesc(data.metaDescription);
+      scheduleAutoSave(editorContent, editorTitle, data.metaTitle, data.metaDescription);
+      toast.success("Metas optimisées ✓");
+    } catch {
+      toast.error("Erreur lors de l'optimisation des metas");
+    } finally {
+      setOptimizingMeta(false);
+    }
+  };
+
+  const handleRewriteSelection = async () => {
+    if (!selectedText || !editorKeyword || rewritingSection) return;
+    setRewritingSection(true);
+    try {
+      const res = await fetch("/api/seo/rewrite-section", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: selectedText, keyword: editorKeyword }),
+      });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as { rewritten: string };
+      const before = editorContent.slice(0, selectionStart);
+      const after = editorContent.slice(selectionEnd);
+      const newContent = before + data.rewritten + after;
+      setEditorContent(newContent);
+      setSelectedText("");
+      scheduleAutoSave(newContent, editorTitle, editorMetaTitle, editorMetaDesc);
+      toast.success("Section améliorée ✓");
+    } catch {
+      toast.error("Erreur lors de la réécriture");
+    } finally {
+      setRewritingSection(false);
+    }
   };
 
   const handleDelete = async (articleId: string) => {
@@ -2269,16 +2323,47 @@ export default function SEOFactoryPage() {
               {/* Markdown textarea */}
               <div className="flex-1 flex flex-col overflow-hidden" style={{ borderRight: "1px solid var(--line)" }}>
                 <div
-                  className="px-4 py-2 text-[10px] font-mono uppercase tracking-wider shrink-0"
-                  style={{ color: "var(--fg-mute)", borderBottom: "1px solid var(--line)", background: "var(--bg)" }}
+                  className="px-4 py-2 flex items-center justify-between shrink-0"
+                  style={{ borderBottom: "1px solid var(--line)", background: "var(--bg)" }}
                 >
-                  Contenu Markdown — auto-sauvegarde 1.5s
+                  <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>
+                    Contenu Markdown — auto-sauvegarde 1.5s
+                  </span>
+                  {selectedText.length > 20 && (
+                    <button
+                      onClick={handleRewriteSelection}
+                      disabled={rewritingSection}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[11.5px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
+                      style={{ background: V.fg, color: "white" }}
+                    >
+                      {rewritingSection ? (
+                        <><RefreshCw className="h-3 w-3 animate-spin" />Réécriture…</>
+                      ) : (
+                        <><Sparkles className="h-3 w-3" />Améliorer la sélection ({selectedText.length} car.)</>
+                      )}
+                    </button>
+                  )}
                 </div>
                 <textarea
+                  ref={editorTextareaRef}
                   value={editorContent}
                   onChange={(e) => {
                     setEditorContent(e.target.value);
                     scheduleAutoSave(e.target.value, editorTitle, editorMetaTitle, editorMetaDesc);
+                  }}
+                  onSelect={(e) => {
+                    const ta = e.currentTarget;
+                    const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
+                    setSelectedText(sel);
+                    setSelectionStart(ta.selectionStart);
+                    setSelectionEnd(ta.selectionEnd);
+                  }}
+                  onMouseUp={(e) => {
+                    const ta = e.currentTarget;
+                    const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
+                    setSelectedText(sel);
+                    setSelectionStart(ta.selectionStart);
+                    setSelectionEnd(ta.selectionEnd);
                   }}
                   className="flex-1 resize-none outline-none px-8 py-6 text-[13.5px] leading-[1.85] font-mono"
                   style={{
@@ -2449,11 +2534,35 @@ export default function SEOFactoryPage() {
               className="shrink-0 px-6 py-3 flex items-center gap-4"
               style={{ borderTop: "1px solid var(--line)", background: "var(--bg)" }}
             >
-              <div className="flex-1 grid grid-cols-2 gap-3">
+              <div className="flex-1 space-y-2">
+                {/* Meta title */}
                 <div>
-                  <p className="text-[9.5px] font-mono uppercase tracking-wider mb-1" style={{ color: "var(--fg-mute)" }}>
-                    Meta title ({editorMetaTitle.length}/60)
-                  </p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[9.5px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-mute)" }}>
+                      Meta title
+                      <span
+                        className="ml-1.5 px-1 py-0.5 rounded text-[9px]"
+                        style={{
+                          background: editorMetaTitle.length >= 50 && editorMetaTitle.length <= 60 ? E.soft : A.soft,
+                          color: editorMetaTitle.length >= 50 && editorMetaTitle.length <= 60 ? E.fg : A.fg,
+                        }}
+                      >
+                        {editorMetaTitle.length}/60
+                      </span>
+                    </p>
+                    <button
+                      onClick={handleOptimizeMeta}
+                      disabled={optimizingMeta || !editorContent}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded transition-all hover:brightness-110 disabled:opacity-40"
+                      style={{ background: V.soft, color: V.fg, border: `1px solid ${V.line}` }}
+                    >
+                      {optimizingMeta ? (
+                        <><RefreshCw className="h-2.5 w-2.5 animate-spin" />Génération…</>
+                      ) : (
+                        <><Sparkles className="h-2.5 w-2.5" />✨ Optimiser avec IA</>
+                      )}
+                    </button>
+                  </div>
                   <input
                     value={editorMetaTitle}
                     onChange={(e) => {
@@ -2462,13 +2571,27 @@ export default function SEOFactoryPage() {
                     }}
                     maxLength={70}
                     className="w-full text-[12px] px-2.5 py-1.5 rounded-md outline-none"
-                    style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg)" }}
-                    placeholder="Meta title optimisé…"
+                    style={{
+                      background: "var(--bg-card)",
+                      border: `1px solid ${editorMetaTitle.length >= 50 && editorMetaTitle.length <= 60 ? E.line : "var(--line)"}`,
+                      color: "var(--fg)",
+                    }}
+                    placeholder="Meta title optimisé SEO…"
                   />
                 </div>
+                {/* Meta description */}
                 <div>
                   <p className="text-[9.5px] font-mono uppercase tracking-wider mb-1" style={{ color: "var(--fg-mute)" }}>
-                    Meta description ({editorMetaDesc.length}/155)
+                    Meta description
+                    <span
+                      className="ml-1.5 px-1 py-0.5 rounded text-[9px]"
+                      style={{
+                        background: editorMetaDesc.length >= 140 && editorMetaDesc.length <= 155 ? E.soft : A.soft,
+                        color: editorMetaDesc.length >= 140 && editorMetaDesc.length <= 155 ? E.fg : A.fg,
+                      }}
+                    >
+                      {editorMetaDesc.length}/155
+                    </span>
                   </p>
                   <input
                     value={editorMetaDesc}
@@ -2478,8 +2601,12 @@ export default function SEOFactoryPage() {
                     }}
                     maxLength={170}
                     className="w-full text-[12px] px-2.5 py-1.5 rounded-md outline-none"
-                    style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg)" }}
-                    placeholder="Meta description engageante…"
+                    style={{
+                      background: "var(--bg-card)",
+                      border: `1px solid ${editorMetaDesc.length >= 140 && editorMetaDesc.length <= 155 ? E.line : "var(--line)"}`,
+                      color: "var(--fg)",
+                    }}
+                    placeholder="Meta description engageante avec CTA…"
                   />
                 </div>
               </div>
