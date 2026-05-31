@@ -25,9 +25,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 const ALARM_NAME = "skalle-automation";
 const ALARM_CHECK_CONNECTIONS = "skalle-check-connections";
 const ALARM_CHECK_REPLIES = "skalle-check-replies";
+const ALARM_WARM_IMPORT = "skalle-warm-import";
 const POLL_INTERVAL_MINUTES = 30;
 const CHECK_CONNECTIONS_INTERVAL_MINUTES = 60 * 24; // toutes les 24h
 const CHECK_REPLIES_INTERVAL_MINUTES = 60 * 12;     // toutes les 12h
+const WARM_IMPORT_INTERVAL_MINUTES = 60 * 6;        // toutes les 6h
 
 // ── Config (modifiable via popup) ─────────────────────────────────────────────
 
@@ -132,6 +134,101 @@ async function getDailyWindow(configStart, configEnd) {
       });
     });
   });
+}
+
+// ─── 2b. Challenge & Rate-limit — pause étendus ──────────────────────────────
+
+const CHALLENGE_PAUSE_MS  = 24 * 60 * 60_000; // 24h — nécessite action humaine
+const RATE_LIMIT_PAUSE_MS =  4 * 60 * 60_000; // 4h  — pause automatique
+
+/**
+ * Enregistre un état challenge LinkedIn.
+ * - Désactive l'automation
+ * - Bloque tout jusqu'à résolution manuelle OU 24h (auto-clear)
+ * - Envoie une notification Chrome
+ */
+async function setChallengeState() {
+  await chrome.storage.local.set({
+    linkedInChallenge: true,
+    challengeAt: Date.now(),
+    automationStatus: "challenge_detected",
+  });
+  await chrome.storage.sync.set({ automationEnabled: false });
+
+  chrome.notifications?.create("skalle-challenge", {
+    type: "basic",
+    iconUrl: "icons/icon48.png",
+    title: "⚠️ SKALLE — LinkedIn demande une vérification",
+    message: "Ouvrez LinkedIn et résolvez le CAPTCHA manuellement. Cliquez ici pour ouvrir le popup SKALLE.",
+    priority: 2,
+  });
+}
+
+/**
+ * Vérifie si un challenge est actif (et auto-clear après 24h).
+ */
+async function isChallengePending() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["linkedInChallenge", "challengeAt"], (r) => {
+      if (!r.linkedInChallenge) return resolve(false);
+      // Auto-clear après 24h pour éviter un blocage permanent
+      if (r.challengeAt && Date.now() - r.challengeAt > CHALLENGE_PAUSE_MS) {
+        chrome.storage.local.remove(["linkedInChallenge", "challengeAt"]);
+        return resolve(false);
+      }
+      resolve(true);
+    });
+  });
+}
+
+/**
+ * Enregistre un rate-limit (429) LinkedIn.
+ * - Pause 4h (non bloquante — reprend automatiquement)
+ * - Notification Chrome
+ */
+async function setRateLimitState() {
+  const resumeAt = Date.now() + RATE_LIMIT_PAUSE_MS;
+  await chrome.storage.local.set({
+    rateLimitAt: Date.now(),
+    rateLimitResumeAt: resumeAt,
+    automationStatus: "rate_limited",
+  });
+
+  chrome.notifications?.create("skalle-ratelimit", {
+    type: "basic",
+    iconUrl: "icons/icon48.png",
+    title: "⏸ SKALLE — Rate limit LinkedIn",
+    message: "LinkedIn a limité les requêtes. L'automation reprend automatiquement dans 4h.",
+    priority: 1,
+  });
+}
+
+/**
+ * Vérifie si un rate-limit 4h est encore actif.
+ */
+async function isRateLimited() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["rateLimitResumeAt"], (r) => {
+      resolve(!!(r.rateLimitResumeAt && Date.now() < r.rateLimitResumeAt));
+    });
+  });
+}
+
+/**
+ * Traite un abortCode retourné par le content script.
+ * Retourne true si l'automation doit s'arrêter immédiatement.
+ */
+async function handleAbortCode(abortCode) {
+  if (!abortCode) return false;
+  if (abortCode === "CHALLENGE" || abortCode === "RESTRICTED") {
+    await setChallengeState();
+    return true;
+  }
+  if (abortCode === "RATE_LIMITED") {
+    await setRateLimitState();
+    return true;
+  }
+  return false;
 }
 
 // ─── 3. Cooldown post-action ──────────────────────────────────────────────────
@@ -340,6 +437,18 @@ async function runAutomation() {
     return;
   }
 
+  // Bloquer si challenge LinkedIn en attente (nécessite action humaine)
+  if (await isChallengePending()) {
+    await setStatus("challenge_detected");
+    return;
+  }
+
+  // Bloquer si rate-limit actif (pause 4h automatique)
+  if (await isRateLimited()) {
+    await setStatus("rate_limited");
+    return;
+  }
+
   if (!isWorkingDay()) {
     await setStatus("day_off");
     return;
@@ -382,6 +491,11 @@ async function runAutomation() {
   // ── 1 action par cycle (l'alarme 30 min gère la suivante) ─────────────────
   const decision = decisions[0];
   const result = await sendToContentScript(tab.id, { type: "SKALLE_EXECUTE", decision });
+
+  // Vérifier si le content script a détecté un challenge ou rate-limit
+  if (result?.abortCode && await handleAbortCode(result.abortCode)) {
+    return; // Stopper immédiatement
+  }
 
   await reportExecuted(config.skalleToken, decision.id, result);
   await incrementCount();
@@ -548,6 +662,8 @@ async function runAutonomousSearch() {
   const config = await getConfig();
   if (!config.skalleToken || !config.autonomousEnabled) return;
   if (!isWorkingDay()) return;
+  if (await isChallengePending()) return;
+  if (await isRateLimited()) return;
 
   const window = await getDailyWindow(config.businessHoursStart, config.businessHoursEnd);
   if (!isBusinessHours(window.start, window.end)) return;
@@ -589,6 +705,8 @@ async function runAutonomousSearch() {
     maxProfiles: maxThisCycle,
   }, 30_000);
 
+  if (profiles?.abortCode && await handleAbortCode(profiles.abortCode)) return;
+
   if (!profiles?.list?.length) {
     await setStatus(`idle:${count}/${effectiveLimit}`);
     return;
@@ -619,6 +737,9 @@ async function runAutonomousSearch() {
       workspaceId: searchData.workspaceId,
     }, 60_000);
 
+    // Vérifier abort code après chaque action autonome
+    if (result?.abortCode && await handleAbortCode(result.abortCode)) break;
+
     if (result?.ok) {
       await incrementCount();
       await incrementWeekCount();
@@ -646,6 +767,52 @@ async function runAutonomousSearch() {
 
   const finalCount = await getTodayCount();
   await setStatus(`autonomous_done:${finalCount}/${effectiveLimit}`);
+}
+
+// ── Warm leads import — viewers + followers (toutes les 6h) ──────────────────
+
+async function importWarmLeads() {
+  const config = await getConfig();
+  if (!config.skalleToken) return;
+  if (!isWorkingDay()) return;
+
+  const tab = await findLinkedInTab();
+  if (!tab) return;
+
+  console.log("[SKALLE] Import warm leads : viewers + followers…");
+
+  // 1. Scrappe les viewers
+  const viewersResult = await sendToContentScript(tab.id, {
+    type: "SKALLE_SCRAPE_VIEWERS",
+    maxCount: 20,
+  }, 30_000);
+
+  if (viewersResult?.leads?.length) {
+    await sendToContentScript(tab.id, {
+      type: "SKALLE_SEND_WARM_LEADS",
+      leadType: "PROFILE_VIEW",
+      leads: viewersResult.leads,
+    }, 15_000);
+    console.log(`[SKALLE] Viewers importés : ${viewersResult.leads.length}`);
+  }
+
+  // Pause entre les deux scrapes
+  await sleep(2_000 + Math.random() * 2_000);
+
+  // 2. Scrappe les followers
+  const followersResult = await sendToContentScript(tab.id, {
+    type: "SKALLE_SCRAPE_FOLLOWERS",
+    maxCount: 50,
+  }, 45_000);
+
+  if (followersResult?.leads?.length) {
+    await sendToContentScript(tab.id, {
+      type: "SKALLE_SEND_WARM_LEADS",
+      leadType: "FOLLOW",
+      leads: followersResult.leads,
+    }, 15_000);
+    console.log(`[SKALLE] Followers importés : ${followersResult.leads.length}`);
+  }
 }
 
 // ── Traitement des branches conditionnelles (24h) ─────────────────────────────
@@ -754,6 +921,12 @@ chrome.alarms.create(ALARM_CHECK_REPLIES, {
   periodInMinutes: CHECK_REPLIES_INTERVAL_MINUTES,
 });
 
+// Import warm leads (viewers + followers) toutes les 6h
+chrome.alarms.create(ALARM_WARM_IMPORT, {
+  delayInMinutes: 15,
+  periodInMinutes: WARM_IMPORT_INTERVAL_MINUTES,
+});
+
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAME) {
     await runAutonomousSearch();
@@ -767,6 +940,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_CHECK_REPLIES) {
     await checkReplies();
   }
+  if (alarm.name === ALARM_WARM_IMPORT) {
+    await importWarmLeads();
+  }
 });
 
 // Manual trigger from popup
@@ -777,11 +953,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }));
     return true;
   }
+  if (msg.type === "SKALLE_IMPORT_WARM_NOW") {
+    importWarmLeads()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
   if (msg.type === "SKALLE_GET_STATUS") {
     chrome.storage.local.get(
-      ["automationStatus", "actionDate", "actionCount", "statusAt"],
+      [
+        "automationStatus", "actionDate", "actionCount", "statusAt",
+        "linkedInChallenge", "challengeAt",
+        "rateLimitAt", "rateLimitResumeAt",
+      ],
       (r) => sendResponse(r)
     );
+    return true;
+  }
+
+  // Résolution manuelle du challenge par l'utilisateur
+  if (msg.type === "SKALLE_CHALLENGE_RESOLVED") {
+    chrome.storage.local.remove(["linkedInChallenge", "challengeAt"], async () => {
+      await chrome.storage.sync.set({ automationEnabled: true });
+      await setStatus("idle");
+      sendResponse({ ok: true });
+    });
     return true;
   }
 });

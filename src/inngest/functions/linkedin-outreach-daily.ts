@@ -33,13 +33,23 @@ type SessionStats = { sent: number; failed: number; aborted: boolean; abortCode?
 async function runSessionAndUpdateSteps(
   batch: Array<LinkedInAction & { stepId: string }>,
   liAt: string,
-  jsessionId?: string | null
-): Promise<SessionStats> {
-  const { results, aborted, abortCode } = await processBatch(
+  configId: string,
+  // Toujours null → force re-fetch JSESSIONID frais depuis LinkedIn à chaque batch
+  _jsessionId?: string | null
+): Promise<SessionStats & { freshJsessionId?: string }> {
+  const { results, aborted, abortCode, freshJsessionId } = await processBatch(
     batch.map(({ stepId: _id, ...action }) => action),
     liAt,
-    jsessionId
+    null  // Force fresh JSESSIONID — ne jamais recycler celui stocké en DB
   );
+
+  // Persister le JSESSIONID frais pour les appels individuels (sendConnectionRequest, etc.)
+  if (freshJsessionId) {
+    await prisma.linkedInAutomationConfig.update({
+      where: { id: configId },
+      data: { jsessionId: freshJsessionId },
+    }).catch(() => { /* non bloquant */ });
+  }
 
   let sent = 0;
   let failed = 0;
@@ -56,7 +66,7 @@ async function runSessionAndUpdateSteps(
     // abortCode présent → step reste PENDING
   }
 
-  return { sent, failed, aborted, abortCode };
+  return { sent, failed, aborted, abortCode, freshJsessionId };
 }
 
 // ─── Cron daily ───────────────────────────────────────────────────────────────
@@ -167,7 +177,7 @@ export const linkedInOutreachDaily = inngest.createFunction(
       const batch2 = prepared.batch.slice(splitAt);
 
       const stats1 = await step.run(`session1-${cfg.workspaceId}`, async () => {
-        return runSessionAndUpdateSteps(batch1, cfg.liAt, cfg.jsessionId);
+        return runSessionAndUpdateSteps(batch1, cfg.liAt, cfg.id);
       });
 
       let totalSent   = stats1.sent;
@@ -179,7 +189,7 @@ export const linkedInOutreachDaily = inngest.createFunction(
         await step.sleep(`gap-${cfg.workspaceId}`, "2h");
 
         const stats2 = await step.run(`session2-${cfg.workspaceId}`, async () => {
-          return runSessionAndUpdateSteps(batch2, cfg.liAt, cfg.jsessionId);
+          return runSessionAndUpdateSteps(batch2, cfg.liAt, cfg.id);
         });
 
         totalSent   += stats2.sent;
@@ -235,7 +245,7 @@ export const linkedInOutreachManual = inngest.createFunction(
     return step.run("process", async () => {
       const cfg = await prisma.linkedInAutomationConfig.findUnique({
         where: { workspaceId },
-        select: { isActive: true, liAt: true, jsessionId: true, warmupDay: true, warmupStartedAt: true, dailyConnectLimit: true, dailyMessageLimit: true },
+        select: { id: true, isActive: true, liAt: true, jsessionId: true, warmupDay: true, warmupStartedAt: true, dailyConnectLimit: true, dailyMessageLimit: true },
       });
       if (!cfg?.isActive || !cfg.liAt) return { error: "Automation non configurée" };
 
@@ -279,7 +289,7 @@ export const linkedInOutreachManual = inngest.createFunction(
         ...messageSteps.map((s) => ({ stepId: s.id, profileUrl: s.sequence.prospect.linkedInUrl, message: s.content, type: "message" as const })),
       ];
 
-      const { sent, failed, aborted, abortCode } = await runSessionAndUpdateSteps(batch, cfg.liAt, cfg.jsessionId);
+      const { sent, failed, aborted, abortCode } = await runSessionAndUpdateSteps(batch, cfg.liAt, cfg.id);
 
       const abortReason = aborted && abortCode ? (ABORT_LABELS[abortCode] ?? abortCode) : undefined;
 

@@ -70,6 +70,8 @@ const STATUS_LABELS = {
   running:                     { text: "En cours…",             cls: "pill-blue"  },
   done:                        { text: "Terminé",               cls: "pill-green" },
   idle:                        { text: "En attente",            cls: "pill-gray"  },
+  challenge_detected:          { text: "🚨 CAPTCHA LinkedIn",   cls: "pill-red"   },
+  rate_limited:                { text: "⏸ Rate limit 4h",      cls: "pill-amber" },
 };
 
 function parseStatus(raw) {
@@ -86,6 +88,25 @@ function parseStatus(raw) {
 async function refreshStatus() {
   const data = await chrome.runtime.sendMessage({ type: "SKALLE_GET_STATUS" });
   const { key, count, limit } = parseStatus(data?.automationStatus);
+
+  // Challenge alert
+  const challengeAlert = document.getElementById("challengeAlert");
+  if (challengeAlert) {
+    challengeAlert.style.display = data?.linkedInChallenge ? "block" : "none";
+  }
+
+  // Rate-limit alert
+  const rateLimitAlert = document.getElementById("rateLimitAlert");
+  const rateLimitMeta = document.getElementById("rateLimitMeta");
+  if (rateLimitAlert) {
+    const resumeAt = data?.rateLimitResumeAt ?? 0;
+    const active = resumeAt && Date.now() < resumeAt;
+    rateLimitAlert.style.display = active ? "block" : "none";
+    if (active && rateLimitMeta) {
+      const minLeft = Math.ceil((resumeAt - Date.now()) / 60_000);
+      rateLimitMeta.textContent = `Reprise automatique dans ${minLeft < 60 ? `${minLeft} min` : `${Math.ceil(minLeft / 60)}h`}.`;
+    }
+  }
 
   const info = STATUS_LABELS[key] ?? { text: key, cls: "pill-gray" };
   const pill = document.getElementById("statusPill");
@@ -147,6 +168,18 @@ async function refreshStatus() {
 }
 
 document.getElementById("refresh").addEventListener("click", refreshStatus);
+
+// ── Résolution du challenge LinkedIn ──────────────────────────────────────────
+
+document.getElementById("challengeResolved").addEventListener("click", async () => {
+  const btn = document.getElementById("challengeResolved");
+  btn.disabled = true;
+  btn.textContent = "⏳ Réactivation…";
+  await chrome.runtime.sendMessage({ type: "SKALLE_CHALLENGE_RESOLVED" });
+  await refreshStatus();
+  btn.disabled = false;
+  btn.textContent = "✅ J'ai résolu le challenge — reprendre";
+});
 
 // ── Actions manuelles ─────────────────────────────────────────────────────────
 

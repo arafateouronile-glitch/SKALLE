@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import Link from "next/link";
-import { Search, Download, Loader2, CheckCircle, Copy, Check, UserPlus, Sparkles } from "lucide-react";
+import { Search, Download, Loader2, CheckCircle, Copy, Check, UserPlus, Sparkles, Eye, Heart, Users, Linkedin, ArrowRight, Zap, TrendingUp, ScanLine, ExternalLink } from "lucide-react";
 import { getUserWorkspace } from "@/actions/leads";
 import {
   scanJobSignalsAction,
@@ -17,9 +19,55 @@ import {
   bulkSaveApolloLeadsAction,
   type ApolloProspectLead,
 } from "@/actions/cso-sales";
+import {
+  trackLinkedInEngagementAction,
+  enrollInSequenceAction,
+  generateDMAction,
+  getLinkedInStatusAction,
+  getPublishedLinkedInPostsAction,
+  getLinkedInInteractionsBySourceAction,
+} from "@/actions/social-prospector";
 import type { AnalyzedSignal } from "@/lib/services/sales/intent-signals";
 import type { LocalLeadEvaluated } from "@/lib/services/sales/local-scraper";
 import type { NewbornLeadEnriched } from "@/lib/services/sales/newborn-leads";
+
+// ─── Warm lead sources ────────────────────────────────────────────────────────
+
+const WARM_SOURCES = [
+  {
+    id: "viewers",
+    icon: Eye,
+    emoji: "👁",
+    title: "Profile Viewers",
+    desc: "Ceux qui ont visité votre profil LinkedIn récemment",
+    stat: "38% taux de réponse",
+    pitch: "Ils vous connaissent déjà — relancez pendant qu'ils se souviennent de vous.",
+    dataPoints: 63,
+    color: "violet",
+  },
+  {
+    id: "engagers",
+    icon: Heart,
+    emoji: "💬",
+    title: "Post Engagers",
+    desc: "Likes, commentaires et partages sur vos posts",
+    stat: "45% taux de réponse",
+    pitch: "Déjà engagés avec votre contenu — la conversion la plus facile.",
+    dataPoints: 71,
+    color: "amber",
+  },
+  {
+    id: "followers",
+    icon: Users,
+    emoji: "➕",
+    title: "Followers",
+    desc: "Nouveaux abonnés à votre profil ou page",
+    stat: "15–30% taux de réponse",
+    pitch: "Ils ont décidé de vous suivre — ils attendent juste que vous parliez.",
+    dataPoints: 58,
+    color: "emerald",
+  },
+] as const;
 
 // ─── Modes ────────────────────────────────────────────────────────────────────
 
@@ -115,9 +163,79 @@ function tempStyle(score: number) {
   return { background: "var(--bg-2)", color: "var(--fg-mute)", label: "COLD" };
 }
 
+// ─── Types warm scan ──────────────────────────────────────────────────────────
+
+interface WarmInteraction {
+  id: string;
+  prospectName: string;
+  prospectHandle: string;
+  profileUrl: string | null;
+  type: string;
+  interactionText: string | null;
+  status: string;
+  suggestedDMs: unknown;
+}
+
+interface LinkedInPost {
+  id: string;
+  cmsPostId: string | null;
+  publishedAt: Date | null;
+  content: string;
+}
+
+type EnrollState = "idle" | "generating" | "enrolling" | "done" | "skipped" | "error";
+
+// ─── Warmth scoring ───────────────────────────────────────────────────────────
+
+interface WarmthLevel {
+  score: number;
+  label: string;
+  emoji: string;
+  bg: string;
+  fg: string;
+}
+
+function computeWarmth(interaction: WarmInteraction): WarmthLevel {
+  let score = 50;
+
+  if (interaction.type === "COMMENT") {
+    score = interaction.interactionText ? 90 : 72;
+  } else if (interaction.type === "PROFILE_VIEW") {
+    score = 68;
+  } else if (interaction.type === "FOLLOW") {
+    score = 63;
+  } else if (interaction.type === "LIKE") {
+    score = 55;
+  }
+
+  if (score >= 85) return { score, label: "🔥 Hot",    emoji: "🔥", bg: "var(--danger-soft)",  fg: "var(--danger-fg)"  };
+  if (score >= 70) return { score, label: "🟠 Warm",   emoji: "🟠", bg: "var(--amber-soft)",   fg: "var(--amber-fg)"   };
+  return              { score, label: "🟡 Tiède",  emoji: "🟡", bg: "var(--bg-2)",          fg: "var(--fg-mute)"    };
+}
+
+function extractLinkedInUrn(url: string): string | null {
+  const m = url.match(/urn:li:(ugcPost|share|activity):\d+/);
+  if (m) return m[0];
+  try {
+    const decoded = decodeURIComponent(url);
+    const m2 = decoded.match(/urn:li:(ugcPost|share|activity):\d+/);
+    if (m2) return m2[0];
+  } catch { /* ignore */ }
+  return null;
+}
+
+function fmtPostLabel(post: LinkedInPost): string {
+  const date = post.publishedAt
+    ? new Date(post.publishedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+    : "—";
+  const snippet = post.content.replace(/\n/g, " ").slice(0, 55);
+  return `${date} · ${snippet}${post.content.length > 55 ? "…" : ""}`;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function HuntPage() {
+  const searchParams = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedMode, setSelectedMode] = useState<HuntMode>("jobs");
   const [query, setQuery] = useState("");
@@ -131,9 +249,40 @@ export default function HuntPage() {
   const [leadStates, setLeadStates] = useState<Record<string, "idle" | "loading" | "done">>({});
   const [leadProspectIds, setLeadProspectIds] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // ── LinkedIn warm state ──────────────────────────────────────────────────
+  const [linkedInConnected, setLinkedInConnected] = useState(false);
+  const [linkedInName, setLinkedInName] = useState<string | null>(null);
+  const [linkedInPosts, setLinkedInPosts] = useState<LinkedInPost[]>([]);
+  const [selectedPostId, setSelectedPostId] = useState<string>("");
+  const [manualUrl, setManualUrl] = useState("");
+  const [warmScanning, setWarmScanning] = useState(false);
+  const [warmResults, setWarmResults] = useState<WarmInteraction[]>([]);
+  const [warmError, setWarmError] = useState<string | null>(null);
+  const [currentSourceUrl, setCurrentSourceUrl] = useState("");
+  const [enrollStates, setEnrollStates] = useState<Record<string, EnrollState>>({});
+
+  // Toast LinkedIn OAuth
+  useEffect(() => {
+    const liParam = searchParams.get("linkedin");
+    if (liParam === "connected") {
+      toast.success("LinkedIn connecté ! Les warm leads se synchronisent automatiquement.");
+    } else if (liParam === "error") {
+      toast.error("Échec de la connexion LinkedIn. Réessayez depuis les paramètres.");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
-    getUserWorkspace().then((r) => { if (r.workspaceId) setWorkspaceId(r.workspaceId); });
+    getUserWorkspace().then(async (r) => {
+      if (!r.workspaceId) return;
+      setWorkspaceId(r.workspaceId);
+      const [status, posts] = await Promise.all([
+        getLinkedInStatusAction(r.workspaceId),
+        getPublishedLinkedInPostsAction(r.workspaceId),
+      ]);
+      setLinkedInConnected(status.connected);
+      if (status.connected && "name" in status) setLinkedInName(status.name ?? null);
+      if (posts.success) setLinkedInPosts(posts.posts as LinkedInPost[]);
+    });
   }, []);
 
   const mode = HUNT_MODES.find((m) => m.id === selectedMode)!;
@@ -231,6 +380,66 @@ export default function HuntPage() {
     }
   }
 
+  async function handleWarmScan() {
+    if (!workspaceId) return;
+    let shareUrn: string | null = null;
+    let sourceUrl = "";
+
+    if (selectedPostId) {
+      const post = linkedInPosts.find((p) => p.id === selectedPostId);
+      if (post?.cmsPostId) {
+        shareUrn = post.cmsPostId;
+        sourceUrl = `https://www.linkedin.com/feed/update/${post.cmsPostId}/`;
+      }
+    } else if (manualUrl.trim()) {
+      shareUrn = extractLinkedInUrn(manualUrl.trim());
+      sourceUrl = manualUrl.trim();
+    }
+
+    if (!shareUrn) { setWarmError("Sélectionnez un post ou collez une URL LinkedIn valide"); return; }
+
+    setWarmScanning(true);
+    setWarmError(null);
+    setWarmResults([]);
+    setEnrollStates({});
+    setCurrentSourceUrl(sourceUrl);
+
+    try {
+      await trackLinkedInEngagementAction(workspaceId, shareUrn, sourceUrl);
+      const r = await getLinkedInInteractionsBySourceAction(workspaceId, sourceUrl);
+      if (r.success) setWarmResults(r.interactions as WarmInteraction[]);
+      else setWarmError("Erreur lors de la récupération des interactions");
+    } finally {
+      setWarmScanning(false);
+    }
+  }
+
+  async function handleEnroll(interaction: WarmInteraction) {
+    if (!workspaceId || enrollStates[interaction.id] === "done") return;
+    setEnrollStates((prev) => ({ ...prev, [interaction.id]: "generating" }));
+    try {
+      if (!interaction.suggestedDMs) {
+        await generateDMAction(workspaceId, interaction.id);
+      }
+      setEnrollStates((prev) => ({ ...prev, [interaction.id]: "enrolling" }));
+      const r = await enrollInSequenceAction(workspaceId, interaction.id);
+      setEnrollStates((prev) => ({
+        ...prev,
+        [interaction.id]: !r.success ? "error" : r.skipped ? "skipped" : "done",
+      }));
+    } catch {
+      setEnrollStates((prev) => ({ ...prev, [interaction.id]: "error" }));
+    }
+  }
+
+  async function handleEnrollAll() {
+    const pending = warmResults.filter((i) => {
+      const s = enrollStates[i.id];
+      return !s || s === "idle" || s === "error";
+    });
+    for (const i of pending) await handleEnroll(i);
+  }
+
   function handleCopyHook(lead: HuntResult) {
     navigator.clipboard.writeText(lead.hook).catch(() => null);
     setCopiedKey(lead.key);
@@ -243,13 +452,270 @@ export default function HuntPage() {
 
       <div className="p-6 space-y-6 max-w-[1200px]">
 
-        {/* Mode picker + input */}
+        {/* ─── Warm Leads ────────────────────────────────────────── */}
+        <section className="rounded-[18px] p-8"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}>
+
+          {/* Header */}
+          <div className="flex items-start justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] mb-2"
+                style={{ color: "var(--fg-mute)" }}>
+                <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--emerald-fg)" }} />
+                Leads chauds · LinkedIn
+              </div>
+              <h2 className="font-display text-[22px] font-semibold leading-tight" style={{ color: "var(--fg)" }}>
+                Ils vous connaissent déjà.
+              </h2>
+              <p className="text-[13px] mt-1" style={{ color: "var(--fg-mute)" }}>
+                Researched across 60+ data points — messages qu&apos;ils lisent vraiment.{" "}
+                <span className="font-semibold" style={{ color: "var(--emerald-fg)" }}>15–45% de réponse.</span>
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[11px] font-semibold shrink-0"
+              style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)", color: "var(--violet-fg)" }}>
+              <Linkedin className="h-3 w-3" />
+              One platform
+            </div>
+          </div>
+
+          {/* Source cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            {WARM_SOURCES.map((src) => {
+              const Icon = src.icon;
+              return (
+                <div key={src.id}
+                  className="relative rounded-[14px] p-5 transition-all"
+                  style={{
+                    background: "var(--bg)",
+                    border: linkedInConnected ? `1px solid var(--${src.color}-line)` : "1px solid var(--line)",
+                  }}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="h-9 w-9 rounded-[10px] flex items-center justify-center shrink-0"
+                      style={{ background: `var(--${src.color}-soft)`, border: `1px solid var(--${src.color}-line)` }}>
+                      <Icon className="h-4 w-4" style={{ color: `var(--${src.color}-fg)` }} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-[6px] font-mono"
+                      style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" }}>
+                      {src.stat}
+                    </span>
+                  </div>
+                  <p className="text-[14px] font-semibold mb-1" style={{ color: "var(--fg)" }}>{src.title}</p>
+                  <p className="text-[12px] leading-snug mb-3" style={{ color: "var(--fg-mute)" }}>{src.desc}</p>
+                  <p className="text-[11.5px] italic mb-4 leading-snug" style={{ color: "var(--fg-dim)" }}>
+                    &ldquo;{src.pitch}&rdquo;
+                  </p>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="flex items-center gap-1.5 text-[10.5px] font-medium" style={{ color: "var(--fg-mute)" }}>
+                      <TrendingUp className="h-3 w-3" style={{ color: `var(--${src.color}-fg)` }} />
+                      {src.dataPoints} data points
+                    </div>
+                    <div className="flex items-center gap-1 text-[10.5px]" style={{ color: "var(--fg-mute)" }}>
+                      <Zap className="h-3 w-3" style={{ color: "var(--amber-fg)" }} />
+                      IA personnalisée
+                    </div>
+                  </div>
+                  {linkedInConnected ? (
+                    <div className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-[9px] text-[11px] font-semibold"
+                      style={{ background: `var(--${src.color}-soft)`, border: `1px solid var(--${src.color}-line)`, color: `var(--${src.color}-fg)` }}>
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      Actif · scan ci-dessous
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => workspaceId && (window.location.href = `/api/integrations/linkedin/connect?workspaceId=${workspaceId}&redirectTo=/sales-os/hunt`)}
+                      disabled={!workspaceId}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-[9px] text-[12px] font-semibold transition-all hover:brightness-110 disabled:opacity-40"
+                      style={{ background: `var(--${src.color}-fg)`, color: "white" }}>
+                      <Linkedin className="h-3.5 w-3.5" /> Connecter LinkedIn <ArrowRight className="h-3 w-3 ml-auto" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Scan panel (LinkedIn connecté uniquement) ─────────────── */}
+          {linkedInConnected && (
+            <div className="rounded-[14px] p-5"
+              style={{ background: "var(--bg)", border: "1px solid var(--violet-line)" }}>
+              <div className="flex items-center gap-2 mb-4">
+                <ScanLine className="h-4 w-4" style={{ color: "var(--violet-fg)" }} />
+                <p className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>
+                  Scanner les engageurs d&apos;un post
+                </p>
+                {linkedInName && (
+                  <span className="ml-auto text-[10.5px] px-2 py-0.5 rounded font-mono"
+                    style={{ background: "var(--violet-soft)", color: "var(--violet-fg)", border: "1px solid var(--violet-line)" }}>
+                    {linkedInName}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                {/* Post selector */}
+                {linkedInPosts.length > 0 && (
+                  <select
+                    value={selectedPostId}
+                    onChange={(e) => { setSelectedPostId(e.target.value); setManualUrl(""); }}
+                    className="flex-1 px-3 py-2.5 rounded-[9px] text-[12px] outline-none"
+                    style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg)" }}>
+                    <option value="">— Sélectionner un post publié —</option>
+                    {linkedInPosts.map((p) => (
+                      <option key={p.id} value={p.id}>{fmtPostLabel(p)}</option>
+                    ))}
+                  </select>
+                )}
+                {/* Manual URL */}
+                <input
+                  value={manualUrl}
+                  onChange={(e) => { setManualUrl(e.target.value); setSelectedPostId(""); }}
+                  placeholder="ou coller une URL LinkedIn…"
+                  className="flex-1 px-3 py-2.5 rounded-[9px] text-[12px] outline-none placeholder:opacity-40"
+                  style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg)" }}
+                />
+                <button
+                  onClick={handleWarmScan}
+                  disabled={warmScanning || (!selectedPostId && !manualUrl.trim())}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-[9px] text-[12px] font-semibold whitespace-nowrap transition-all hover:brightness-110 disabled:opacity-40"
+                  style={{ background: "var(--violet-fg)", color: "white" }}>
+                  {warmScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanLine className="h-3.5 w-3.5" />}
+                  {warmScanning ? "Scan…" : "Scanner →"}
+                </button>
+              </div>
+
+              {warmError && (
+                <p className="text-[12px] px-3 py-2 rounded-[8px] mb-3"
+                  style={{ background: "var(--danger-soft)", color: "var(--danger-fg)" }}>{warmError}</p>
+              )}
+
+              {/* Résultats */}
+              {warmResults.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[12px] font-semibold" style={{ color: "var(--fg)" }}>
+                      {warmResults.length} engageur{warmResults.length > 1 ? "s" : ""} détecté{warmResults.length > 1 ? "s" : ""}
+                    </p>
+                    <button
+                      onClick={handleEnrollAll}
+                      disabled={warmResults.every((i) => enrollStates[i.id] === "done")}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[11px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
+                      style={{ background: "var(--violet-fg)", color: "white" }}>
+                      <Sparkles className="h-3 w-3" />
+                      Tout enrôler
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {warmResults
+                      .slice()
+                      .sort((a, b) => computeWarmth(b).score - computeWarmth(a).score)
+                      .map((interaction) => {
+                      const es = enrollStates[interaction.id] ?? "idle";
+                      const initials = interaction.prospectName.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+                      const warmth = computeWarmth(interaction);
+                      const typeLabel = interaction.type === "COMMENT" ? "💬 Comment"
+                        : interaction.type === "PROFILE_VIEW" ? "👁 Viewer"
+                        : interaction.type === "FOLLOW" ? "➕ Follow"
+                        : "❤️ Like";
+                      return (
+                        <div key={interaction.id}
+                          className="flex items-center gap-3 px-3 py-3 rounded-[10px] transition-all"
+                          style={{
+                            background: es === "done" ? "var(--emerald-soft)" : "var(--bg-2)",
+                            border: es === "done" ? "1px solid var(--emerald-line)" : "1px solid var(--line)",
+                          }}>
+                          {/* Avatar */}
+                          <div className="h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                            style={{ background: warmth.bg, color: warmth.fg }}>
+                            {initials}
+                          </div>
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-[12.5px] font-semibold truncate" style={{ color: "var(--fg)" }}>
+                                {interaction.prospectName}
+                              </p>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                                style={{ background: warmth.bg, color: warmth.fg }}>
+                                {warmth.label}
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0"
+                                style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}>
+                                {typeLabel}
+                              </span>
+                            </div>
+                            {interaction.interactionText && (
+                              <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                                &ldquo;{interaction.interactionText}&rdquo;
+                              </p>
+                            )}
+                          </div>
+                          {/* Actions */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {interaction.profileUrl && (
+                              <a href={interaction.profileUrl} target="_blank" rel="noopener noreferrer"
+                                className="p-1.5 rounded-[6px] transition-all hover:brightness-95"
+                                style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}>
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                            <button
+                              onClick={() => handleEnroll(interaction)}
+                              disabled={es === "done" || es === "skipped" || es === "generating" || es === "enrolling"}
+                              title={es === "skipped" ? "Conversation LinkedIn existante — skip automatique" : undefined}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[11px] font-semibold transition-all hover:brightness-110 disabled:opacity-70"
+                              style={
+                                es === "done"    ? { background: "var(--emerald-soft)", border: "1px solid var(--emerald-line)", color: "var(--emerald-fg)" }
+                              : es === "skipped" ? { background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-mute)" }
+                              :                    { background: "var(--violet-fg)", color: "white" }
+                              }>
+                              {(es === "generating" || es === "enrolling") && <Loader2 className="h-3 w-3 animate-spin" />}
+                              {es === "done"    && <CheckCircle className="h-3 w-3" />}
+                              {es === "skipped" && <span className="text-[10px]">↩</span>}
+                              {es === "error"   && <span>✕</span>}
+                              {es === "idle"    && <Sparkles className="h-3 w-3" />}
+                              <span>
+                                {es === "generating" ? "DM IA…"
+                                : es === "enrolling" ? "Séquence…"
+                                : es === "done"      ? "Enrôlé"
+                                : es === "skipped"   ? "Déjà en conv."
+                                : es === "error"     ? "Erreur"
+                                :                      "Enrôler"}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {!warmScanning && warmResults.length === 0 && !warmError && (
+                <p className="text-center text-[12px] py-4" style={{ color: "var(--fg-mute)" }}>
+                  Sélectionnez un post et cliquez sur Scanner pour voir les engageurs.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Bottom info bar */}
+          <div className="flex items-center gap-6 px-5 py-3 rounded-[10px] mt-4"
+            style={{ background: "var(--bg-2)", border: "1px solid var(--line)" }}>
+            <div className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
+              <span className="font-bold" style={{ color: "var(--fg)" }}>Flow :</span>{" "}
+              Invitation vide → acceptée → DM IA personnalisé → relance J+5 si pas de réponse.
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Cold Hunting ──────────────────────────────────────── */}
         <section className="rounded-[18px] p-8"
           style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}>
           <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] mb-4"
             style={{ color: "var(--fg-mute)" }}>
             <Search className="h-3 w-3" style={{ color: "var(--amber-fg)" }} />
-            Où chercher ?
+            Prospecter à froid · Où chercher ?
           </div>
 
           <div className="grid grid-cols-3 lg:grid-cols-5 gap-3 mb-6">

@@ -64,10 +64,39 @@
     .warning strong { color: #92400e; font-size: 11px; display: block; margin-bottom: 4px; }
     .warning ul { margin: 0; padding-left: 16px; }
     .warning li { font-size: 10px; color: #78350f; line-height: 1.6; }
+
+    .alert-challenge {
+      background: #fef2f2; border: 1.5px solid #f87171; border-radius: 10px;
+      padding: 12px 13px; margin-bottom: 12px; display: none;
+    }
+    .alert-challenge strong { color: #991b1b; font-size: 12px; display: block; margin-bottom: 5px; }
+    .alert-challenge p { font-size: 11px; color: #7f1d1d; margin: 0 0 8px; line-height: 1.5; }
+    .btn-resolve { background: #dc2626; color: white; font-size: 12px; padding: 9px; border-radius: 7px; border: none; width: 100%; font-weight: 600; cursor: pointer; }
+    .btn-resolve:hover { background: #b91c1c; }
+
+    .alert-ratelimit {
+      background: #fff7ed; border: 1.5px solid #fb923c; border-radius: 10px;
+      padding: 10px 13px; margin-bottom: 12px; display: none;
+    }
+    .alert-ratelimit strong { color: #c2410c; font-size: 11px; display: block; margin-bottom: 3px; }
+    .alert-ratelimit p { font-size: 10px; color: #7c2d12; margin: 0; }
   </style>
 </head>
 <body>
   <h1>⚡ SKALLE LinkedIn Automation</h1>
+
+  <!-- Challenge alert (affiché si LinkedIn détecte un bot) -->
+  <div id="challengeAlert" class="alert-challenge">
+    <strong>🚨 LinkedIn demande une vérification humaine</strong>
+    <p>L'automation est <strong>suspendue</strong>. Ouvrez LinkedIn, connectez-vous et résolvez le CAPTCHA ou la vérification de sécurité. Revenez ici ensuite.</p>
+    <button id="challengeResolved" class="btn-resolve">✅ J'ai résolu le challenge — reprendre</button>
+  </div>
+
+  <!-- Rate-limit alert (pause 4h automatique) -->
+  <div id="rateLimitAlert" class="alert-ratelimit">
+    <strong>⏸ Rate limit LinkedIn — pause automatique 4h</strong>
+    <p id="rateLimitMeta">L'automation reprendra automatiquement.</p>
+  </div>
 
   <!-- Token -->
   <div class="section">

@@ -13,6 +13,8 @@ import {
   markAsContacted,
   markAsIgnored,
   deleteInteraction,
+  trackLinkedInPostEngagement,
+  enrollInteractionInSequence,
   type SocialPlatform,
   type RawInteraction,
 } from "@/lib/services/social/prospector";
@@ -20,6 +22,7 @@ import {
   checkAndConsumeDmQuota,
   getRemainingDailyDmQuota,
 } from "@/lib/services/social/instagram";
+import { getLinkedInStatus } from "@/lib/services/integrations/linkedin-api";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔒 AUTH HELPERS
@@ -330,6 +333,71 @@ export async function getIGDmQuotaAction(workspaceId: string) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔗 LINKEDIN ENGAGERS (Gap A)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Extrait les likes + commentaires d'un post LinkedIn publié
+ * et les persiste dans SocialInteraction pour traitement.
+ * @param shareUrn  URN du post LinkedIn (ex: urn:li:ugcPost:123)
+ * @param sourceUrl URL publique du post (pour affichage)
+ */
+export async function trackLinkedInEngagementAction(
+  workspaceId: string,
+  shareUrn: string,
+  sourceUrl: string
+) {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const result = await trackLinkedInPostEngagement(workspaceId, shareUrn, sourceUrl);
+    return { success: true as const, ...result };
+  } catch (error) {
+    console.error("trackLinkedInEngagementAction:", error);
+    return {
+      success: false as const,
+      imported: 0,
+      errors: [error instanceof Error ? error.message : "Erreur"],
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔗 ENRÔLEMENT SÉQUENCE WARM LEAD (Gap B)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Enrôle une SocialInteraction dans une séquence warm lead 3 étapes.
+ * Crée le Prospect si inexistant. Doit être appelé après generateDM.
+ */
+export async function enrollInSequenceAction(
+  workspaceId: string,
+  interactionId: string
+) {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const result = await enrollInteractionInSequence(interactionId);
+    if (!result) {
+      return { success: false as const, skipped: false, error: "DM non encore généré ou interaction introuvable" };
+    }
+    if (result.skipped) {
+      return { success: true as const, skipped: true, reason: result.reason };
+    }
+    return { success: true as const, skipped: false, sequenceId: result.sequenceId, prospectId: result.prospectId };
+  } catch (error) {
+    console.error("enrollInSequenceAction:", error);
+    return {
+      success: false as const,
+      skipped: false,
+      error: error instanceof Error ? error.message : "Erreur enrôlement",
+    };
+  }
+}
+
 /**
  * Supprimer une interaction.
  */
@@ -349,5 +417,77 @@ export async function deleteInteractionAction(
       success: false as const,
       error: error instanceof Error ? error.message : "Erreur lors de la suppression",
     };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔗 LINKEDIN STATUS + POSTS + INTERACTIONS (pour le scan panel)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Statut de connexion LinkedIn du workspace. */
+export async function getLinkedInStatusAction(workspaceId: string) {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+    const status = await getLinkedInStatus(workspaceId);
+    return { success: true as const, ...status };
+  } catch (error) {
+    return { success: false as const, connected: false, error: String(error) };
+  }
+}
+
+/** Posts LinkedIn publiés via SKALLE (ceux qu'on peut scanner). */
+export async function getPublishedLinkedInPostsAction(workspaceId: string) {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const posts = await prisma.post.findMany({
+      where: {
+        workspaceId,
+        type: "LINKEDIN",
+        status: "PUBLISHED",
+        cmsPostId: { not: null },
+        deletedAt: null,
+        publishedAt: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) },
+      },
+      select: { id: true, cmsPostId: true, publishedAt: true, content: true },
+      orderBy: { publishedAt: "desc" },
+      take: 30,
+    });
+
+    return { success: true as const, posts };
+  } catch (error) {
+    return { success: false as const, posts: [], error: String(error) };
+  }
+}
+
+/** Interactions LinkedIn PENDING pour une URL de post donnée. */
+export async function getLinkedInInteractionsBySourceAction(
+  workspaceId: string,
+  sourceUrl: string
+) {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+
+    const interactions = await prisma.socialInteraction.findMany({
+      where: { workspaceId, platform: "LINKEDIN", sourceUrl },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        prospectName: true,
+        prospectHandle: true,
+        profileUrl: true,
+        type: true,
+        interactionText: true,
+        status: true,
+        suggestedDMs: true,
+      },
+    });
+
+    return { success: true as const, interactions };
+  } catch (error) {
+    return { success: false as const, interactions: [], error: String(error) };
   }
 }

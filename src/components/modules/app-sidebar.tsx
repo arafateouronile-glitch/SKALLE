@@ -21,6 +21,9 @@ import {
   Users,
   Bot,
   Inbox,
+  Kanban,
+  Heart,
+  GitBranch,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -45,14 +48,16 @@ const CMO_NAV = [
 ] as const;
 
 const CSO_NAV = [
-  { id: "dashboard",  name: "Dashboard",  href: "/sales-os",              icon: LayoutDashboard, desc: "" },
-  { id: "inbox",      name: "Inbox",      href: "/sales-os/inbox",        icon: Inbox,           desc: "Conversations" },
-  { id: "cso-agent",  name: "Agent CSO",  href: "/sales-os/agent",        icon: Bot,             desc: "Pipeline auto" },
-  { id: "personas",   name: "Personas",   href: "/sales-os/personas",     icon: Users,           desc: "Profils ICP" },
-  { id: "leads",      name: "Leads",      href: "/sales-os/leads",        icon: Target,          desc: "Mon pipeline" },
-  { id: "hunt",       name: "Hunt",       href: "/sales-os/hunt",         icon: Search,          desc: "Trouver des leads" },
-  { id: "outreach",   name: "Outreach",   href: "/sales-os/outreach",     icon: Mail,            desc: "Messages & relances" },
-  { id: "insights",   name: "Insights",   href: "/sales-os/insights",     icon: TrendingUp,      desc: "" },
+  { id: "dashboard",         name: "Dashboard",   href: "/sales-os",                   icon: LayoutDashboard, desc: "" },
+  { id: "inbox",             name: "Inbox",       href: "/sales-os/inbox",             icon: Inbox,           desc: "Conversations" },
+  { id: "cso-agent",         name: "Agent CSO",   href: "/sales-os/agent",             icon: Bot,             desc: "Pipeline auto" },
+  { id: "crm",               name: "CRM",         href: "/sales-os/crm",               icon: Kanban,          desc: "Kanban prospects" },
+  { id: "hunt",              name: "Hunt",        href: "/sales-os/hunt",              icon: Search,          desc: "Trouver des leads" },
+  { id: "social-prospector", name: "Warm Leads",  href: "/sales-os/social-prospector", icon: Heart,           desc: "Viewers · Engagers" },
+  { id: "prospection",       name: "Séquences",   href: "/sales-os/prospection",       icon: GitBranch,       desc: "Multi-canal" },
+  { id: "outreach",          name: "Outreach",    href: "/sales-os/outreach",          icon: Mail,            desc: "Messages & relances" },
+  { id: "personas",          name: "Personas",    href: "/sales-os/personas",          icon: Users,           desc: "Profils ICP" },
+  { id: "analytics",         name: "Analytics",   href: "/sales-os/analytics",         icon: TrendingUp,      desc: "Métriques & pipeline" },
 ] as const;
 
 const PLAN_LABELS: Record<string, string> = {

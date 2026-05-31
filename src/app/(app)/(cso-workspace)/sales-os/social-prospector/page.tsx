@@ -90,6 +90,7 @@ import {
   Trash2,
   Instagram,
   Facebook,
+  Linkedin,
   Search,
   Upload,
   Eye,
@@ -187,6 +188,7 @@ const typeIcons: Record<string, React.ElementType> = {
 const platformIcons: Record<string, React.ElementType> = {
   INSTAGRAM: Instagram,
   FACEBOOK: Facebook,
+  LINKEDIN: Linkedin,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -262,6 +264,7 @@ function ProspectsTab({ workspaceId }: { workspaceId: string }) {
             <SelectItem value="ALL">Toutes</SelectItem>
             <SelectItem value="INSTAGRAM">Instagram</SelectItem>
             <SelectItem value="FACEBOOK">Facebook</SelectItem>
+            <SelectItem value="LINKEDIN">LinkedIn</SelectItem>
           </SelectContent>
         </Select>
         <Button variant="ghost" size="sm" onClick={load} className="text-gray-500">
@@ -989,6 +992,7 @@ function PostTracker({ workspaceId, onTrack }: { workspaceId: string; onTrack: (
             <SelectContent>
               <SelectItem value="INSTAGRAM"><span className="flex items-center gap-2"><Instagram className="h-4 w-4" />Instagram</span></SelectItem>
               <SelectItem value="FACEBOOK"><span className="flex items-center gap-2"><Facebook className="h-4 w-4" />Facebook</span></SelectItem>
+              <SelectItem value="LINKEDIN"><span className="flex items-center gap-2"><Linkedin className="h-4 w-4" />LinkedIn</span></SelectItem>
             </SelectContent>
           </Select>
           <Input placeholder="https://instagram.com/p/..." value={postUrl} onChange={(e) => setPostUrl(e.target.value)} className="flex-1 bg-white/60 border-gray-200" />

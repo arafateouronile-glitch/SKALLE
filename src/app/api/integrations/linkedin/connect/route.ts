@@ -13,7 +13,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const LINKEDIN_SCOPES = ["openid", "profile", "w_member_social"].join(" ");
+// Scopes standard — r_organization_social permet de lire les likes/comments
+// sur les posts des pages company (nécessite approbation LinkedIn si pas déjà accordé).
+const LINKEDIN_SCOPES = [
+  "openid",
+  "profile",
+  "w_member_social",
+  "r_member_social",
+  "r_liteprofile",
+  "r_organization_social",
+].join(" ");
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -25,6 +34,9 @@ export async function GET(req: NextRequest) {
   if (!workspaceId) {
     return NextResponse.json({ error: "workspaceId manquant" }, { status: 400 });
   }
+
+  // redirectTo : page vers laquelle revenir après auth (défaut : marketing-os/settings)
+  const redirectTo = req.nextUrl.searchParams.get("redirectTo") ?? "/marketing-os/settings?tab=integrations&linkedin=connected";
 
   const workspace = await prisma.workspace.findFirst({
     where: { id: workspaceId, userId: session.user.id },
@@ -40,7 +52,8 @@ export async function GET(req: NextRequest) {
   }
 
   const redirectUri = `${process.env.NEXTAUTH_URL}/api/integrations/linkedin/callback`;
-  const state = workspaceId; // on passe le workspaceId comme state
+  // state = "workspaceId|redirectTo" — séparateur | suffisamment rare dans les paths
+  const state = `${workspaceId}|${redirectTo}`;
 
   const params = new URLSearchParams({
     response_type: "code",

@@ -12,8 +12,25 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptSecret } from "@/lib/security/crypto";
 
-const SETTINGS_URL = "/marketing-os/settings?tab=integrations&linkedin=connected";
-const ERROR_URL = "/marketing-os/settings?tab=integrations&linkedin=error";
+const DEFAULT_SUCCESS_URL = "/marketing-os/settings?tab=integrations&linkedin=connected";
+const DEFAULT_ERROR_URL   = "/marketing-os/settings?tab=integrations&linkedin=error";
+
+/** Parse state = "workspaceId|redirectTo" (rétro-compatible avec l'ancien format "workspaceId") */
+function parseState(raw: string): { workspaceId: string; successUrl: string; errorUrl: string } {
+  const pipeIdx = raw.indexOf("|");
+  if (pipeIdx === -1) {
+    return { workspaceId: raw, successUrl: DEFAULT_SUCCESS_URL, errorUrl: DEFAULT_ERROR_URL };
+  }
+  const workspaceId = raw.slice(0, pipeIdx);
+  const redirectTo  = raw.slice(pipeIdx + 1);
+  // Injecter ?linkedin=connected / ?linkedin=error dans l'URL de retour
+  const sep = redirectTo.includes("?") ? "&" : "?";
+  return {
+    workspaceId,
+    successUrl: `${redirectTo}${sep}linkedin=connected`,
+    errorUrl:   `${redirectTo}${sep}linkedin=error`,
+  };
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -22,13 +39,15 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const code = searchParams.get("code");
-  const workspaceId = searchParams.get("state");
-  const error = searchParams.get("error");
+  const code      = searchParams.get("code");
+  const rawState  = searchParams.get("state") ?? "";
+  const error     = searchParams.get("error");
+
+  const { workspaceId, successUrl, errorUrl } = parseState(rawState);
 
   if (error || !code || !workspaceId) {
     console.error("[LinkedIn callback] OAuth error:", error ?? "code ou state manquant");
-    return NextResponse.redirect(new URL(ERROR_URL, req.url));
+    return NextResponse.redirect(new URL(errorUrl, req.url));
   }
 
   const workspace = await prisma.workspace.findFirst({
@@ -36,13 +55,13 @@ export async function GET(req: NextRequest) {
     select: { id: true },
   });
   if (!workspace) {
-    return NextResponse.redirect(new URL(ERROR_URL, req.url));
+    return NextResponse.redirect(new URL(errorUrl, req.url));
   }
 
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL(ERROR_URL, req.url));
+    return NextResponse.redirect(new URL(errorUrl, req.url));
   }
 
   try {
@@ -63,7 +82,7 @@ export async function GET(req: NextRequest) {
 
     if (!tokenRes.ok) {
       console.error("[LinkedIn callback] Token exchange failed:", await tokenRes.text());
-      return NextResponse.redirect(new URL(ERROR_URL, req.url));
+      return NextResponse.redirect(new URL(errorUrl, req.url));
     }
 
     const tokenData = await tokenRes.json() as {
@@ -104,9 +123,9 @@ export async function GET(req: NextRequest) {
     });
 
     console.log(`[LinkedIn] Connexion réussie pour workspace ${workspaceId} — ${name}`);
-    return NextResponse.redirect(new URL(SETTINGS_URL, req.url));
+    return NextResponse.redirect(new URL(successUrl, req.url));
   } catch (err) {
     console.error("[LinkedIn callback] Erreur:", err);
-    return NextResponse.redirect(new URL(ERROR_URL, req.url));
+    return NextResponse.redirect(new URL(errorUrl, req.url));
   }
 }

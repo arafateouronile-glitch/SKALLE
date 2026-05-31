@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
-  Copy, Check, Loader2, Wand2, BookOpen, Calendar, Send, Linkedin, Twitter,
+  Copy, Check, Loader2, Wand2, BookOpen, Calendar, Send, Linkedin, Twitter, ExternalLink,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -35,6 +36,7 @@ interface InspireDialogProps {
 }
 
 export function InspireDialog({ postId, open, onClose }: InspireDialogProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<InspireResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -281,6 +283,23 @@ export function InspireDialog({ postId, open, onClose }: InspireDialogProps) {
                       ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       : <Send className="h-3.5 w-3.5" />}
                     Publier sur LinkedIn
+                  </Button>
+                )}
+
+                {/* Open in LinkedIn Studio */}
+                {platform === "LINKEDIN" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      const encoded = encodeURIComponent(editedPost);
+                      router.push(`/marketing-os/studio/linkedin?draft=${encoded}`);
+                      handleClose();
+                    }}
+                    className="h-8 text-[12px] gap-1.5 border border-violet-500/30 text-violet-300 hover:bg-violet-500/15 ml-auto"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Ouvrir dans le Studio
                   </Button>
                 )}
 

@@ -46,6 +46,13 @@ import { emailOutreachDaily, emailOutreachManual } from "./functions/email-outre
 import { csoAgentDaily, csoAgentManual, csoAgentExecute } from "./functions/cso-agent-daily";
 import { runPersonaPipeline } from "./functions/persona-pipeline";
 import { personaWeeklyLearning, personaLearningManual } from "./functions/persona-learning";
+import {
+  pollLinkedInEngagement,
+  pollLinkedInEngagementManual,
+  autoEnrollWarmLeads,
+  serverSideWarmLeadsCron,
+  serverSideWarmLeadsManual,
+} from "./functions/linkedin-engagement-poller";
 
 // Export all Inngest functions
 export const functions = [
@@ -114,4 +121,11 @@ export const functions = [
   // Persona Learning — analyse hebdo + suggestions ICP (lundi 8h)
   personaWeeklyLearning,
   personaLearningManual,
+  // CSO Warm Leads — extraction engagements LinkedIn + enrôlement séquences
+  pollLinkedInEngagement,
+  pollLinkedInEngagementManual,
+  autoEnrollWarmLeads,
+  // CSO Warm Leads — server-side viewers + followers (sans extension ouverte)
+  serverSideWarmLeadsCron,
+  serverSideWarmLeadsManual,
 ];

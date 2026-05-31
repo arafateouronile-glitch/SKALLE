@@ -29,6 +29,54 @@ function getToken() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Wrapper fetch Voyager avec détection automatique des signaux de ban.
+ * Retourne { res, abortCode } — abortCode est null si tout va bien.
+ *
+ * Codes retournés :
+ *   RATE_LIMITED  → HTTP 429 (LinkedIn rate limit)
+ *   CHALLENGE     → HTTP 999, ou URL /checkpoint/, ou body "challenge"
+ *   RESTRICTED    → HTTP 403 avec "restricted" / "blocked" / "banned"
+ */
+async function voyagerFetch(url, options = {}) {
+  let res;
+  try {
+    res = await fetch(url, { credentials: "include", ...options });
+  } catch (err) {
+    return { res: null, abortCode: "NETWORK_ERROR", error: String(err) };
+  }
+
+  // LinkedIn renvoie 999 pour les bots détectés (non-standard)
+  if (res.status === 999) return { res, abortCode: "CHALLENGE" };
+
+  if (res.status === 429) return { res, abortCode: "RATE_LIMITED" };
+
+  // Redirect vers page challenge (LinkedIn ne suit pas toujours avec 302)
+  if (res.url && (
+    res.url.includes("/checkpoint/challenge") ||
+    res.url.includes("/authwall") ||
+    res.url.includes("/uas/login")
+  )) {
+    return { res, abortCode: "CHALLENGE" };
+  }
+
+  if (res.status === 403) {
+    // Lire le body pour distinguer restriction / challenge
+    try {
+      const text = await res.clone().text();
+      if (/restricted|blocked|banned|suspended/i.test(text)) {
+        return { res, abortCode: "RESTRICTED" };
+      }
+      if (/challenge|captcha|verification/i.test(text)) {
+        return { res, abortCode: "CHALLENGE" };
+      }
+    } catch { /* ignore */ }
+    return { res, abortCode: "RESTRICTED" };
+  }
+
+  return { res, abortCode: null };
+}
+
 function getUsername() {
   return window.location.pathname.match(/\/in\/([^/?]+)/)?.[1] ?? null;
 }
@@ -303,41 +351,34 @@ async function resolveLinkedInProfile(username, csrf) {
  * Envoie une demande de connexion LinkedIn avec une note personnalisée
  */
 async function sendConnectionRequest(username, connectNote, csrf) {
+  const headers = {
+    "csrf-token": csrf,
+    "content-type": "application/json",
+    "x-restli-protocol-version": "2.0.0",
+  };
+
   // Format actuel (2024-2025)
-  const res = await fetch("/voyager/api/growth/normInvitations", {
+  const { res, abortCode } = await voyagerFetch("/voyager/api/growth/normInvitations", {
     method: "POST",
-    headers: {
-      "csrf-token": csrf,
-      "content-type": "application/json",
-      "x-restli-protocol-version": "2.0.0",
-    },
-    credentials: "include",
+    headers,
     body: JSON.stringify({
       invitee: {
-        "com.linkedin.voyager.growth.invitation.InviteeProfile": {
-          profileId: username,
-        },
+        "com.linkedin.voyager.growth.invitation.InviteeProfile": { profileId: username },
       },
-      trackingId: btoa(
-        String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12)))
-      ),
+      trackingId: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12)))),
       message: (connectNote ?? "").slice(0, 300),
     }),
   });
 
-  if (res.ok) return { ok: true };
+  if (abortCode) return { ok: false, abortCode };
+  if (res?.ok) return { ok: true };
 
   // Fallback : format plus récent
-  const fallback = await fetch(
+  const { res: res2, abortCode: ab2 } = await voyagerFetch(
     "/voyager/api/voyagerRelationships/dash/invitations?action=verifyQuotaAndCreateV2",
     {
       method: "POST",
-      headers: {
-        "csrf-token": csrf,
-        "content-type": "application/json",
-        "x-restli-protocol-version": "2.0.0",
-      },
-      credentials: "include",
+      headers,
       body: JSON.stringify({
         inviteeProfileUrn: `urn:li:fsd_profile:${username}`,
         customMessage: (connectNote ?? "").slice(0, 300),
@@ -345,14 +386,15 @@ async function sendConnectionRequest(username, connectNote, csrf) {
     }
   );
 
-  return { ok: fallback.ok, status: fallback.status };
+  if (ab2) return { ok: false, abortCode: ab2 };
+  return { ok: res2?.ok ?? false, status: res2?.status };
 }
 
 /**
  * Envoie un message à une connexion 1er degré
  */
 async function sendLinkedInMessage(entityUrn, messageText, csrf) {
-  const res = await fetch(
+  const { res, abortCode } = await voyagerFetch(
     "/voyager/api/messaging/conversations?action=create",
     {
       method: "POST",
@@ -361,20 +403,17 @@ async function sendLinkedInMessage(entityUrn, messageText, csrf) {
         "content-type": "application/json",
         "x-restli-protocol-version": "2.0.0",
       },
-      credentials: "include",
       body: JSON.stringify({
         keyVersion: "LEGACY_INBOX",
         conversationCreate: {
           recipients: [entityUrn],
-          message: {
-            body: messageText,
-            originToken: crypto.randomUUID(),
-          },
+          message: { body: messageText, originToken: crypto.randomUUID() },
         },
       }),
     }
   );
-  return { ok: res.ok, status: res.status };
+  if (abortCode) return { ok: false, abortCode };
+  return { ok: res?.ok ?? false, status: res?.status };
 }
 
 /**
@@ -430,7 +469,7 @@ async function voyagerSearch(keywords, csrf, count = 15) {
   });
 
   try {
-    const res = await fetch(
+    const { res, abortCode } = await voyagerFetch(
       `/voyager/api/search/blended?${params.toString()}&filters=List((key:resultType,value:List(PEOPLE)))`,
       {
         headers: {
@@ -439,14 +478,15 @@ async function voyagerSearch(keywords, csrf, count = 15) {
           "x-li-track": '{"clientVersion":"1.14.0"}',
           accept: "application/vnd.linkedin.normalized+json+2.1",
         },
-        credentials: "include",
       }
     );
-    if (!res.ok) return [];
+    // Propager l'abort code pour que le caller puisse stopper
+    if (abortCode) return { abortCode, profiles: [] };
+    if (!res?.ok) return { abortCode: null, profiles: [] };
     const data = await res.json();
-    return extractProfilesFromSearch(data);
+    return { abortCode: null, profiles: extractProfilesFromSearch(data) };
   } catch {
-    return [];
+    return { abortCode: null, profiles: [] };
   }
 }
 
@@ -563,8 +603,9 @@ async function handleSearchProfiles(queries, maxProfiles) {
 
   for (const query of queries) {
     if (list.length >= maxProfiles) break;
-    const results = await voyagerSearch(query, csrf, 15);
-    for (const p of results) {
+    const { abortCode, profiles } = await voyagerSearch(query, csrf, 15);
+    if (abortCode) return { ok: false, abortCode, list };
+    for (const p of profiles) {
       if (list.length >= maxProfiles) break;
       if (!seen.has(p.username)) {
         seen.add(p.username);
@@ -828,6 +869,251 @@ async function handleSimulateReading(durationMs) {
   return { ok: true };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// WARM LEADS — Profile viewers + Followers (Gap 1 & 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Récupère mon propre entityUrn (urn:li:fsd_profile:xxx) depuis /voyager/api/me
+ */
+async function getMyProfileUrn(csrf) {
+  try {
+    const res = await fetch("/voyager/api/me", {
+      headers: {
+        "csrf-token": csrf,
+        "x-restli-protocol-version": "2.0.0",
+        accept: "application/vnd.linkedin.normalized+json+2.1",
+      },
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    // miniProfile.entityUrn → "urn:li:fs_miniProfile:xxx"
+    // Pour l'API followers on a besoin de "urn:li:fsd_profile:xxx"
+    const miniUrn = data.miniProfile?.entityUrn ?? "";
+    const profileId = miniUrn.replace("urn:li:fs_miniProfile:", "");
+    return profileId ? `urn:li:fsd_profile:${profileId}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function miniProfileToLead(mp, type) {
+  if (!mp?.publicIdentifier) return null;
+  const name = [mp.firstName, mp.lastName].filter(Boolean).join(" ") || "LinkedIn Member";
+  return {
+    type,
+    name,
+    handle: mp.publicIdentifier,
+    profileUrl: `https://www.linkedin.com/in/${mp.publicIdentifier}`,
+    headline: mp.occupation ?? mp.headline ?? "",
+  };
+}
+
+/**
+ * SKALLE_SCRAPE_VIEWERS
+ * Appelle GET /voyager/api/wvmpProfile/views?q=viewedBy
+ * Requiert LinkedIn Premium pour voir plus de 5 viewers.
+ */
+async function handleScrapeViewers(maxCount = 20) {
+  const csrf = getCsrfToken();
+  if (!csrf) return { ok: false, error: "no_csrf", leads: [] };
+
+  const leads = [];
+  let start = 0;
+  const count = Math.min(maxCount, 20);
+
+  try {
+    while (leads.length < maxCount) {
+      const res = await fetch(
+        `/voyager/api/wvmpProfile/views?q=viewedBy&count=${count}&start=${start}`,
+        {
+          headers: {
+            "csrf-token": csrf,
+            "x-restli-protocol-version": "2.0.0",
+            accept: "application/vnd.linkedin.normalized+json+2.1",
+          },
+          credentials: "include",
+        }
+      );
+      if (!res.ok) break;
+
+      const data = await res.json();
+      const elements = data.elements ?? [];
+      if (!elements.length) break;
+
+      for (const el of elements) {
+        // Structure : el.actor.miniProfile ou el.navigationContext.miniProfile
+        const mp =
+          el.actor?.miniProfile ??
+          el.navigationContext?.navigationDetails?.miniProfile ??
+          null;
+        const lead = miniProfileToLead(mp, "PROFILE_VIEW");
+        if (lead) leads.push(lead);
+      }
+
+      const total = data.paging?.total ?? 0;
+      start += elements.length;
+      if (start >= total || start >= maxCount) break;
+
+      // Délai humain entre les pages
+      await new Promise((r) => setTimeout(r, 600 + Math.random() * 600));
+    }
+  } catch (err) {
+    return { ok: false, error: String(err), leads };
+  }
+
+  return { ok: true, leads };
+}
+
+/**
+ * SKALLE_SCRAPE_FOLLOWERS
+ * Appelle GET /voyager/api/relationships/followers?q=followersOf
+ */
+async function handleScrapeFollowers(maxCount = 50) {
+  const csrf = getCsrfToken();
+  if (!csrf) return { ok: false, error: "no_csrf", leads: [] };
+
+  const myUrn = await getMyProfileUrn(csrf);
+  if (!myUrn) return { ok: false, error: "no_profile_urn", leads: [] };
+
+  const leads = [];
+  let start = 0;
+  const count = Math.min(maxCount, 50);
+
+  try {
+    while (leads.length < maxCount) {
+      const encodedUrn = encodeURIComponent(myUrn);
+      const res = await fetch(
+        `/voyager/api/relationships/followers?q=followersOf&entityUrn=${encodedUrn}&count=${count}&start=${start}`,
+        {
+          headers: {
+            "csrf-token": csrf,
+            "x-restli-protocol-version": "2.0.0",
+            accept: "application/vnd.linkedin.normalized+json+2.1",
+          },
+          credentials: "include",
+        }
+      );
+
+      if (!res.ok) {
+        // Fallback : endpoint alternatif observé sur certaines versions LinkedIn
+        const fallbackRes = await fetch(
+          `/voyager/api/identity/followers?q=followers&count=${count}&start=${start}`,
+          {
+            headers: {
+              "csrf-token": csrf,
+              "x-restli-protocol-version": "2.0.0",
+              accept: "application/vnd.linkedin.normalized+json+2.1",
+            },
+            credentials: "include",
+          }
+        );
+        if (!fallbackRes.ok) break;
+        const fbData = await fallbackRes.json();
+        const fbElements = fbData.elements ?? [];
+        for (const el of fbElements) {
+          const mp = el.miniProfile ?? el.follower?.miniProfile ?? null;
+          const lead = miniProfileToLead(mp, "FOLLOW");
+          if (lead) leads.push(lead);
+        }
+        break;
+      }
+
+      const data = await res.json();
+      const elements = data.elements ?? [];
+      if (!elements.length) break;
+
+      for (const el of elements) {
+        const mp = el.miniProfile ?? el.follower?.miniProfile ?? null;
+        const lead = miniProfileToLead(mp, "FOLLOW");
+        if (lead) leads.push(lead);
+      }
+
+      const total = data.paging?.total ?? 0;
+      start += elements.length;
+      if (start >= total || start >= maxCount) break;
+
+      await new Promise((r) => setTimeout(r, 600 + Math.random() * 600));
+    }
+  } catch (err) {
+    return { ok: false, error: String(err), leads };
+  }
+
+  return { ok: true, leads };
+}
+
+// ─── Cache local des profils warm (TTL 30 jours) ─────────────────────────────
+// Evite de re-scraper et re-envoyer des profils déjà traités dans les runs précédents.
+// Structure : { [handle]: timestamp_ms }
+
+const WARM_CACHE_TTL_MS = 30 * 24 * 60 * 60_000; // 30 jours
+const WARM_CACHE_KEY = { PROFILE_VIEW: "warmCacheViewers", FOLLOW: "warmCacheFollowers" };
+
+async function getWarmSeenCache(type) {
+  const key = WARM_CACHE_KEY[type] ?? "warmCacheMisc";
+  return new Promise((resolve) => {
+    chrome.storage.local.get([key], (r) => {
+      const raw = r[key] ?? {};
+      const now = Date.now();
+      // Prune les entrées expirées
+      const pruned = Object.fromEntries(
+        Object.entries(raw).filter(([, ts]) => now - ts < WARM_CACHE_TTL_MS)
+      );
+      resolve(pruned);
+    });
+  });
+}
+
+async function updateWarmSeenCache(type, handles) {
+  const key = WARM_CACHE_KEY[type] ?? "warmCacheMisc";
+  const existing = await getWarmSeenCache(type);
+  const now = Date.now();
+  const updated = { ...existing };
+  for (const handle of handles) updated[handle] = now;
+  chrome.storage.local.set({ [key]: updated });
+}
+
+/**
+ * Envoie les warm leads (viewers / followers) vers le backend SKALLE.
+ * Filtre les handles déjà envoyés dans les 30 derniers jours pour éviter
+ * les appels Voyager redondants et les doublons backend.
+ */
+async function sendWarmLeadsToBackend(type, leads, token) {
+  if (!leads.length) return { ok: true, imported: 0 };
+
+  // Filtrer les profils déjà traités récemment
+  const seen = await getWarmSeenCache(type);
+  const fresh = leads.filter((l) => !seen[l.handle]);
+
+  if (!fresh.length) {
+    console.debug(`[SKALLE] Warm ${type} — ${leads.length} profils déjà en cache, rien à envoyer`);
+    return { ok: true, imported: 0, duplicates: leads.length };
+  }
+
+  const apiBase = await getApiBase();
+  try {
+    const res = await fetch(`${apiBase}/api/social/linkedin/warm-import`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ type, leads: fresh }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const result = await res.json();
+
+    // Mettre en cache tous les handles envoyés (même les doublons backend)
+    await updateWarmSeenCache(type, fresh.map((l) => l.handle));
+
+    return result;
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
 // ── Listeners (tous les types de messages) ────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -898,6 +1184,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Scroll humain pendant la lecture d'un profil (mode autonome)
   if (msg.type === "SKALLE_SIMULATE_READING") {
     handleSimulateReading(msg.durationMs ?? 8_000)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
+
+  // Scrappe les viewers de profil (LinkedIn Premium requis pour > 5)
+  if (msg.type === "SKALLE_SCRAPE_VIEWERS") {
+    handleScrapeViewers(msg.maxCount ?? 20)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, error: String(err), leads: [] }));
+    return true;
+  }
+
+  // Scrappe les followers du profil connecté
+  if (msg.type === "SKALLE_SCRAPE_FOLLOWERS") {
+    handleScrapeFollowers(msg.maxCount ?? 50)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, error: String(err), leads: [] }));
+    return true;
+  }
+
+  // Import warm leads vers le backend (appelé par background après scrape)
+  if (msg.type === "SKALLE_SEND_WARM_LEADS") {
+    getToken()
+      .then((token) => sendWarmLeadsToBackend(msg.leadType, msg.leads, token))
       .then(sendResponse)
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;

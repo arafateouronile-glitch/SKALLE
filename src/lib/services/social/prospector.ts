@@ -16,13 +16,15 @@ import { Prisma } from "@prisma/client";
 import { metaGet } from "@/lib/services/meta/graph-api";
 import { refreshTokenIfNeeded } from "@/lib/services/meta/token-manager";
 import { generateOpeningMessageVariants } from "@/lib/services/social/closer";
+import { getExternalIntegrationKey } from "@/lib/services/integrations/external";
+import { FAR_FUTURE } from "@/lib/services/smart-sequence-processor";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📌 TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type SocialPlatform = "INSTAGRAM" | "FACEBOOK";
-export type InteractionType = "LIKE" | "COMMENT" | "FOLLOW" | "GROUP_MEMBER";
+export type SocialPlatform = "INSTAGRAM" | "FACEBOOK" | "LINKEDIN";
+export type InteractionType = "LIKE" | "COMMENT" | "FOLLOW" | "GROUP_MEMBER" | "PROFILE_VIEW";
 export type InteractionStatus = "PENDING" | "CONTACTED" | "IGNORED";
 
 export interface RawInteraction {
@@ -542,6 +544,355 @@ export async function deleteInteraction(interactionId: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 4️⃣ LINKEDIN ENGAGEMENT EXTRACTOR (Gap A)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const LINKEDIN_API = "https://api.linkedin.com/v2";
+
+interface LinkedInActorProfile {
+  localizedFirstName?: string;
+  localizedLastName?: string;
+  vanityName?: string;
+}
+
+interface LinkedInLikeElement {
+  actor: string; // urn:li:person:xxx
+  "actor~"?: LinkedInActorProfile;
+}
+
+interface LinkedInCommentElement {
+  actor: string;
+  "actor~"?: LinkedInActorProfile;
+  message?: { text?: string };
+}
+
+interface LinkedInPaginatedResponse<T> {
+  elements?: T[];
+  paging?: { total: number; start: number; count: number };
+}
+
+function personUrnToId(urn: string): string {
+  return urn.replace("urn:li:person:", "");
+}
+
+function buildLinkedInProfileUrl(actor: LinkedInActorProfile | undefined, personUrn: string): string {
+  if (actor?.vanityName) return `https://www.linkedin.com/in/${actor.vanityName}`;
+  const id = personUrnToId(personUrn);
+  return `https://www.linkedin.com/profile/view?id=${id}`;
+}
+
+function buildLinkedInName(actor: LinkedInActorProfile | undefined): string {
+  if (!actor) return "LinkedIn Member";
+  const name = [actor.localizedFirstName, actor.localizedLastName].filter(Boolean).join(" ");
+  return name || "LinkedIn Member";
+}
+
+function buildLinkedInHandle(actor: LinkedInActorProfile | undefined, personUrn: string): string {
+  return actor?.vanityName ?? personUrnToId(personUrn);
+}
+
+/**
+ * Extrait likers + commenters d'un post LinkedIn via l'API socialActions.
+ * Requiert scope r_member_social (ou r_organization_social pour company pages).
+ */
+async function fetchLinkedInEngagers(
+  accessToken: string,
+  shareUrn: string
+): Promise<Array<{ name: string; handle: string; profileUrl: string; interactionText?: string; type: "LIKE" | "COMMENT" }>> {
+  const encoded = encodeURIComponent(shareUrn);
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    "X-Restli-Protocol-Version": "2.0.0",
+    "LinkedIn-Version": "202304",
+  };
+  const results: Array<{ name: string; handle: string; profileUrl: string; interactionText?: string; type: "LIKE" | "COMMENT" }> = [];
+
+  // Likes
+  try {
+    const res = await fetch(
+      `${LINKEDIN_API}/socialActions/${encoded}/likes?count=100&projection=(elements*(actor,actor~(localizedFirstName,localizedLastName,vanityName)))`,
+      { headers }
+    );
+    if (res.ok) {
+      const data = await res.json() as LinkedInPaginatedResponse<LinkedInLikeElement>;
+      for (const el of data.elements ?? []) {
+        results.push({
+          type: "LIKE",
+          name: buildLinkedInName(el["actor~"]),
+          handle: buildLinkedInHandle(el["actor~"], el.actor),
+          profileUrl: buildLinkedInProfileUrl(el["actor~"], el.actor),
+        });
+      }
+    }
+  } catch { /* API indisponible — fail silently */ }
+
+  // Comments
+  try {
+    const res = await fetch(
+      `${LINKEDIN_API}/socialActions/${encoded}/comments?count=100&projection=(elements*(actor,actor~(localizedFirstName,localizedLastName,vanityName),message))`,
+      { headers }
+    );
+    if (res.ok) {
+      const data = await res.json() as LinkedInPaginatedResponse<LinkedInCommentElement>;
+      for (const el of data.elements ?? []) {
+        results.push({
+          type: "COMMENT",
+          name: buildLinkedInName(el["actor~"]),
+          handle: buildLinkedInHandle(el["actor~"], el.actor),
+          profileUrl: buildLinkedInProfileUrl(el["actor~"], el.actor),
+          interactionText: el.message?.text,
+        });
+      }
+    }
+  } catch { /* fail silently */ }
+
+  return results;
+}
+
+/**
+ * Extrait les engagements (likes + commentaires) d'un post LinkedIn publié,
+ * les dédoublonne et les persiste dans SocialInteraction.
+ *
+ * @param shareUrn  — URN du post (ex: urn:li:ugcPost:123) stocké dans Post.cmsPostId
+ * @param sourceUrl — URL publique du post pour affichage
+ */
+export async function trackLinkedInPostEngagement(
+  workspaceId: string,
+  shareUrn: string,
+  sourceUrl: string
+): Promise<{ imported: number; errors: string[] }> {
+  const raw = await getExternalIntegrationKey(workspaceId, "LINKEDIN_OAUTH");
+  if (!raw) return { imported: 0, errors: ["LinkedIn non connecté"] };
+
+  let tokenData: { accessToken: string };
+  try {
+    tokenData = JSON.parse(raw) as { accessToken: string };
+  } catch {
+    return { imported: 0, errors: ["Token LinkedIn invalide"] };
+  }
+
+  const engagers = await fetchLinkedInEngagers(tokenData.accessToken, shareUrn);
+  if (engagers.length === 0) return { imported: 0, errors: [] };
+
+  const interactions: RawInteraction[] = engagers.map((e) => ({
+    platform: "LINKEDIN" as const,
+    type: e.type,
+    sourceUrl,
+    prospectName: e.name,
+    prospectHandle: e.handle,
+    profileUrl: e.profileUrl,
+    interactionText: e.interactionText,
+  }));
+
+  const result = await importInteractions(workspaceId, interactions);
+  return { imported: result.imported, errors: [] };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5️⃣ ENRÔLEMENT SÉQUENCE WARM LEAD (Gap B)
+// ═══════════════════════════════════════════════════════════════════════════
+
+
+export type EnrollResult =
+  | { sequenceId: string; prospectId: string; skipped?: false }
+  | { skipped: true; reason: string }
+  | null; // DM pas encore généré
+
+const ALREADY_IN_CONVERSATION_STATUSES = new Set(["RESPONDED", "MEETING_BOOKED", "CONVERTED"]);
+
+/**
+ * Vérifie si le prospect a déjà eu un échange LinkedIn avec ce workspace.
+ * Retourne la raison du skip, ou null si le prospect est qualifiable.
+ */
+const RECIPIENT_COOLDOWN_MS = 7 * 24 * 3600 * 1000; // 7 jours
+
+async function detectExistingConversation(
+  workspaceId: string,
+  prospectId: string,
+  profileUrl: string
+): Promise<string | null> {
+  const sevenDaysAgo = new Date(Date.now() - RECIPIENT_COOLDOWN_MS);
+
+  const [reply, prospect, repliedStep, recentSentStep] = await Promise.all([
+    // 1. Ils ont déjà répondu à un message LinkedIn envoyé depuis SKALLE
+    prisma.linkedInReply.findFirst({
+      where: {
+        workspaceId,
+        OR: [
+          { prospectId },
+          ...(profileUrl ? [{ linkedInUrl: profileUrl }] : []),
+        ],
+      },
+      select: { id: true },
+    }),
+    // 2. Statut prospect indique une relation active
+    prisma.prospect.findUnique({
+      where: { id: prospectId },
+      select: { status: true },
+    }),
+    // 3. Un step de séquence existant a reçu une réponse
+    prisma.sequenceStep.findFirst({
+      where: {
+        repliedAt: { not: null },
+        sequence: { prospectId, workspaceId },
+      },
+      select: { id: true },
+    }),
+    // 4. Cooldown : un step a été envoyé dans les 7 derniers jours
+    prisma.sequenceStep.findFirst({
+      where: {
+        status: "SENT",
+        sentAt: { gte: sevenDaysAgo },
+        sequence: { prospectId, workspaceId },
+      },
+      select: { id: true, sentAt: true },
+    }),
+  ]);
+
+  if (reply) return "a déjà répondu à un message LinkedIn";
+  if (prospect && ALREADY_IN_CONVERSATION_STATUSES.has(prospect.status)) {
+    return `statut prospect : ${prospect.status.toLowerCase()}`;
+  }
+  if (repliedStep) return "a déjà répondu à une séquence";
+  if (recentSentStep) {
+    const daysAgo = Math.floor((Date.now() - recentSentStep.sentAt!.getTime()) / 86400000);
+    return `contacté il y a ${daysAgo}j — cooldown 7j actif`;
+  }
+  return null;
+}
+
+/**
+ * Crée un Prospect (si inexistant) depuis une SocialInteraction,
+ * puis l'enrôle dans une séquence warm lead en 2 temps :
+ *   Step 1 — Demande de connexion sans note (meilleur taux d'acceptation)
+ *   Step 2 — DM IA personnalisé (bloqué sur FAR_FUTURE jusqu'à acceptation)
+ *   Step 3 — Relance si pas de réponse après 5j (aussi FAR_FUTURE)
+ *
+ * Skip automatique si une conversation LinkedIn existe déjà avec cette personne.
+ */
+export async function enrollInteractionInSequence(
+  interactionId: string
+): Promise<EnrollResult> {
+  ensurePrismaModel();
+
+  const interaction = await prisma.socialInteraction.findUnique({
+    where: { id: interactionId },
+    select: {
+      id: true,
+      workspaceId: true,
+      prospectName: true,
+      prospectHandle: true,
+      profileUrl: true,
+      platform: true,
+      type: true,
+      sourceUrl: true,
+      suggestedDMs: true,
+    },
+  });
+
+  if (!interaction?.suggestedDMs) return null;
+
+  const { workspaceId } = interaction;
+  const dms = interaction.suggestedDMs as unknown as DMVariant[];
+  const aiDM = dms[0]?.message ?? "";
+  const firstName = interaction.prospectName.split(" ")[0] ?? interaction.prospectName;
+
+  // 1. Find or create Prospect
+  const profileUrl = interaction.profileUrl ?? "";
+  let prospect = await prisma.prospect.findFirst({
+    where: {
+      workspaceId,
+      OR: [
+        ...(profileUrl ? [{ linkedInUrl: profileUrl }] : []),
+        { handle: interaction.prospectHandle },
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (!prospect) {
+    prospect = await prisma.prospect.create({
+      data: {
+        workspaceId,
+        name: interaction.prospectName,
+        linkedInUrl: profileUrl || `https://www.linkedin.com/in/${interaction.prospectHandle}`,
+        company: "—",
+        handle: interaction.prospectHandle,
+        platform: interaction.platform,
+        source: "LINKEDIN",
+        temperature: "WARM",
+        notes: `Warm lead — ${interaction.type} sur ${interaction.sourceUrl}`,
+      },
+      select: { id: true },
+    });
+  }
+
+  // 2. Vérifier si une conversation LinkedIn existe déjà → skip silencieux
+  const skipReason = await detectExistingConversation(workspaceId, prospect.id, profileUrl);
+  if (skipReason) return { skipped: true, reason: skipReason };
+
+  // 3. Déjà enrôlé dans une séquence warm active ?
+  const existing = await prisma.outreachSequence.findFirst({
+    where: {
+      prospectId: prospect.id,
+      name: { contains: "Warm" },
+      isActive: true,
+    },
+    select: { id: true },
+  });
+  if (existing) return { sequenceId: existing.id, prospectId: prospect.id };
+
+  // 4. Séquence : connexion → DM IA (smart branch) → relance
+  const sequence = await prisma.outreachSequence.create({
+    data: {
+      workspaceId,
+      prospectId: prospect.id,
+      name: `Warm Lead — ${interaction.platform} ${interaction.type}`,
+      isActive: true,
+      steps: {
+        create: [
+          {
+            // Étape 1 : demande de connexion sans note (meilleur taux d'acceptation sur warm leads)
+            stepNumber: 1,
+            channel: "LINKEDIN",
+            linkedInAction: "CONNECTION_REQUEST",
+            content: "",
+            delayDays: 0,
+            status: "PENDING",
+            scheduledAt: null,
+          },
+          {
+            // Étape 2 : DM IA personnalisé — bloqué jusqu'à acceptation connexion
+            stepNumber: 2,
+            channel: "LINKEDIN",
+            linkedInAction: "POST_CONNECTION_MESSAGE",
+            content: aiDM,
+            delayDays: 0,
+            status: "PENDING",
+            scheduledAt: FAR_FUTURE,
+            metadata: { smartBranch: true, waitingFor: "CONNECTION_ACCEPTED" },
+          },
+          {
+            // Étape 3 : relance si pas de réponse (activé par onConnectionAccepted, J+5)
+            stepNumber: 3,
+            channel: "LINKEDIN",
+            linkedInAction: "FOLLOWUP_MESSAGE",
+            content: `Hey ${firstName}, juste pour voir si mon message t'avait bien atteint — pas de pression, juste curieux(se) 😊`,
+            delayDays: 5,
+            status: "PENDING",
+            scheduledAt: FAR_FUTURE,
+            metadata: { smartBranch: true, waitingFor: "NO_REPLY", daysThreshold: 5 },
+          },
+        ],
+      },
+    },
+    select: { id: true },
+  });
+
+  return { sequenceId: sequence.id, prospectId: prospect.id };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 🔧 UTILITAIRES
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -549,6 +900,9 @@ function buildProfileUrl(platform: SocialPlatform, handle: string): string {
   const cleanHandle = handle.replace(/^@/, "");
   if (platform === "INSTAGRAM") {
     return `https://instagram.com/${cleanHandle}`;
+  }
+  if (platform === "LINKEDIN") {
+    return `https://www.linkedin.com/in/${cleanHandle}`;
   }
   return `https://facebook.com/${cleanHandle}`;
 }

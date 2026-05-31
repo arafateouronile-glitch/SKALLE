@@ -2,17 +2,31 @@
  * LinkedIn Sender — Voyager API (direct, sans Apify)
  *
  * Sécurité anti-ban :
- *   1. Warm-up progressif : 25 % → 40 % → 60 % → 80 % → 100 % sur 21 jours
+ *   1. Warm-up progressif : 15 % → 30 % → 50 % → 70 % → 85 % → 100 % sur 30 jours
  *   2. Détection des erreurs LinkedIn (challenge, rate-limit, cookie expiré)
  *      → abortBatch immédiat, steps restants laissés PENDING
- *   3. Session Voyager : li_at + JSESSIONID (CSRF) obtenus dynamiquement sur /me
+ *   3. Session Voyager : JSESSIONID toujours re-fetché au début de chaque batch (jamais recyclé)
  *   4. Résolution URL LinkedIn → profileId avant chaque envoi
- *   5. Délai humain 3–8 s entre chaque action
+ *   5. Délai différencié : 30–90 s après CONNECTION_REQUEST, 5–12 s après message
  */
 
 const LI_BASE = "https://www.linkedin.com/voyager/api";
-const LI_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+// Pool de 6 User-Agents Chrome récents sur différents OS.
+// Un UA est tiré aléatoirement une fois par session Voyager → cohérent sur tout le batch,
+// mais différent entre deux jours consécutifs.
+const LI_UA_POOL = [
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+] as const;
+
+function getRandomUA(): string {
+  return LI_UA_POOL[Math.floor(Math.random() * LI_UA_POOL.length)];
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 TYPES
@@ -43,11 +57,13 @@ export interface BatchResult {
   results: LinkedInSendResult[];
   aborted: boolean;
   abortCode?: LinkedInAbortCode;
+  freshJsessionId?: string; // JSESSIONID re-fetché ce cycle — à persister en DB
 }
 
 interface VoyagerSession {
   cookie: string;
   csrfToken: string;
+  userAgent: string; // tiré aléatoirement une fois par session, cohérent sur tout le batch
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -59,15 +75,17 @@ export function getEffectiveLimits(
   connectLimit: number,
   messageLimit: number
 ): { effectiveConnect: number; effectiveMessage: number; warmupPct: number } {
+  // Rampe 30 jours (alignée sur le seuil de détection LinkedIn pour les nouveaux comptes)
   const pct =
-    warmupDay >= 21 ? 1.0
-    : warmupDay >= 15 ? 0.8
-    : warmupDay >= 10 ? 0.6
-    : warmupDay >= 5  ? 0.4
-    : 0.25;
+    warmupDay >= 30 ? 1.00
+    : warmupDay >= 22 ? 0.85
+    : warmupDay >= 15 ? 0.70
+    : warmupDay >= 10 ? 0.50
+    : warmupDay >= 5  ? 0.30
+    : 0.15;
   return {
-    effectiveConnect: Math.max(2, Math.floor(connectLimit * pct)),
-    effectiveMessage: Math.max(3, Math.floor(messageLimit * pct)),
+    effectiveConnect: Math.max(1, Math.floor(connectLimit * pct)),
+    effectiveMessage: Math.max(2, Math.floor(messageLimit * pct)),
     warmupPct: Math.round(pct * 100),
   };
 }
@@ -109,11 +127,19 @@ function classifyLinkedInError(msg: string): LinkedInAbortCode | undefined {
  * Si jsessionId est fourni (stocké en DB) → utilisé directement, zéro HTTP.
  * Sinon → tentative via la homepage LinkedIn (redirect:manual).
  */
+/** Exposée pour les services Voyager internes (warm scraper, etc.) */
+export async function createVoyagerSession(liAt: string, jsessionId?: string | null): Promise<VoyagerSession> {
+  return getVoyagerSession(liAt, jsessionId);
+}
+
 async function getVoyagerSession(liAt: string, jsessionId?: string | null): Promise<VoyagerSession> {
+  const userAgent = getRandomUA(); // un seul tirage par session → cohérent sur tout le batch
+
   if (jsessionId) {
     return {
       cookie: `li_at=${liAt}; JSESSIONID="${jsessionId}"`,
       csrfToken: jsessionId,
+      userAgent,
     };
   }
 
@@ -121,7 +147,7 @@ async function getVoyagerSession(liAt: string, jsessionId?: string | null): Prom
   const res = await fetch("https://www.linkedin.com/", {
     headers: {
       Cookie: `li_at=${liAt}`,
-      "User-Agent": LI_UA,
+      "User-Agent": userAgent,
       Accept: "text/html,application/xhtml+xml",
       "Accept-Language": "fr-FR,fr;q=0.9",
     },
@@ -155,6 +181,7 @@ async function getVoyagerSession(liAt: string, jsessionId?: string | null): Prom
   return {
     cookie: `li_at=${liAt}; JSESSIONID="${sid}"`,
     csrfToken: sid,
+    userAgent,
   };
 }
 
@@ -186,7 +213,7 @@ async function resolveProfileId(publicId: string, session: VoyagerSession): Prom
     headers: {
       Cookie: session.cookie,
       "Csrf-Token": session.csrfToken,
-      "User-Agent": LI_UA,
+      "User-Agent": session.userAgent,
       "X-Li-Lang": "fr_FR",
       "X-Restli-Protocol-Version": "2.0.0",
       Accept: "application/vnd.linkedin.normalized+json+2.1",
@@ -257,7 +284,7 @@ async function voyagerSendMessage(
     headers: {
       Cookie: session.cookie,
       "Csrf-Token": session.csrfToken,
-      "User-Agent": LI_UA,
+      "User-Agent": session.userAgent,
       "Content-Type": "application/json",
       "X-Li-Lang": "fr_FR",
       "X-Restli-Protocol-Version": "2.0.0",
@@ -295,7 +322,7 @@ async function voyagerSendConnection(
     headers: {
       Cookie: session.cookie,
       "Csrf-Token": session.csrfToken,
-      "User-Agent": LI_UA,
+      "User-Agent": session.userAgent,
       "Content-Type": "application/json",
       "X-Li-Lang": "fr_FR",
       "X-Restli-Protocol-Version": "2.0.0",
@@ -321,7 +348,7 @@ export async function checkLinkedInCookie(liAt: string): Promise<{ valid: boolea
     const res = await fetch(`${LI_BASE}/identity/profiles/me`, {
       headers: {
         Cookie: `li_at=${liAt}`,
-        "User-Agent": LI_UA,
+        "User-Agent": getRandomUA(),
         "X-Li-Lang": "fr_FR",
         "X-Restli-Protocol-Version": "2.0.0",
         Accept: "application/json",
@@ -384,6 +411,7 @@ export async function processBatch(
 ): Promise<BatchResult> {
   let session: VoyagerSession;
   try {
+    // Toujours re-fetcher le JSESSIONID si non fourni — garantit la fraîcheur
     session = await getVoyagerSession(liAt, jsessionId);
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : String(e);
@@ -395,6 +423,7 @@ export async function processBatch(
     };
   }
 
+  const freshJsessionId = session.csrfToken;
   const results: LinkedInSendResult[] = [];
 
   for (let i = 0; i < actions.length; i++) {
@@ -422,14 +451,18 @@ export async function processBatch(
     results.push(result);
 
     if (result.abortCode) {
-      return { results, aborted: true, abortCode: result.abortCode };
+      return { results, aborted: true, abortCode: result.abortCode, freshJsessionId };
     }
 
-    // Pause humaine entre actions (3–8 s)
     if (i < actions.length - 1) {
-      await new Promise((r) => setTimeout(r, 3_000 + Math.random() * 5_000));
+      // Délai différencié : connexion = 30–90 s (LinkedIn surveille le burst d'invitations)
+      //                     message   =  5–12 s (conversation déjà établie, moins de risque)
+      const delayMs = action.type === "connect"
+        ? 30_000 + Math.random() * 60_000
+        :  5_000 + Math.random() * 7_000;
+      await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 
-  return { results, aborted: false };
+  return { results, aborted: false, freshJsessionId };
 }

@@ -29,48 +29,95 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 
-  // Prospects en attente d'acceptation :
-  // - status NEW (invitation envoyée mais pas encore acceptée)
-  // - lastInteractionAt défini (preuve qu'une invitation a été envoyée)
-  // - dans les 14 derniers jours (au-delà, on abandonne)
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1_000);
 
-  const pending = await prisma.prospect.findMany({
+  // ── 1. CSO Agent prospects (flow historique) ──────────────────────────────
+  const agentPending = await prisma.prospect.findMany({
     where: {
       workspaceId: { in: workspaceIds },
       status: "NEW",
       lastInteractionAt: { gte: fourteenDaysAgo },
       linkedInUrl: { not: "" },
     },
-    select: {
-      id: true,
-      name: true,
-      linkedInUrl: true,
-      enrichmentData: true,
-    },
+    select: { id: true, name: true, linkedInUrl: true, enrichmentData: true },
     orderBy: { lastInteractionAt: "asc" },
     take: 50,
   });
 
-  const result = pending
-    .map((p) => {
+  type PendingEntry = {
+    prospectId: string; username: string; name: string;
+    linkedInUrl: string; invitedAt: string; pendingMessage: string | null;
+    source: "cso-agent" | "warm-sequence";
+  };
+
+  const agentResult: PendingEntry[] = agentPending
+    .flatMap((p) => {
       const ed = (p.enrichmentData ?? {}) as Record<string, unknown>;
-      // Seulement les prospects pour lesquels on a stocké une invitation
-      if (!ed.invitedAt) return null;
-
-      const usernameMatch = p.linkedInUrl.match(/linkedin\.com\/in\/([^/?#]+)/);
-      if (!usernameMatch) return null;
-
-      return {
-        prospectId: p.id,
-        username: usernameMatch[1],
-        name: p.name,
-        linkedInUrl: p.linkedInUrl,
+      if (!ed.invitedAt) return [];
+      const m = p.linkedInUrl.match(/linkedin\.com\/in\/([^/?#]+)/);
+      if (!m) return [];
+      return [{
+        prospectId: p.id, username: m[1], name: p.name, linkedInUrl: p.linkedInUrl,
         invitedAt: ed.invitedAt as string,
         pendingMessage: (ed.pendingMessage as string) ?? null,
-      };
-    })
-    .filter(Boolean);
+        source: "cso-agent" as const,
+      }];
+    });
 
-  return NextResponse.json({ pending: result });
+  // ── 2. Warm lead sequences (CONNECTION_REQUEST SENT) ──────────────────────
+  // Ces steps ont été envoyés par le daily cron, mais le check d'acceptation
+  // ne les couvrait pas. On les ajoute ici pour déclencher onConnectionAccepted.
+  const warmSteps = await prisma.sequenceStep.findMany({
+    where: {
+      linkedInAction: "CONNECTION_REQUEST",
+      status: "SENT",
+      sentAt: { gte: fourteenDaysAgo },
+      sequence: {
+        workspaceId: { in: workspaceIds },
+        isActive: true,
+      },
+    },
+    select: {
+      sentAt: true,
+      sequence: {
+        select: {
+          prospectId: true,
+          prospect: {
+            select: { id: true, name: true, linkedInUrl: true },
+          },
+          // Récupérer le contenu du step 2 (DM IA post-connexion)
+          steps: {
+            where: { linkedInAction: "POST_CONNECTION_MESSAGE" },
+            select: { content: true },
+            orderBy: { stepNumber: "asc" },
+            take: 1,
+          },
+        },
+      },
+    },
+    orderBy: { sentAt: "asc" },
+    take: 50,
+  });
+
+  const warmResult: PendingEntry[] = warmSteps.flatMap((s) => {
+    const prospect = s.sequence.prospect;
+    const m = prospect.linkedInUrl.match(/linkedin\.com\/in\/([^/?#]+)/);
+    if (!m) return [];
+    return [{
+      prospectId: prospect.id, username: m[1], name: prospect.name,
+      linkedInUrl: prospect.linkedInUrl,
+      invitedAt: s.sentAt?.toISOString() ?? new Date().toISOString(),
+      pendingMessage: s.sequence.steps[0]?.content ?? null,
+      source: "warm-sequence" as const,
+    }];
+  });
+
+  // Dédupliquer par prospectId (CSO agent prioritaire)
+  const seen = new Set(agentResult.map((r) => r.prospectId));
+  const merged: PendingEntry[] = [
+    ...agentResult,
+    ...warmResult.filter((r) => !seen.has(r.prospectId)),
+  ];
+
+  return NextResponse.json({ pending: merged });
 }
