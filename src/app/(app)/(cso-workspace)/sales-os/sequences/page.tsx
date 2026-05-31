@@ -15,8 +15,14 @@ import {
   CheckCircle2,
   Clock,
   PauseCircle,
+  Play,
+  Pause,
   Users,
   RefreshCw,
+  Eye,
+  Reply,
+  Send,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSequences } from "@/actions/sequences";
@@ -96,6 +102,8 @@ export default function SequencesPage() {
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [loading, setLoading] = useState(true);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function loadData() {
     setLoading(true);
@@ -112,9 +120,39 @@ export default function SequencesPage() {
     }
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
+
+  async function launchSequence(sequenceId: string) {
+    setActioningId(sequenceId);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/sequences/${sequenceId}/start`, { method: "POST" });
+      const data = await res.json() as { error?: string };
+      if (!res.ok) { setActionError(data.error ?? "Erreur"); return; }
+      await loadData();
+    } catch {
+      setActionError("Erreur réseau");
+    } finally {
+      setActioningId(null);
+    }
+  }
+
+  async function togglePause(sequenceId: string, currentlyActive: boolean) {
+    setActioningId(sequenceId);
+    setActionError(null);
+    try {
+      await fetch(`/api/sequences/${sequenceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !currentlyActive }),
+      });
+      await loadData();
+    } catch {
+      setActionError("Erreur réseau");
+    } finally {
+      setActioningId(null);
+    }
+  }
 
   const total = sequences.length;
   const active = sequences.filter((s) => getSequenceStatus(s) === "active").length;
@@ -283,19 +321,80 @@ export default function SequencesPage() {
                     </div>
                   </div>
 
-                  {/* Right: date */}
-                  <div className="text-right shrink-0">
+                  {/* Right: metrics + actions */}
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    {/* Engagement metrics */}
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const sent = seq.steps.filter((s) => ["SENT","DELIVERED","OPENED","CLICKED","REPLIED"].includes(s.status)).length;
+                        const opened = seq.steps.filter((s) => ["OPENED","CLICKED","REPLIED"].includes(s.status)).length;
+                        const replied = seq.steps.filter((s) => s.status === "REPLIED").length;
+                        return (
+                          <>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                              <Send className="h-2.5 w-2.5" />{sent}
+                            </span>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                              <Eye className="h-2.5 w-2.5" />{opened}
+                            </span>
+                            <span className="flex items-center gap-1 text-[10px] text-amber-400">
+                              <Reply className="h-2.5 w-2.5" />{replied}
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1.5">
+                      {status === "paused" || status === "pending" ? (
+                        <Button
+                          size="sm"
+                          onClick={() => launchSequence(seq.id)}
+                          disabled={actioningId === seq.id}
+                          className="h-7 px-2.5 text-[11px] gap-1 bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+                        >
+                          {actioningId === seq.id
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Play className="h-3 w-3" />}
+                          Lancer
+                        </Button>
+                      ) : status === "active" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => togglePause(seq.id, true)}
+                          disabled={actioningId === seq.id}
+                          className="h-7 px-2.5 text-[11px] gap-1 border-white/10 text-slate-400 hover:text-amber-400 hover:border-amber-500/30"
+                        >
+                          {actioningId === seq.id
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Pause className="h-3 w-3" />}
+                          Pause
+                        </Button>
+                      ) : null}
+                    </div>
+
                     <p className="text-[10px] text-slate-600">
-                      {format(new Date(seq.createdAt), "d MMM yyyy", { locale: fr })}
-                    </p>
-                    <p className="text-[10px] text-slate-600 mt-0.5">
-                      {seq.steps.length} étape{seq.steps.length > 1 ? "s" : ""}
+                      {format(new Date(seq.createdAt), "d MMM", { locale: fr })}
+                      {" · "}{seq.steps.length}
+                      {" "}étape{seq.steps.length > 1 ? "s" : ""}
                     </p>
                   </div>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Action error */}
+      {actionError && (
+        <div className="fixed bottom-4 right-4 flex items-center gap-2 px-4 py-3 rounded-xl text-[12.5px] z-50"
+          style={{ background: "#1e1e2e", border: "1px solid #ef4444", color: "#ef4444" }}>
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {actionError}
+          <button onClick={() => setActionError(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
         </div>
       )}
 

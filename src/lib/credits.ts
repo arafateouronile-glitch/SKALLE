@@ -35,6 +35,7 @@ export const CREDIT_COSTS = {
   repurpose_multi: 5,
   social_post: 1,
   post_direct_generate: 3,       // Génération directe d'un post via architecture émotionnelle
+  linkedin_series: 12,           // Série 5 posts LinkedIn cohérents (arc narratif Mon→Ven)
 
   // Prospection
   prospect_sequence: 3,

@@ -23,6 +23,7 @@ type Tab = typeof TABS[number]["id"];
 type StatusFilter = "Tous" | "Publié" | "Programmé" | "Brouillon";
 
 const TEMPLATES = [
+  { id: "linkedin", title: "LinkedIn Studio",   desc: "Preview réaliste · Hook variations · Premier commentaire → top 1% LinkedIn", credits: 3,  icon: Linkedin,  tab: "posts"    as Tab, href: "/marketing-os/studio/linkedin" },
   { id: "generate", title: "Générer un post",  desc: "Hook psychologique + 6 déclencheurs émotionnels → post prêt à publier", credits: 3,  icon: Sparkles,  tab: "posts"    as Tab },
   { id: "seo",      title: "Article SEO",       desc: "Long format optimisé, plan + preview avant validation",                  credits: 8,  icon: FileText,  tab: "articles" as Tab },
   { id: "posts",    title: "30 Posts sociaux",  desc: "Batch personnalisé sur le persona de vos clients",                       credits: 15, icon: RotateCcw, tab: "posts"    as Tab },
@@ -478,18 +479,22 @@ export default function StudioPage() {
           </div>
 
           {/* Templates */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {TEMPLATES.map((tpl) => {
               const Icon = tpl.icon;
-              const href = tpl.id === "generate" ? "/marketing-os/studio/generate"
-                         : tpl.id === "seo"      ? "/marketing-os/seo-factory"
-                         : null;
+              const isLinkedIn = tpl.id === "linkedin";
+              const href = (tpl as { href?: string }).href
+                ?? (tpl.id === "generate" ? "/marketing-os/studio/generate"
+                  : tpl.id === "seo"      ? "/marketing-os/seo-factory"
+                  : null);
+              const accentFg = isLinkedIn ? "var(--violet-fg)" : "var(--emerald-fg)";
+              const accentSoft = isLinkedIn ? "var(--violet-soft)" : "var(--emerald-soft)";
               const inner = (
                 <>
                   <div className="flex items-start justify-between mb-2">
-                    <Icon className="h-4 w-4" style={{ color: "var(--emerald-fg)" }} />
+                    <Icon className="h-4 w-4" style={{ color: accentFg }} />
                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}>
+                      style={{ background: accentSoft, color: accentFg }}>
                       {tpl.credits} cr
                     </span>
                   </div>
@@ -501,7 +506,10 @@ export default function StudioPage() {
                 return (
                   <Link key={tpl.id} href={href}
                     className="text-left p-4 rounded-[12px] transition-all hover:-translate-y-0.5 hover:brightness-[0.97] block"
-                    style={{ background: "var(--bg)", border: "1px solid var(--line)" }}>
+                    style={{
+                      background: isLinkedIn ? "var(--violet-soft)" : "var(--bg)",
+                      border: isLinkedIn ? "1px solid var(--violet-line)" : "1px solid var(--line)",
+                    }}>
                     {inner}
                   </Link>
                 );

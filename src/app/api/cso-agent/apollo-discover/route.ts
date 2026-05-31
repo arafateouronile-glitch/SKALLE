@@ -133,11 +133,23 @@ export async function POST(req: NextRequest) {
     skipDuplicates: true,
   });
 
+  // Trigger background enrichment for prospects without verified email
+  const toAutoEnrich = fresh.filter((p) => p.emailStatus !== "verified").length;
+  if (toAutoEnrich > 0) {
+    // Fire-and-forget — doesn't block the response
+    fetch(`${process.env.NEXTAUTH_URL ?? ""}/api/cso-agent/enrich-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal": "1" },
+      body: JSON.stringify({ limit: toAutoEnrich, onlyNew: true, workspaceId }),
+    }).catch(() => null);
+  }
+
   return NextResponse.json({
     ok: true,
     created: fresh.length,
     skipped: results.people.length - fresh.length,
     total: results.totalEntries,
     personaName: persona.name,
+    enrichingInBackground: toAutoEnrich > 0,
   });
 }

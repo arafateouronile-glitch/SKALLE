@@ -60,3 +60,43 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ posts: items, nextCursor });
 }
+
+export async function POST(req: Request) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+
+  const body = (await req.json()) as {
+    type: string;
+    content: string;
+    title?: string;
+    sources?: Record<string, unknown>;
+  };
+
+  const { type, content, title, sources } = body;
+
+  if (!type || !content?.trim()) {
+    return NextResponse.json({ error: "Paramètres manquants" }, { status: 400 });
+  }
+  if (!VALID_TYPES.has(type)) {
+    return NextResponse.json({ error: "Type invalide" }, { status: 400 });
+  }
+
+  const workspace = await prisma.workspace.findFirst({
+    where: { userId: session.user.id },
+    select: { id: true },
+  });
+  if (!workspace) return NextResponse.json({ error: "Workspace introuvable" }, { status: 404 });
+
+  const post = await prisma.post.create({
+    data: {
+      type: type as "LINKEDIN" | "X" | "INSTAGRAM" | "FACEBOOK" | "TIKTOK",
+      content: content.trim(),
+      title: title?.trim() ?? null,
+      status: "DRAFT",
+      workspaceId: workspace.id,
+      sources: sources ? (sources as object) : undefined,
+    },
+  });
+
+  return NextResponse.json({ post }, { status: 201 });
+}
