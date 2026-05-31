@@ -22,15 +22,66 @@ import { scoreArticleContent } from "./content-optimizer";
 import type { ArticleOutline, GeneratedArticle } from "@/types/seo";
 import type { SeoContentMode } from "@/actions/seo-setup";
 
+// ─── Slug helper ─────────────────────────────────────────────────────────────
+
+function titleToSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function normalizeDomain(domain: string): string {
+  return domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
+
 // ─── SEO Linking rules (common baseline) ─────────────────────────────────────
 
-const SEO_LINKING_RULES = `
+function buildSeoLinkingRules(baseUrl?: string): string {
+  const homepageRule = baseUrl
+    ? `3. LIEN HOMEPAGE : Intègre au moins 1 lien vers ${baseUrl} avec une ancre contenant le mot-clé ou la marque.`
+    : `3. LIEN HOMEPAGE / LANDING PAGE : Intègre au moins 1 lien vers la page d'accueil ou la landing page, avec une ancre contenant le mot-clé ou la marque.`;
+
+  return `
 RÈGLES SEO OBLIGATOIRES — LIENS :
-1. MAILLAGE INTERNE : Intègre 2-4 liens internes vers les articles existants fournis. Utilise un ancre descriptif et contextuel (jamais "cliquez ici"). Format : [titre de l'article](URL_INTERNE).
-2. LIENS EXTERNES : Ajoute 2-3 liens vers des sources externes autoritaires (études, Wikipedia, sites officiels, médias reconnus). Ouvre sur un nouvel onglet si possible.
-3. LIEN HOMEPAGE / LANDING PAGE : Intègre au moins 1 lien optimisé vers la page d'accueil ou la landing page principale du site, avec une ancre contenant le mot-clé principal ou la marque.
-4. DENSITÉ LIENS : Maximum 1 lien par 150 mots. Ne surchargez pas.
-5. ANCRES VARIÉES : Diversifiez les ancres (exact match, partiel, générique). Évitez la sur-optimisation.
+1. MAILLAGE INTERNE : 2-4 liens vers les articles listés ci-dessous. Ancre descriptive et contextuelle (jamais "cliquez ici" seul). Utilise les URLs exactes fournies.
+2. LIENS EXTERNES : 2-3 liens vers sources autoritaires (études, Wikipedia, sites officiels). Ils renforcent le E-E-A-T.
+${homepageRule}
+4. DENSITÉ : Maximum 1 lien par 150 mots. Ne pas saturer.
+5. ANCRES VARIÉES : exact match, partiel, générique. Pas de sur-optimisation.
+`;
+}
+
+// ─── Humanisation baseline (injecté dans tous les modes) ─────────────────────
+
+const HUMANISATION_RULES = `
+═══════════════════════════════════════════════════════════
+HUMANISATION MAXIMALE — RÈGLES ABSOLUES
+═══════════════════════════════════════════════════════════
+
+Tu écris comme un praticien expérimenté, pas comme un assistant IA ou un encyclopédiste.
+
+OBLIGATOIRE :
+- Exemples concrets et typés : "Un SaaS B2B qui cible des DRH aura ce problème spécifique..."
+- Anecdotes de terrain : "Dans la majorité des audits que j'ai faits, l'erreur vient de..."
+- Interpellation directe : "Si vous avez déjà perdu 3h sur un rapport inutile, vous savez de quoi je parle."
+- Concessions honnêtes : "Ça ne fonctionne pas dans tous les cas. Voilà quand éviter cette approche."
+- Variation de rythme : phrases de 5 mots + phrases de 35 mots. Jamais uniformes.
+- Transitions naturelles : "Mais voilà ce que personne ne dit :" / "C'est là que ça devient intéressant :"
+- Au moins 1 question rhétorique par section H2
+
+ABSOLUMENT INTERDIT :
+- "Il convient de noter que..." / "De nos jours..." / "Dans le contexte actuel..."
+- "Il est crucial/essentiel/primordial de..."
+- "En conclusion," en début de conclusion
+- "synergies", "innovant", "révolutionnaire", "disruptif"
+- "N'hésitez pas à nous contacter"
+- Listes de 8+ éléments parfaitement symétriques
+- Paragraphes de 3 phrases exactement identiques en longueur
 `;
 
 // ─── Site type context helpers ───────────────────────────────────────────────
@@ -87,8 +138,11 @@ function getModeSystemPrompt(
   targetWords: number,
   brandVoiceSection: string,
   businessActivity?: string,
-  siteType?: string
+  siteType?: string,
+  baseUrl?: string
 ): string {
+  const seoLinkingRules = buildSeoLinkingRules(baseUrl);
+
   // Context block injected into every mode prompt
   const businessContext = (businessActivity || siteType)
     ? `CONTEXTE DU SITE :
@@ -98,6 +152,16 @@ ${SITE_TYPE_CONTENT_RULES[siteType ?? ""] ?? ""}
 `
     : "";
 
+  const tableRules = `
+TABLEAUX MARKDOWN OBLIGATOIRES (minimum 2 par article) :
+- Comparaison d'options/outils → | Option | Avantage | Limite | Pour qui |
+- Données chiffrées / benchmark → | Métrique | Valeur | Source |
+- Processus avec temps/coût → | Étape | Durée | Difficulté |
+- Avantages vs inconvénients → | Aspect | ✅ Pour | ❌ Contre |
+Format strict : header | séparateur |---| | données alignées.
+Chaque tableau précédé d'une phrase d'intro (ne jamais coller un tableau sans contexte).
+`;
+
   const base = `Écris en Markdown avec la hiérarchie correcte (# H1, ## H2, ### H3). Paragraphes courts (3-4 phrases max). Longueur cible : ${targetWords} mots.
 
 MÉTA (à inclure en commentaire HTML au tout début du document):
@@ -106,7 +170,11 @@ MÉTA (à inclure en commentaire HTML au tout début du document):
 
 ${businessContext}${brandVoiceSection}
 
-${SEO_LINKING_RULES}`;
+${HUMANISATION_RULES}
+
+${tableRules}
+
+${seoLinkingRules}`;
 
   switch (mode) {
     case "affiliation":
@@ -346,12 +414,14 @@ interface GenerateArticleParams {
   workspaceId: string;
   existingArticleTitles?: string[];
   contentMode?: SeoContentMode;
+  /** Domaine du site (ex: "monsite.com") — permet de générer de vraies URLs internes */
+  domainUrl?: string;
 }
 
 export async function generateEnhancedArticle(
   params: GenerateArticleParams
 ): Promise<GeneratedArticle> {
-  const { keyword, brandVoice, existingArticleTitles = [] } = params;
+  const { keyword, brandVoice, existingArticleTitles = [], domainUrl } = params;
 
   // Résoudre le mode + contexte métier depuis brandVoice.seoPublicationStrategy
   const seoStrategy = (brandVoice?.seoPublicationStrategy as Record<string, unknown>) ?? {};
@@ -359,6 +429,10 @@ export async function generateEnhancedArticle(
     params.contentMode ?? (seoStrategy.contentMode as SeoContentMode) ?? "article";
   const businessActivity = (seoStrategy.businessActivity as string | undefined) ?? "";
   const siteType = (seoStrategy.siteType as string | undefined) ?? "";
+
+  // Normaliser le domaine pour la génération des URLs internes
+  const domain = domainUrl ? normalizeDomain(domainUrl) : null;
+  const baseUrl = domain ? `https://${domain}` : undefined;
 
   // 1. Générer l'outline si non fourni
   const outline = params.outline || (await generateArticleOutline(keyword, brandVoice));
@@ -398,14 +472,26 @@ export async function generateEnhancedArticle(
       ? outline.faqQuestions.map((q) => `- ${q}`).join("\n")
       : "- Pas de questions FAQ spécifiques";
 
-  // 6. Liens internes
-  const internalLinksSection =
-    existingArticleTitles.length > 0
-      ? `ARTICLES EXISTANTS (propose des liens internes contextuels vers ceux-ci) :\n${existingArticleTitles
-          .slice(0, 10)
-          .map((t) => `- ${t}`)
-          .join("\n")}`
-      : "LIENS INTERNES : Aucun article existant fourni — insère des liens vers la page d'accueil et les sections principales du site.";
+  // 6. Liens internes avec vraies URLs si domainUrl disponible
+  let internalLinksSection: string;
+  if (existingArticleTitles.length > 0) {
+    if (baseUrl) {
+      const linkedArticles = existingArticleTitles.slice(0, 10).map((title) => {
+        const slug = titleToSlug(title);
+        return `- [${title}](${baseUrl}/blog/${slug})`;
+      });
+      internalLinksSection = `ARTICLES EXISTANTS — utilise ces URLs exactes dans les liens internes :\n${linkedArticles.join("\n")}\n\nPAGE D'ACCUEIL : [${domain}](${baseUrl})`;
+    } else {
+      internalLinksSection = `ARTICLES EXISTANTS (liens internes contextuels avec ancres descriptives) :\n${existingArticleTitles
+        .slice(0, 10)
+        .map((t) => `- ${t}`)
+        .join("\n")}`;
+    }
+  } else if (baseUrl) {
+    internalLinksSection = `PAGE D'ACCUEIL : [${domain}](${baseUrl}) — lier au moins une fois avec ancre mot-clé ou marque.`;
+  } else {
+    internalLinksSection = "LIENS INTERNES : Aucun article existant fourni — insère des liens vers la page d'accueil et les sections principales du site.";
+  }
 
   // 7. Brand voice section
   const brandVoiceSection = brandVoice
@@ -414,7 +500,7 @@ export async function generateEnhancedArticle(
 
   // 8. Construire les messages selon le mode
   const targetWords = outline.estimatedWordCount || 2000;
-  const systemContent = getModeSystemPrompt(contentMode, targetWords, brandVoiceSection, businessActivity, siteType);
+  const systemContent = getModeSystemPrompt(contentMode, targetWords, brandVoiceSection, businessActivity, siteType, baseUrl);
 
   const humanTemplate = getModeHumanPrompt(contentMode);
   const humanContent = humanTemplate

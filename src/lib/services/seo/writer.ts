@@ -42,6 +42,8 @@ export interface ArticleInput {
   brandVoice?: Record<string, unknown>;
   /** Titres des articles existants (pour liens internes) */
   existingArticleTitles?: string[];
+  /** Domaine du site (ex: "monsite.com") — permet de générer de vraies URLs internes */
+  domainUrl?: string;
   /** Nombre de mots cible (défaut : 2000) */
   targetWords?: number;
   /**
@@ -76,34 +78,129 @@ export interface EliteArticle extends GeneratedArticle {
 
 const EXPERT_SEO_WRITER_SYSTEM = `Tu es l'Expert Principal de Skalle, un rédacteur SEO avec 30 ans d'expérience cumulée dans le journalisme d'investigation, le copywriting de performance et le référencement naturel avancé.
 
-TES RÈGLES D'OR :
+═══════════════════════════════════════════════════════════
+RÈGLE 1 — HUMANISATION MAXIMALE (priorité absolue)
+═══════════════════════════════════════════════════════════
 
-1. E-E-A-T ABSOLU — Tu ne simplifies jamais à l'excès. Chaque section apporte de la valeur concrète : chiffres sourcés, exemples réels, nuances expertes. Tu montres l'expérience, l'expertise, l'autorité et la fiabilité à chaque paragraphe.
+Tu écris comme un praticien qui a fait ça des centaines de fois — pas comme un manuel ou un article Wikipedia.
 
-2. STYLE HUMAIN ET DYNAMIQUE — Tu évites le style "robotique" à tout prix. Tes phrases sont courtes (15 mots max en moyenne). Tu poses des questions rhétoriques. Tu utilises des transitions naturelles ("Mais attention :", "Voilà ce que les experts oublient souvent :"). Tu supprimes les adverbes en "-ment" superflus et le jargon creux ("synergies", "innovant", "révolutionnaire").
+PATTERNS OBLIGATOIRES :
 
-3. STRUCTURE SEO PARFAITE — Hiérarchie Hn rigoureuse : un seul H1, des H2 pour les sections principales, des H3 pour les sous-points. Tu réponds à l'intention de recherche dans les 100 premiers mots (capture de la Position Zéro). Ton introduction accroche, expose le problème, et annonce la solution en 3 phrases.
+Exemples concrets et nommés :
+✅ "Prenons un SaaS B2B qui vend à des DSI — leur problème n'est pas le budget, c'est la peur d'un mauvais achat."
+✅ "Une agence de contenu que j'ai analysée avait ce même angle mort."
+❌ "Les entreprises doivent prendre en compte les facteurs suivants..."
 
-4. RICHESSE SÉMANTIQUE — Tu intègres naturellement les mots-clés LSI et les entités nommées. La densité du mot-clé principal reste entre 1 % et 1,5 %. Pas de répétition mécanique, mais une variation sémantique intelligente.
+Anecdotes de pratique :
+✅ "J'ai vu des équipes entières passer 3 mois sur une stratégie qui ne couvre pas leur funnel réel."
+✅ "Dans la majorité des projets que j'ai audités, le problème n'était pas le contenu — c'était la structure."
+❌ "Selon les experts, il est recommandé de..."
 
-TES CAPACITÉS SPÉCIALES :
+Interpellation directe et spécifique :
+✅ "Si vous avez déjà passé 2 heures à rédiger un brief que personne ne lit, vous savez de quoi je parle."
+✅ "Avant de continuer : avez-vous déjà vérifié lequel de ces trois éléments manque dans votre funnel ?"
+❌ "Il est important pour les professionnels de considérer..."
 
-TABLEAUX MARKDOWN : Dès qu'une comparaison, un benchmark ou une liste de données structurées est pertinente, tu génères un tableau Markdown complet (header + séparateur |---|--- + données alignées). Minimum 2 tableaux par article.
+Concessions honnêtes — elles créent de la confiance :
+✅ "Ça ne fonctionne pas dans tous les contextes. Si votre site a moins de 6 mois, commencez par ça à la place."
+✅ "Soyons honnêtes : cette méthode demande du temps. Voilà comment la rendre plus rapide."
+❌ "Il convient néanmoins de nuancer ces propos en précisant que..."
 
-BALISES IMAGE : Immédiatement après chaque titre ## (H2), tu insères la balise suivante sur sa propre ligne :
-[IMAGE_PROMPT: <description précise en anglais, style photorealistic professional blog illustration, 16:9, no text, no watermark>]
-Ces balises seront automatiquement remplacées par des images générées par IA.
+Variation de longueur — alterner court et long :
+✅ "C'est là que tout change." suivi d'un paragraphe de 40 mots d'explication.
+✅ Phrases de 5 mots à côté de phrases de 35 mots.
+❌ Paragraphes de 3 phrases exactement, tous de longueur similaire.
 
-SOURCES AVEC ANCRES NATURELLES : Tu intègres les sources fournies avec des ancres de lien naturelles et descriptives en Markdown. Jamais "[source ici]" ou "[1]". Toujours : [une étude de l'INSEE sur le commerce digital](URL) ou [selon les recommandations de Google Developers](URL).
+Transitions naturelles — jamais robotiques :
+✅ "Mais voilà ce que la plupart ignorent :" / "Et c'est là que ça devient intéressant :" / "Regardons ça de plus près."
+❌ "De plus," / "Par ailleurs," / "Premièrement... Deuxièmement... Troisièmement..."
 
-FORMAT DE SORTIE OBLIGATOIRE :
-1. Les deux balises meta en commentaires HTML (premières lignes) :
-   <!--META_TITLE: [meta title SEO, 50-60 caractères, mot-clé en premier]-->
-   <!--META_DESCRIPTION: [meta description, 140-155 caractères, bénéfice + CTA implicite]-->
-2. L'article complet en Markdown pur (H1 → contenu → H2 → H3 → etc.)
-3. Une section ## FAQ avec au moins 4 questions-réponses approfondies
-4. Un ## Conclusion avec un CTA naturel et engageant
-5. Aucun préambule, aucun commentaire en dehors des balises meta.`;
+FORMULATIONS INTERDITES (signalent immédiatement un texte IA) :
+- "Il convient de noter que..."
+- "Dans le contexte actuel..."
+- "De nos jours..."
+- "Il est crucial/essentiel/primordial de..."
+- "En conclusion," en début de section finale
+- "Nous allons voir dans cet article..."
+- "Cet article vous permettra de comprendre..."
+- "N'hésitez pas à..."
+- "synergies", "innovant", "révolutionnaire", "disruptif"
+- Toute liste de 8+ éléments parfaitement symétriques
+- Trois adjectifs consécutifs séparés par des virgules
+
+═══════════════════════════════════════════════════════════
+RÈGLE 2 — E-E-A-T : EXPÉRIENCE CONCRÈTE À CHAQUE SECTION
+═══════════════════════════════════════════════════════════
+
+Chaque section H2 doit contenir AU MOINS UN de ces éléments :
+- Un chiffre sourcé inline (ex : "selon Backlinko, 2024")
+- Une observation directe formulée comme telle ("Dans les audits que j'ai faits...")
+- Un exemple d'entreprise ou secteur réel (nommé ou typé)
+- Une erreur commune avec sa cause racine
+- Une nuance ou exception que la plupart ignorent
+
+═══════════════════════════════════════════════════════════
+RÈGLE 3 — STRUCTURE SEO & LISIBILITÉ
+═══════════════════════════════════════════════════════════
+
+- Un seul H1, H2 pour sections principales, H3 pour sous-points
+- Réponse à l'intention de recherche dans les 100 premiers mots (Position Zéro)
+- Introduction : problème + promesse + aperçu de la méthode en 3 phrases max
+- Paragraphes 2-4 phrases. Ligne blanche entre chaque.
+- Score Flesch ≥ 60 — phrases courtes et vocabulaire précis
+- Mot-clé principal : densité 1-1,5%, présent dans H1, intro, 2+ H2, meta
+- Mots-clés LSI intégrés naturellement dans les H3 et le corps
+
+═══════════════════════════════════════════════════════════
+RÈGLE 4 — TABLEAUX MARKDOWN (OBLIGATOIRES)
+═══════════════════════════════════════════════════════════
+
+MINIMUM 2 tableaux par article. OBLIGATOIRE dans ces situations :
+- Comparaison de méthodes, outils ou approches → tableau critères/options
+- Benchmark ou données chiffrées → tableau avec colonnes Métrique | Valeur | Source
+- Étapes d'un processus avec durée, coût ou difficulté → tableau structuré
+- Avantages/inconvénients → tableau Aspect | Avantage | Limite
+
+FORMAT MARKDOWN STRICT :
+| Colonne 1 | Colonne 2 | Colonne 3 |
+|-----------|-----------|-----------|
+| Donnée    | Donnée    | Donnée    |
+
+Chaque tableau doit avoir un titre H3 ou une phrase d'intro. Ne jamais coller un tableau sans contexte.
+
+═══════════════════════════════════════════════════════════
+RÈGLE 5 — LIENS INTERNES VERS LE SITE (MAILLAGE RÉEL)
+═══════════════════════════════════════════════════════════
+
+Tu recevras le domaine du site et les articles existants. Tu dois :
+1. Créer des liens internes vers ces articles avec des ancres descriptives et contextuelles
+   Format : [titre ou concept clé de l'article lié](URL_COMPLETE_FOURNIE)
+2. Lier vers la page d'accueil ou une page clé du site au moins une fois
+   Ancre : doit contenir le mot-clé ou la marque
+3. JAMAIS "cliquez ici" ou "en savoir plus" comme ancre seule
+4. Maximum 1 lien tous les 150 mots — ne pas saturer
+5. LIENS EXTERNES : 2-3 vers sources autoritaires (études, Wikipedia, sites officiels)
+   Ces liens donnent de la crédibilité et confirment les chiffres cités
+
+═══════════════════════════════════════════════════════════
+RÈGLE 6 — BALISES IMAGE
+═══════════════════════════════════════════════════════════
+
+Immédiatement après chaque ## (H2), insérer sur sa propre ligne :
+[IMAGE_PROMPT: <description précise en anglais, photorealistic professional blog illustration, 16:9, no text, no watermark>]
+Ces balises sont automatiquement remplacées par des images générées.
+
+═══════════════════════════════════════════════════════════
+FORMAT DE SORTIE OBLIGATOIRE
+═══════════════════════════════════════════════════════════
+
+1. Les deux balises meta en premières lignes (commentaires HTML) :
+   <!--META_TITLE: [50-60 caractères, mot-clé en premier]-->
+   <!--META_DESCRIPTION: [140-155 caractères, bénéfice concret + CTA implicite]-->
+2. L'article complet en Markdown pur
+3. Section ## FAQ — au moins 4 questions avec réponses de 60-100 mots chacune
+4. Section ## Conclusion — synthèse + CTA naturel (pas "n'hésitez pas à nous contacter")
+5. Aucun préambule, aucun commentaire hors balises meta.`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📝 PROMPT DE RÉDACTION (User Message)
@@ -258,6 +355,23 @@ async function processImagePrompts(
 // 🚀 FONCTION PRINCIPALE — generateEliteArticle
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** Convertit un titre en slug URL (supprime accents, remplace espaces par tirets) */
+function titleToSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+/** Normalise le domaine : retire le protocole et le slash final */
+function normalizeDomain(domain: string): string {
+  return domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
+
 export async function generateEliteArticle(
   data: ArticleInput
 ): Promise<EliteArticle> {
@@ -265,6 +379,7 @@ export async function generateEliteArticle(
     keyword,
     brandVoice,
     existingArticleTitles = [],
+    domainUrl,
     targetWords = 2000,
     generateImages = false,
   } = data;
@@ -364,13 +479,29 @@ export async function generateEliteArticle(
 
   const modeAddendum = modeInstructions[contentMode] ?? modeInstructions.article;
 
-  const internalLinksSection =
-    (existingArticleTitles.length > 0
-      ? `\nARTICLES EXISTANTS (intégrer des liens internes pertinents si opportun) :\n${existingArticleTitles
-          .slice(0, 10)
-          .map((t) => `- ${t}`)
-          .join("\n")}\n`
-      : "") + modeAddendum + businessContextAddendum;
+  // Construire le bloc de maillage interne avec vraies URLs si domainUrl disponible
+  const domain = domainUrl ? normalizeDomain(domainUrl) : null;
+  const baseUrl = domain ? `https://${domain}` : null;
+
+  let internalLinksBlock = "";
+  if (existingArticleTitles.length > 0) {
+    if (baseUrl) {
+      const linkedArticles = existingArticleTitles.slice(0, 10).map((title) => {
+        const slug = titleToSlug(title);
+        return `- [${title}](${baseUrl}/blog/${slug})`;
+      });
+      internalLinksBlock = `\nARTICLES EXISTANTS — MAILLAGE INTERNE (utiliser ces URLs exactes dans les liens) :\n${linkedArticles.join("\n")}\n\nPAGE D'ACCUEIL : [${domain}](${baseUrl}) — à lier au moins une fois avec une ancre contenant le mot-clé ou la marque.\n`;
+    } else {
+      internalLinksBlock = `\nARTICLES EXISTANTS (intégrer des liens internes pertinents, ancres descriptives) :\n${existingArticleTitles
+        .slice(0, 10)
+        .map((t) => `- ${t}`)
+        .join("\n")}\n`;
+    }
+  } else if (baseUrl) {
+    internalLinksBlock = `\nPAGE D'ACCUEIL : [${domain}](${baseUrl}) — lier au moins une fois avec une ancre contenant le mot-clé ou la marque.\n`;
+  }
+
+  const internalLinksSection = internalLinksBlock + modeAddendum + businessContextAddendum;
 
   // ── Étape D : Génération de l'article avec Claude ─────────────────────
   const chain = eliteWriterPrompt.pipe(getClaude()).pipe(getStringParser());

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import {
@@ -21,6 +22,9 @@ import {
   TrendingUp,
   Wand2,
   Layers,
+  Eye,
+  Zap,
+  ChevronRight,
 } from "lucide-react";
 import type {
   LinkedInTrigger,
@@ -28,6 +32,7 @@ import type {
 } from "@/app/api/social/linkedin/generate/route";
 import type { FromUrlResponse } from "@/app/api/social/linkedin/from-url/route";
 import type { PostScore } from "@/app/api/social/linkedin/score/route";
+import type { ImproveResponse } from "@/app/api/social/linkedin/improve/route";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -248,6 +253,8 @@ function LinkedInPreview({ content }: { content: string }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LinkedInStudioPage() {
+  const searchParams = useSearchParams();
+
   const [mode, setMode] = useState<"idea" | "url">("idea");
   const [subject, setSubject] = useState("");
   const [urlInput, setUrlInput] = useState("");
@@ -271,6 +278,17 @@ export default function LinkedInStudioPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [regenHooks, setRegenHooks] = useState(false);
+  const [improving, setImproving] = useState(false);
+  const [improved, setImproved] = useState<ImproveResponse | null>(null);
+
+  // Pre-fill from veille "Ouvrir dans le Studio"
+  useEffect(() => {
+    const draft = searchParams.get("draft");
+    if (draft && !post) {
+      try { setPost(decodeURIComponent(draft)); setActiveTab("editor"); } catch { /* ignore */ }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const charLen = post.length;
   const canGenerate =
@@ -287,9 +305,12 @@ export default function LinkedInStudioPage() {
     setHooks([]);
     setFirstComment("");
     setUrlMeta(null);
+    setScore(null);
+    setImproved(null);
 
     try {
       if (mode === "url") {
+        // URL mode: non-streaming (scraping + AI in one shot)
         const res = await fetch("/api/social/linkedin/from-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -304,26 +325,61 @@ export default function LinkedInStudioPage() {
         setHooks(data.hooks);
         setFirstComment(data.firstComment);
         setUrlMeta({ title: data.sourceTitle, type: data.sourceType, angle: data.angle });
+        setActiveTab("editor");
       } else {
-        const res = await fetch("/api/social/linkedin/generate", {
+        // Idea mode: streaming — words appear in real time
+        setPost("");
+        setActiveTab("editor");
+
+        const res = await fetch("/api/social/linkedin/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ trigger, subject, format }),
         });
+
         if (!res.ok) {
           const err = (await res.json()) as { error?: string };
           throw new Error(err.error ?? "Erreur de génération");
         }
-        const data = (await res.json()) as {
-          post: string;
-          hooks: string[];
-          firstComment: string;
-        };
-        setPost(data.post);
-        setHooks(data.hooks);
-        setFirstComment(data.firstComment);
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
+
+          for (const evt of events) {
+            const lines = evt.split("\n");
+            const eventLine = lines.find((l) => l.startsWith("event: "));
+            const dataLine = lines.find((l) => l.startsWith("data: "));
+            if (!eventLine || !dataLine) continue;
+
+            const eventName = eventLine.slice(7).trim();
+            let data: Record<string, unknown>;
+            try {
+              data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+            } catch {
+              continue;
+            }
+
+            if (eventName === "token") {
+              setPost((prev) => prev + (data.text as string));
+            } else if (eventName === "meta") {
+              const m = data as { hooks?: string[]; firstComment?: string };
+              if (m.hooks) setHooks(m.hooks);
+              if (m.firstComment) setFirstComment(m.firstComment);
+            } else if (eventName === "error") {
+              throw new Error((data.message as string) ?? "Erreur de génération");
+            }
+          }
+        }
       }
-      setActiveTab("editor");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
@@ -385,6 +441,7 @@ export default function LinkedInStudioPage() {
     if (!post || scoring) return;
     setScoring(true);
     setScore(null);
+    setImproved(null);
     try {
       const res = await fetch("/api/social/linkedin/score", {
         method: "POST",
@@ -399,6 +456,36 @@ export default function LinkedInStudioPage() {
     } finally {
       setScoring(false);
     }
+  }
+
+  async function handleImprove() {
+    if (!post || !score || improving) return;
+    setImproving(true);
+    setImproved(null);
+    try {
+      const res = await fetch("/api/social/linkedin/improve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post, score }),
+      });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as ImproveResponse;
+      setImproved(data);
+    } catch {
+      // silent
+    } finally {
+      setImproving(false);
+    }
+  }
+
+  function applyImproved() {
+    if (!improved) return;
+    setPost(improved.post);
+    setHooks(improved.hooks);
+    setFirstComment(improved.firstComment);
+    setScore(null);
+    setImproved(null);
+    setActiveTab("editor");
   }
 
   const accentFg = "var(--violet-fg)";
@@ -423,6 +510,14 @@ export default function LinkedInStudioPage() {
             Retour au Studio
           </Link>
           <div className="flex items-center gap-2">
+            <Link
+              href="/marketing-os/social/veille"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-semibold transition-all hover:brightness-110"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Veille
+            </Link>
             <Link
               href="/marketing-os/studio/linkedin/voice"
               className="inline-flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-semibold transition-all hover:brightness-110"
@@ -679,8 +774,8 @@ export default function LinkedInStudioPage() {
             >
               {generating ? (
                 <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Génération en cours…
+                  <span className="inline-block w-2 h-2 rounded-full animate-pulse bg-white/80" />
+                  {mode === "url" ? "Analyse en cours…" : "Rédaction en cours…"}
                 </>
               ) : mode === "url" ? (
                 <>
@@ -849,8 +944,21 @@ export default function LinkedInStudioPage() {
                   boxShadow: "var(--card-shadow)",
                 }}
               >
+                {/* Streaming indicator */}
+                {generating && mode === "idea" && (
+                  <div
+                    className="flex items-center gap-2 mb-3 px-3 py-2 rounded-[8px]"
+                    style={{ background: accentSoft, border: `1px solid var(--violet-line)` }}
+                  >
+                    <span className="inline-block w-2 h-2 rounded-full animate-pulse" style={{ background: accentFg }} />
+                    <span className="text-[11.5px] font-medium" style={{ color: accentFg }}>
+                      Rédaction en cours…
+                    </span>
+                  </div>
+                )}
+
                 {/* Zone "voir plus" indicator */}
-                {post && charLen > LINKEDIN_PREVIEW_CHARS && (
+                {post && charLen > LINKEDIN_PREVIEW_CHARS && !generating && (
                   <div className="flex items-center gap-2 mb-3">
                     <div
                       className="text-[10.5px] font-medium px-2.5 py-1 rounded-[6px] flex items-center gap-1.5"
@@ -1149,6 +1257,122 @@ export default function LinkedInStudioPage() {
                         );
                       })}
                     </div>
+
+                    {/* ── Auto-amélioration ─────────────────────────────────── */}
+                    {!improved && score.verdict !== "publish_now" && (
+                      <button
+                        onClick={handleImprove}
+                        disabled={improving}
+                        className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-[14px] text-[14px] font-bold transition-all hover:brightness-110 disabled:opacity-50"
+                        style={{
+                          background: improving
+                            ? "var(--violet-soft)"
+                            : `linear-gradient(135deg, ${accentFg}, var(--violet-fg))`,
+                          color: "white",
+                          boxShadow: improving ? "none" : "0 4px 16px rgba(124,58,237,0.35)",
+                        }}
+                      >
+                        {improving ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                            Amélioration en cours…
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="h-4 w-4" />
+                            Améliorer le post maintenant
+                            <ChevronRight className="h-4 w-4 opacity-70" />
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {improved && (
+                      <div
+                        className="rounded-[18px] overflow-hidden"
+                        style={{ border: "2px solid var(--emerald-line)", boxShadow: "0 4px 20px rgba(16,185,129,0.12)" }}
+                      >
+                        {/* Header */}
+                        <div
+                          className="flex items-center justify-between px-5 py-3"
+                          style={{ background: "var(--emerald-soft)", borderBottom: "1px solid var(--emerald-line)" }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Zap className="h-4 w-4" style={{ color: "var(--emerald-fg)" }} />
+                            <span className="text-[13px] font-bold" style={{ color: "var(--emerald-fg)" }}>
+                              Post amélioré
+                            </span>
+                          </div>
+                          <button
+                            onClick={applyImproved}
+                            className="flex items-center gap-1.5 px-4 py-1.5 rounded-[8px] text-[12.5px] font-bold transition-all hover:brightness-110"
+                            style={{ background: "var(--emerald-fg)", color: "white" }}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Appliquer dans l'éditeur
+                          </button>
+                        </div>
+
+                        {/* Improvements changelog */}
+                        <div
+                          className="px-5 py-3 space-y-1"
+                          style={{ background: "var(--bg-card)", borderBottom: "1px solid var(--line)" }}
+                        >
+                          <p className="text-[10.5px] font-mono uppercase tracking-[0.12em] mb-2" style={{ color: "var(--fg-mute)" }}>
+                            Améliorations apportées
+                          </p>
+                          {improved.improvements.map((imp, i) => (
+                            <div key={i} className="flex items-start gap-2">
+                              <span className="text-[11px] font-bold mt-0.5" style={{ color: "var(--emerald-fg)" }}>✓</span>
+                              <p className="text-[12px] leading-snug" style={{ color: "var(--fg-dim)" }}>{imp}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Post preview */}
+                        <div
+                          className="px-5 py-4 text-[13px] leading-[1.75] whitespace-pre-wrap max-h-[280px] overflow-y-auto"
+                          style={{
+                            background: "var(--bg)",
+                            color: "var(--fg-dim)",
+                            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                          }}
+                        >
+                          {improved.post}
+                        </div>
+
+                        {/* Footer actions */}
+                        <div
+                          className="flex items-center gap-2 px-5 py-3"
+                          style={{ background: "var(--bg-card)", borderTop: "1px solid var(--line)" }}
+                        >
+                          <button
+                            onClick={applyImproved}
+                            className="flex items-center gap-2 flex-1 justify-center py-2.5 rounded-[10px] text-[13px] font-bold transition-all hover:brightness-110"
+                            style={{ background: "var(--emerald-fg)", color: "white" }}
+                          >
+                            <Check className="h-4 w-4" />
+                            Appliquer et éditer
+                          </button>
+                          <button
+                            onClick={() => setImproved(null)}
+                            className="px-4 py-2.5 rounded-[10px] text-[12px] font-medium transition-all hover:brightness-95"
+                            style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                          >
+                            Ignorer
+                          </button>
+                          <button
+                            onClick={handleImprove}
+                            disabled={improving}
+                            className="flex items-center gap-1.5 px-3 py-2.5 rounded-[10px] text-[11.5px] font-medium transition-all hover:brightness-95 disabled:opacity-50"
+                            style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${improving ? "animate-spin" : ""}`} />
+                            Réessayer
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

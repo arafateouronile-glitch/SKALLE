@@ -793,6 +793,7 @@ export async function generateSingleArticle(
         outline,
         brandVoice: wsBrandVoice,
         existingArticleTitles: existingTitles,
+        domainUrl: workspace.domainUrl ?? undefined,
         generateImages: options?.generateImages ?? false,
         targetPersona: options?.targetPersona,
         userId: session.user!.id!,

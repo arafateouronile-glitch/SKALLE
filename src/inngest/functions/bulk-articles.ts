@@ -50,14 +50,23 @@ export const generateBulkArticles = inngest.createFunction(
     let completed = 0;
     let failed = 0;
 
-    // Récupérer les titres existants pour les liens internes
-    const existingTitles = await step.run("fetch-existing-titles", async () => {
-      const posts = await prisma.post.findMany({
-        where: { workspaceId, type: "SEO_ARTICLE", deletedAt: null },
-        select: { title: true },
-        take: 50,
-      });
-      return posts.map((p) => p.title).filter((t): t is string => !!t);
+    // Récupérer les titres existants et le domaine pour les liens internes
+    const { existingTitles, domainUrl } = await step.run("fetch-existing-titles", async () => {
+      const [posts, workspace] = await Promise.all([
+        prisma.post.findMany({
+          where: { workspaceId, type: "SEO_ARTICLE", deletedAt: null },
+          select: { title: true },
+          take: 50,
+        }),
+        prisma.workspace.findUnique({
+          where: { id: workspaceId },
+          select: { domainUrl: true },
+        }),
+      ]);
+      return {
+        existingTitles: posts.map((p) => p.title).filter((t): t is string => !!t),
+        domainUrl: workspace?.domainUrl ?? null,
+      };
     });
 
     // Process each keyword
@@ -100,6 +109,7 @@ export const generateBulkArticles = inngest.createFunction(
               workspaceId,
               existingArticleTitles: existingTitles,
               contentMode,
+              domainUrl: domainUrl ?? undefined,
             });
 
             // Générer image
@@ -259,12 +269,22 @@ export const generateSingleArticle = inngest.createFunction(
   async ({ event, step }) => {
     const { workspaceId, keyword, brandVoice, contentMode } = event.data;
 
+    // Récupérer le domaine pour les liens internes
+    const workspaceDomain = await step.run("fetch-workspace-domain", async () => {
+      const ws = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { domainUrl: true },
+      });
+      return ws?.domainUrl ?? null;
+    });
+
     const article = await step.run("generate-article", async () => {
       return generateEnhancedArticle({
         keyword,
         brandVoice,
         workspaceId,
         contentMode,
+        domainUrl: workspaceDomain ?? undefined,
       });
     });
 
