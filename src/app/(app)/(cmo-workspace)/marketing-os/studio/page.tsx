@@ -251,6 +251,7 @@ export default function StudioPage() {
   const [copiedIdx,     setCopiedIdx]     = useState<number | null>(null);
   const [detailPost,    setDetailPost]    = useState<Creation | null>(null);
   const [copiedDetail,  setCopiedDetail]  = useState(false);
+  const [markingPublished, setMarkingPublished] = useState(false);
 
   // ── Studio helpers ──────────────────────────────────────────────────────────
 
@@ -686,28 +687,81 @@ export default function StudioPage() {
             </div>
 
             {/* Footer */}
-            <div className="shrink-0 px-6 py-4 flex items-center gap-3" style={{ borderTop: "1px solid var(--line)" }}>
-              {detailPost.content && (
+            <div className="shrink-0 px-6 py-4 flex flex-col gap-2.5" style={{ borderTop: "1px solid var(--line)" }}>
+              <div className="flex items-center gap-2.5">
+                {detailPost.content && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(detailPost.content!);
+                      setCopiedDetail(true);
+                      setTimeout(() => setCopiedDetail(false), 2000);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-[8px] text-[12.5px] font-semibold transition-all hover:brightness-110 flex-1"
+                    style={{ background: copiedDetail ? "var(--emerald-soft)" : "var(--emerald-fg)", color: copiedDetail ? "var(--emerald-fg)" : "white", border: copiedDetail ? "1px solid var(--emerald-line)" : "none" }}
+                  >
+                    {copiedDetail ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {copiedDetail ? "Copié !" : "Copier le post"}
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(detailPost.content!);
-                    setCopiedDetail(true);
-                    setTimeout(() => setCopiedDetail(false), 2000);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-[8px] text-[12.5px] font-semibold transition-all hover:brightness-110 flex-1"
-                  style={{ background: copiedDetail ? "var(--emerald-soft)" : "var(--emerald-fg)", color: copiedDetail ? "var(--emerald-fg)" : "white", border: copiedDetail ? "1px solid var(--emerald-line)" : "none" }}
+                  onClick={() => setDetailPost(null)}
+                  className="px-4 py-2.5 rounded-[8px] text-[12.5px] font-medium"
+                  style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
                 >
-                  {copiedDetail ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copiedDetail ? "Copié !" : "Copier le post"}
+                  Fermer
+                </button>
+              </div>
+              {/* Marquer comme publié — uniquement pour les vrais posts DB (ID sans préfixe local) */}
+              {detailPost.status !== "Publié" &&
+               typeof detailPost.id === "string" &&
+               !String(detailPost.id).startsWith("local-") &&
+               !String(detailPost.id).startsWith("gen-") &&
+               !String(detailPost.id).startsWith("base-") && (
+                <button
+                  disabled={markingPublished}
+                  onClick={async () => {
+                    setMarkingPublished(true);
+                    try {
+                      const res = await fetch(`/api/social/posts/${detailPost.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ status: "PUBLISHED" }),
+                      });
+                      if (res.ok) {
+                        setCreations((prev) =>
+                          prev.map((c) =>
+                            c.id === detailPost.id
+                              ? { ...c, status: "Publié" as StatusFilter, statusColor: "emerald" }
+                              : c
+                          )
+                        );
+                        setDetailPost((prev) =>
+                          prev ? { ...prev, status: "Publié" as StatusFilter, statusColor: "emerald" } : null
+                        );
+                      }
+                    } finally {
+                      setMarkingPublished(false);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[8px] text-[12.5px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
+                  style={{ background: "var(--emerald-soft)", border: "1px solid var(--emerald-line)", color: "var(--emerald-fg)" }}
+                >
+                  {markingPublished ? (
+                    <><Zap className="h-4 w-4 animate-pulse" />Mise à jour…</>
+                  ) : (
+                    <><Check className="h-4 w-4" />Marquer comme publié</>
+                  )}
                 </button>
               )}
-              <button
-                onClick={() => setDetailPost(null)}
-                className="px-4 py-2.5 rounded-[8px] text-[12.5px] font-medium"
-                style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}
-              >
-                Fermer
-              </button>
+              {detailPost.status === "Publié" && (
+                <div
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-[8px] text-[12px] font-medium"
+                  style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Publié
+                </div>
+              )}
             </div>
           </div>
         </>

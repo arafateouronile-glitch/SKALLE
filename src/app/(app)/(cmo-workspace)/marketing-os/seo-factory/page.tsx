@@ -1147,6 +1147,20 @@ export default function SEOFactoryPage() {
                               <ExternalLink className="h-4 w-4 mr-2" />Publier WordPress
                             </DropdownMenuItem>
                           )}
+                          {article.status !== "PUBLISHED" && (
+                            <DropdownMenuItem onClick={async () => {
+                              if (!workspaceId) return;
+                              const result = await updateArticle(workspaceId, article.id, { status: "PUBLISHED" });
+                              if (result.success) {
+                                toast.success("Marqué comme publié ✓");
+                                setArticles((prev) => prev.map((a) =>
+                                  a.id === article.id ? { ...a, status: "PUBLISHED" } : a
+                                ));
+                              } else toast.error("Erreur");
+                            }}>
+                              <CheckCircle2 className="h-4 w-4 mr-2" />Marquer comme publié
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={() => handleDelete(article.id)} className="text-red-500 focus:text-red-600">
                             <Trash2 className="h-4 w-4 mr-2" />Supprimer
                           </DropdownMenuItem>
@@ -2627,6 +2641,23 @@ export default function SEOFactoryPage() {
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                   Publier WordPress
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!workspaceId || !editorArticleId) return;
+                    const result = await updateArticle(workspaceId, editorArticleId, { status: "PUBLISHED" });
+                    if (result.success) {
+                      toast.success("Marqué comme publié ✓");
+                      setArticles((prev) => prev.map((a) =>
+                        a.id === editorArticleId ? { ...a, status: "PUBLISHED" } : a
+                      ));
+                    } else toast.error("Erreur");
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12.5px] font-semibold transition-all hover:brightness-110"
+                  style={{ background: E.fg, color: "white" }}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Marquer publié
                 </button>
                 <button
                   onClick={() => editorArticleId && void performSave(editorArticleId, editorContent, editorTitle, editorMetaTitle, editorMetaDesc)}
