@@ -836,6 +836,88 @@ export async function generateSingleArticle(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ✨ AMÉLIORATION D'ARTICLE EXISTANT
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function improveArticle(
+  workspaceId: string,
+  articleId: string,
+  improvementInstructions: string
+): Promise<{ success: boolean; data?: { title: string; seoScore: number | null; content: string; metaTitle: string | null; metaDescription: string | null }; error?: string }> {
+  try {
+    const session = await requireAuth();
+    const workspace = await requireWorkspace(workspaceId, session.user!.id!);
+
+    return await withCredits("seo_article_single", workspaceId, async () => {
+      const post = await prisma.post.findFirst({
+        where: { id: articleId, workspaceId, deletedAt: null },
+      });
+      if (!post) throw new Error("Article non trouvé");
+
+      const keyword = post.keywords?.[0] ?? (post.title ?? "");
+      if (!keyword) throw new Error("Mot-clé introuvable pour cet article");
+
+      const { generateEliteArticle } = await import("@/lib/services/seo/writer");
+
+      const existingPosts = await prisma.post.findMany({
+        where: { workspaceId, type: "SEO_ARTICLE", deletedAt: null, id: { not: articleId } },
+        select: { title: true },
+        take: 50,
+      });
+      const existingTitles = existingPosts.map((p) => p.title).filter((t): t is string => !!t);
+
+      const wsBrandVoice = workspace.brandVoice as Record<string, unknown> | undefined;
+      const wsContentMode =
+        (wsBrandVoice?.seoPublicationStrategy as Record<string, unknown> | undefined)
+          ?.contentMode as string | undefined;
+
+      const article = await generateEliteArticle({
+        keyword,
+        brandVoice: wsBrandVoice,
+        existingArticleTitles: existingTitles,
+        domainUrl: workspace.domainUrl ?? undefined,
+        generateImages: false,
+        userId: session.user!.id!,
+        workspaceId,
+        contentMode: wsContentMode ?? "article",
+        improvementInstructions,
+      });
+
+      const updated = await prisma.post.update({
+        where: { id: articleId },
+        data: {
+          title: article.title,
+          content: article.content,
+          excerpt: article.excerpt,
+          metaTitle: article.metaTitle,
+          metaDescription: article.metaDescription,
+          outline: JSON.parse(JSON.stringify(article.outline)),
+          keywords: [keyword, ...article.relatedKeywords.slice(0, 5)],
+          seoScore: article.seoScore,
+          readabilityScore: article.readabilityScore,
+          seoFeedback: JSON.parse(JSON.stringify(article.seoFeedback)),
+          faqContent: JSON.parse(JSON.stringify(article.faqContent)),
+          tableOfContents: JSON.parse(JSON.stringify(article.tableOfContents)),
+          wordCount: article.wordCount,
+          sources: article.sources.length > 0 ? JSON.parse(JSON.stringify(article.sources)) : undefined,
+        },
+      });
+
+      return {
+        title: updated.title ?? keyword,
+        seoScore: updated.seoScore,
+        content: article.content,
+        metaTitle: updated.metaTitle,
+        metaDescription: updated.metaDescription,
+      };
+    }) as { success: boolean; data?: { title: string; seoScore: number | null; content: string; metaTitle: string | null; metaDescription: string | null }; error?: string };
+  } catch (error) {
+    console.error("Article improvement error:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Une erreur est survenue" };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 📈 SCORING DE CONTENU
 // ═══════════════════════════════════════════════════════════════════════════
 

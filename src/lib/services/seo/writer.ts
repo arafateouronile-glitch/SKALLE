@@ -62,6 +62,8 @@ export interface ArticleInput {
   workspaceId?: string;
   /** Mode de contenu SEO : article | affiliation | ecommerce | discovery | local */
   contentMode?: string;
+  /** Instructions d'amélioration pour régénérer un article existant */
+  improvementInstructions?: string;
 }
 
 export interface EliteArticle extends GeneratedArticle {
@@ -229,7 +231,7 @@ PERSONA CIBLE (adapter le niveau de langage et les exemples) :
 {targetPersona}
 {brandVoiceSection}
 {internalLinksSection}
-{serpSection}
+{serpSection}{improvementSection}
 RAPPELS TECHNIQUES :
 - Insère [IMAGE_PROMPT: ...] immédiatement après chaque ## (H2)
 - Génère au moins 2 tableaux Markdown là où c'est pertinent
@@ -527,6 +529,14 @@ ${serpIntelligence.serpContext}
 ═══════════════════════════════════════════════════════════\n`
     : "";
 
+  const improvementSection = data.improvementInstructions
+    ? `\n═══════════════════════════════════════════════════════════
+INSTRUCTIONS D'AMÉLIORATION (PRIORITÉ ABSOLUE — à intégrer impérativement)
+═══════════════════════════════════════════════════════════
+${data.improvementInstructions}
+═══════════════════════════════════════════════════════════\n`
+    : "";
+
   const rawArticle = await chain.invoke({
     keyword,
     outlineText,
@@ -540,6 +550,7 @@ ${serpIntelligence.serpContext}
     brandVoiceSection,
     internalLinksSection,
     serpSection,
+    improvementSection,
   });
 
   // ── Étape E : Extraire META TITLE et META DESCRIPTION ─────────────────

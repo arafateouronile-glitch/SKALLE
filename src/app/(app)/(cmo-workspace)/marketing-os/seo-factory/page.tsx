@@ -73,6 +73,7 @@ import {
   runSEOAudit,
   startBulkGeneration,
   generateSingleArticle,
+  improveArticle,
   listArticles,
   getArticle,
   updateArticle,
@@ -195,6 +196,11 @@ export default function SEOFactoryPage() {
   const [selectionStart, setSelectionStart] = useState(0);
   const [selectionEnd, setSelectionEnd] = useState(0);
   const editorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // ── Amélioration IA ────────────────────────────────────────────────────
+  const [improveOpen, setImproveOpen] = useState(false);
+  const [improveSuggestions, setImproveSuggestions] = useState("");
+  const [isImproving, setIsImproving] = useState(false);
 
   // ── Generation bulk
   const [keywords, setKeywords] = useState("");
@@ -732,6 +738,34 @@ export default function SEOFactoryPage() {
     setEditorArticleId(null);
     setEditorSaveStatus("idle");
     setSelectedText("");
+    setImproveOpen(false);
+    setImproveSuggestions("");
+  };
+
+  const handleImproveArticle = async () => {
+    if (!editorArticleId || !workspaceId || !improveSuggestions.trim() || isImproving) return;
+    setIsImproving(true);
+    try {
+      const result = await improveArticle(workspaceId, editorArticleId, improveSuggestions.trim());
+      if (result.success && result.data) {
+        setEditorContent(result.data.content);
+        setEditorTitle(result.data.title);
+        if (result.data.metaTitle) setEditorMetaTitle(result.data.metaTitle);
+        if (result.data.metaDescription) setEditorMetaDesc(result.data.metaDescription);
+        setEditorScore(null);
+        setImproveOpen(false);
+        setImproveSuggestions("");
+        toast.success("Article régénéré avec vos suggestions ✓");
+        void performSave(editorArticleId, result.data.content, result.data.title, result.data.metaTitle ?? "", result.data.metaDescription ?? "");
+        loadArticles();
+      } else {
+        toast.error(result.error ?? "Erreur lors de la régénération");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsImproving(false);
+    }
   };
 
   const handleOptimizeMeta = async () => {
@@ -2523,6 +2557,56 @@ export default function SEOFactoryPage() {
                         {editorScore.faq.present ? `✓ FAQ présente (${editorScore.faq.questionCount} questions)` : "✗ Section FAQ absente"}
                       </span>
                     </div>
+
+                    {/* ── Améliorer avec l'IA ── */}
+                    <div className="pt-4 border-t" style={{ borderColor: "var(--line)" }}>
+                      <button
+                        onClick={() => setImproveOpen((v) => !v)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-[12px] font-semibold transition-all hover:brightness-95"
+                        style={{ background: V.soft, color: V.fg, border: `1px solid ${V.line}` }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Améliorer avec l&apos;IA
+                        </span>
+                        <span className="font-mono text-[11px]">{improveOpen ? "▲" : "▼"}</span>
+                      </button>
+
+                      {improveOpen && (
+                        <div className="mt-3 space-y-3">
+                          <p className="text-[10.5px] leading-snug" style={{ color: "var(--fg-mute)" }}>
+                            Décrivez vos suggestions d&apos;amélioration. L&apos;IA régénère l&apos;article entier en intégrant vos instructions.
+                          </p>
+                          <textarea
+                            value={improveSuggestions}
+                            onChange={(e) => setImproveSuggestions(e.target.value)}
+                            className="w-full p-3 rounded-lg outline-none text-[12px] resize-none"
+                            style={{
+                              background: "var(--bg)",
+                              border: `1px solid ${V.line}`,
+                              color: "var(--fg)",
+                              minHeight: 110,
+                            }}
+                            placeholder={"Ex :\n- Ajouter plus d'exemples concrets\n- Renforcer la section FAQ\n- Ton plus direct et moins académique\n- Inclure des données chiffrées récentes"}
+                          />
+                          <button
+                            onClick={handleImproveArticle}
+                            disabled={isImproving || !improveSuggestions.trim() || isDepleted}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12.5px] font-semibold transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{ background: V.fg, color: "white" }}
+                          >
+                            {isImproving ? (
+                              <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Régénération en cours…</>
+                            ) : (
+                              <><Sparkles className="h-3.5 w-3.5" />Régénérer l&apos;article →</>
+                            )}
+                          </button>
+                          <p className="text-[10px] text-center" style={{ color: "var(--fg-mute)" }}>
+                            Coût : 8 crédits · ~3 min
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
@@ -2538,6 +2622,53 @@ export default function SEOFactoryPage() {
                       <Gauge className="h-3.5 w-3.5" />
                       Analyser maintenant
                     </button>
+
+                    {/* ── Améliorer sans score ── */}
+                    <div className="w-full pt-4 border-t" style={{ borderColor: "var(--line)" }}>
+                      <button
+                        onClick={() => setImproveOpen((v) => !v)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-[12px] font-semibold transition-all hover:brightness-95"
+                        style={{ background: V.soft, color: V.fg, border: `1px solid ${V.line}` }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Améliorer avec l&apos;IA
+                        </span>
+                        <span className="font-mono text-[11px]">{improveOpen ? "▲" : "▼"}</span>
+                      </button>
+
+                      {improveOpen && (
+                        <div className="mt-3 space-y-3 text-left">
+                          <p className="text-[10.5px] leading-snug" style={{ color: "var(--fg-mute)" }}>
+                            Décrivez vos suggestions. L&apos;IA régénère l&apos;article entier.
+                          </p>
+                          <textarea
+                            value={improveSuggestions}
+                            onChange={(e) => setImproveSuggestions(e.target.value)}
+                            className="w-full p-3 rounded-lg outline-none text-[12px] resize-none"
+                            style={{
+                              background: "var(--bg)",
+                              border: `1px solid ${V.line}`,
+                              color: "var(--fg)",
+                              minHeight: 100,
+                            }}
+                            placeholder={"- Ajouter des exemples concrets\n- Renforcer la FAQ\n- Ton plus direct"}
+                          />
+                          <button
+                            onClick={handleImproveArticle}
+                            disabled={isImproving || !improveSuggestions.trim() || isDepleted}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{ background: V.fg, color: "white" }}
+                          >
+                            {isImproving ? (
+                              <><RefreshCw className="h-3 w-3 animate-spin" />Régénération…</>
+                            ) : (
+                              <><Sparkles className="h-3 w-3" />Régénérer →</>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
