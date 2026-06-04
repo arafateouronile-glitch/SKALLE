@@ -44,13 +44,39 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // domainUrl peut être null si le workspace est incomplet
+    if (!workspace.domainUrl) {
+      console.error("[GSC Callback] domainUrl manquant pour workspace", workspaceId);
+      return NextResponse.redirect(
+        new URL("/marketing-os/settings?gsc=error&reason=no_domain", req.url)
+      );
+    }
+
     // Échanger le code contre des tokens
     const { accessToken, refreshToken, expiresAt } = await exchangeGSCCode(code);
 
-    // Déterminer l'URL du site (format GSC: "https://example.com/")
-    const siteUrl = workspace.domainUrl.startsWith("http")
-      ? workspace.domainUrl.replace(/\/?$/, "/")
-      : `https://${workspace.domainUrl.replace(/\/?$/, "/")}`;
+    // Normaliser l'URL GSC : "https://example.com/"
+    const raw = workspace.domainUrl.trim();
+    const siteUrl = raw.startsWith("http")
+      ? raw.replace(/\/?$/, "/")
+      : `https://${raw.replace(/\/?$/, "/")}`;
+
+    // Récupérer le refreshToken existant si Google n'en a pas renvoyé
+    // (Google omet le refresh_token sur les ré-autorisations)
+    let resolvedRefreshToken = refreshToken;
+    if (!resolvedRefreshToken) {
+      const existing = await prisma.googleSearchConsoleConfig.findUnique({
+        where: { workspaceId },
+        select: { refreshToken: true },
+      });
+      resolvedRefreshToken = existing?.refreshToken ?? null;
+      if (!resolvedRefreshToken) {
+        console.error("[GSC Callback] Aucun refresh_token disponible pour", workspaceId);
+        return NextResponse.redirect(
+          new URL("/marketing-os/settings?gsc=error&reason=no_refresh_token", req.url)
+        );
+      }
+    }
 
     // Sauvegarder la configuration GSC
     await prisma.googleSearchConsoleConfig.upsert({
@@ -59,22 +85,21 @@ export async function GET(req: NextRequest) {
         workspaceId,
         siteUrl,
         accessToken,
-        refreshToken,
+        refreshToken: resolvedRefreshToken,
         tokenExpiry: expiresAt,
         isConnected: true,
       },
       update: {
         siteUrl,
         accessToken,
-        refreshToken,
+        refreshToken: resolvedRefreshToken,
         tokenExpiry: expiresAt,
         isConnected: true,
       },
     });
 
-    console.log(`[GSC] Connexion réussie pour workspace ${workspaceId}`);
+    console.log(`[GSC] Connexion réussie pour workspace ${workspaceId}, siteUrl: ${siteUrl}`);
 
-    // Si l'onboarding n'est pas terminé, retourner à /onboarding
     const redirectBase =
       workspace.onboardingStep !== 0
         ? "/onboarding?gsc=connected"

@@ -169,6 +169,24 @@ async function refreshStatus() {
 
 document.getElementById("refresh").addEventListener("click", refreshStatus);
 
+// ── Reset complet automation ──────────────────────────────────────────────────
+
+document.getElementById("resetAutomation").addEventListener("click", async () => {
+  const btn = document.getElementById("resetAutomation");
+  btn.disabled = true;
+  btn.textContent = "⏳ Reset…";
+  await chrome.storage.local.remove([
+    "linkedInChallenge", "challengeAt",
+    "rateLimitAt", "rateLimitResumeAt",
+    "nextActionAt",
+  ]);
+  await chrome.storage.sync.set({ automationEnabled: true });
+  await refreshStatus();
+  btn.disabled = false;
+  btn.textContent = "✅ Automation débloquée";
+  setTimeout(() => { btn.textContent = "🔓 Débloquer l'automation (reset complet)"; }, 3000);
+});
+
 // ── Résolution du challenge LinkedIn ──────────────────────────────────────────
 
 document.getElementById("challengeResolved").addEventListener("click", async () => {

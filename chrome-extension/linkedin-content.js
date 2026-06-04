@@ -15,14 +15,16 @@
 
 function getApiBase() {
   return new Promise((resolve) => {
+    if (!chrome.runtime?.id) return resolve("https://skalle.vercel.app");
     chrome.storage.sync.get({ skalleApiBase: "" }, (r) => {
-      resolve(r.skalleApiBase?.trim() || "http://localhost:3000");
+      resolve(r.skalleApiBase?.trim() || "https://skalle.vercel.app");
     });
   });
 }
 
 function getToken() {
   return new Promise((resolve) => {
+    if (!chrome.runtime?.id) return resolve("");
     chrome.storage.sync.get(["skalleToken"], (r) => resolve(r.skalleToken || ""));
   });
 }
@@ -61,17 +63,20 @@ async function voyagerFetch(url, options = {}) {
   }
 
   if (res.status === 403) {
-    // Lire le body pour distinguer restriction / challenge
+    // Lire le body pour distinguer ban confirmé / challenge / erreur normale
+    // Un 403 générique (profil privé, non connecté) NE doit PAS bloquer l'automation
     try {
       const text = await res.clone().text();
-      if (/restricted|blocked|banned|suspended/i.test(text)) {
-        return { res, abortCode: "RESTRICTED" };
-      }
       if (/challenge|captcha|verification/i.test(text)) {
         return { res, abortCode: "CHALLENGE" };
       }
+      // Seulement si LinkedIn confirme explicitement une restriction de compte
+      if (/your account has been restricted|account restricted|member has been blocked/i.test(text)) {
+        return { res, abortCode: "RESTRICTED" };
+      }
     } catch { /* ignore */ }
-    return { res, abortCode: "RESTRICTED" };
+    // 403 générique = échec silencieux, pas d'arrêt de l'automation
+    return { res, abortCode: null };
   }
 
   return { res, abortCode: null };
@@ -93,9 +98,22 @@ function normalizeLinkedInUrl(pathname) {
 // ── Stratégie 1 : intercepteur fetch (linkedin-inject.js) ────────────────────
 
 function injectFetchInterceptor() {
-  const script = document.createElement("script");
-  script.src = chrome.runtime.getURL("linkedin-inject.js");
-  (document.head || document.documentElement).appendChild(script);
+  // chrome.runtime.id est undefined quand le service worker a été tué puis
+  // redémarré — getURL() retournerait "chrome-extension://invalid/..." sinon.
+  if (!chrome.runtime?.id) return;
+
+  // Éviter la double injection sur les re-renders de page LinkedIn
+  if (document.querySelector("script[data-skalle-inject]")) return;
+
+  try {
+    const script = document.createElement("script");
+    script.src = chrome.runtime.getURL("linkedin-inject.js");
+    script.dataset.skalleInject = "1";
+    script.onerror = () => script.remove(); // Nettoyage si le chargement échoue
+    (document.head || document.documentElement).appendChild(script);
+  } catch {
+    // Contexte invalidé — on ignore silencieusement
+  }
 }
 
 // ── Stratégie 2 : Voyager API direct ─────────────────────────────────────────
@@ -1115,6 +1133,12 @@ async function sendWarmLeadsToBackend(type, leads, token) {
 }
 
 // ── Listeners (tous les types de messages) ────────────────────────────────────
+
+// Vérification préventive : si le contexte est invalide on n'enregistre pas.
+// Le background détecte le timeout (15s) et gère l'absence de réponse.
+if (!chrome.runtime?.id) {
+  console.debug("[SKALLE] Contexte extension invalide au chargement — listeners non enregistrés");
+}
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Exécute une décision CSO pré-approuvée (mode manuel/queue)

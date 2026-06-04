@@ -48,9 +48,14 @@ export interface DecliningPage {
 /**
  * Génère l'URL de redirection OAuth2 Google pour connecter GSC.
  */
+// Strip trailing slash to avoid double-slash in redirect_uri (NEXTAUTH_URL="https://app.skalle.fr/")
+function gscRedirectUri(): string {
+  const base = (process.env.NEXTAUTH_URL ?? "").replace(/\/$/, "");
+  return `${base}/api/integrations/gsc/callback`;
+}
+
 export function getGSCAuthUrl(workspaceId: string): string {
   const clientId = process.env.GOOGLE_GSC_CLIENT_ID;
-  const redirectUri = `${process.env.NEXTAUTH_URL}/api/integrations/gsc/callback`;
 
   if (!clientId) {
     throw new Error("GOOGLE_GSC_CLIENT_ID manquant dans les variables d'environnement");
@@ -58,7 +63,7 @@ export function getGSCAuthUrl(workspaceId: string): string {
 
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: redirectUri,
+    redirect_uri: gscRedirectUri(),
     response_type: "code",
     scope: GSC_OAUTH_SCOPES,
     access_type: "offline",
@@ -74,10 +79,9 @@ export function getGSCAuthUrl(workspaceId: string): string {
  */
 export async function exchangeGSCCode(
   code: string
-): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date }> {
+): Promise<{ accessToken: string; refreshToken: string | null; expiresAt: Date }> {
   const clientId = process.env.GOOGLE_GSC_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_GSC_CLIENT_SECRET;
-  const redirectUri = `${process.env.NEXTAUTH_URL}/api/integrations/gsc/callback`;
 
   if (!clientId || !clientSecret) {
     throw new Error("GOOGLE_GSC_CLIENT_ID ou GOOGLE_GSC_CLIENT_SECRET manquant");
@@ -90,22 +94,25 @@ export async function exchangeGSCCode(
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      redirect_uri: redirectUri,
+      redirect_uri: gscRedirectUri(),
       grant_type: "authorization_code",
     }),
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Échange code GSC échoué: ${err}`);
+    const body = await res.text();
+    console.error("[GSC] exchangeCode failed:", res.status, body);
+    throw new Error(`Échange code GSC échoué (${res.status}): ${body}`);
   }
 
   const data = await res.json();
   const expiresAt = new Date(Date.now() + (data.expires_in ?? 3600) * 1000);
 
+  // Google ne renvoie refresh_token qu'au premier consentement.
+  // On retourne null si absent — le callback conservera l'ancien token en DB.
   return {
     accessToken: data.access_token,
-    refreshToken: data.refresh_token,
+    refreshToken: data.refresh_token ?? null,
     expiresAt,
   };
 }

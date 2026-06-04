@@ -9,14 +9,16 @@ const BATCH_SIZE = 50;
 
 async function getApiBase() {
   return new Promise((resolve) => {
+    if (!chrome.runtime?.id) return resolve("https://skalle.vercel.app");
     chrome.storage.sync.get({ skalleApiBase: "" }, (r) => {
-      resolve(r.skalleApiBase?.trim() || "http://localhost:3000");
+      resolve(r.skalleApiBase?.trim() || "https://skalle.vercel.app");
     });
   });
 }
 
 async function getToken() {
   return new Promise((resolve) => {
+    if (!chrome.runtime?.id) return resolve("");
     chrome.storage.sync.get(["skalleToken"], (r) => resolve(r.skalleToken || ""));
   });
 }

@@ -9,7 +9,7 @@
  * 4. Rapporte chaque exécution au backend (→ EXECUTED)
  */
 
-let API_BASE = "http://localhost:3000";
+let API_BASE = "https://skalle.vercel.app";
 
 // Initialise depuis le storage au démarrage du service worker
 chrome.storage.sync.get({ skalleApiBase: "" }, (data) => {
@@ -220,14 +220,21 @@ async function isRateLimited() {
  */
 async function handleAbortCode(abortCode) {
   if (!abortCode) return false;
-  if (abortCode === "CHALLENGE" || abortCode === "RESTRICTED") {
+  if (abortCode === "CHALLENGE") {
     await setChallengeState();
+    return true;
+  }
+  if (abortCode === "RESTRICTED") {
+    // Restriction compte confirmée → pause 4h (pas de désactivation permanente)
+    await setRateLimitState();
+    console.warn("[SKALLE] Compte LinkedIn restreint — pause 4h");
     return true;
   }
   if (abortCode === "RATE_LIMITED") {
     await setRateLimitState();
     return true;
   }
+  // NETWORK_ERROR et autres → échec silencieux, pas d'arrêt
   return false;
 }
 

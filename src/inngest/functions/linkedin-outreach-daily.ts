@@ -143,9 +143,16 @@ export const linkedInOutreachDaily = inngest.createFunction(
           take: effectiveConnect + effectiveMessage,
         });
 
-        const connectSteps = pendingSteps.filter((s) => s.linkedInAction === "connect").slice(0, effectiveConnect);
+        const connectSteps = pendingSteps
+          .filter((s) => s.linkedInAction === "connect" || s.linkedInAction === "CONNECTION_REQUEST")
+          .slice(0, effectiveConnect);
         const messageSteps = pendingSteps
-          .filter((s) => s.linkedInAction === "message" || s.linkedInAction === "inmail")
+          .filter((s) =>
+            s.linkedInAction === "message" ||
+            s.linkedInAction === "inmail" ||
+            s.linkedInAction === "POST_CONNECTION_MESSAGE" ||
+            s.linkedInAction === "FOLLOWUP_MESSAGE"
+          )
           .slice(0, effectiveMessage);
 
         const batch: Array<{ stepId: string; profileUrl: string; message: string; type: "connect" | "message" }> = [
@@ -282,8 +289,17 @@ export const linkedInOutreachManual = inngest.createFunction(
 
       if (!pendingSteps.length) return { sent: 0, failed: 0, message: "Queue vide", warmupPct };
 
-      const connectSteps = pendingSteps.filter((s) => s.linkedInAction === "connect").slice(0, effectiveConnect);
-      const messageSteps = pendingSteps.filter((s) => s.linkedInAction !== "connect").slice(0, effectiveMessage);
+      const connectSteps = pendingSteps
+        .filter((s) => s.linkedInAction === "connect" || s.linkedInAction === "CONNECTION_REQUEST")
+        .slice(0, effectiveConnect);
+      const messageSteps = pendingSteps
+        .filter((s) =>
+          s.linkedInAction === "message" ||
+          s.linkedInAction === "inmail" ||
+          s.linkedInAction === "POST_CONNECTION_MESSAGE" ||
+          s.linkedInAction === "FOLLOWUP_MESSAGE"
+        )
+        .slice(0, effectiveMessage);
       const batch: Array<{ stepId: string; profileUrl: string; message: string; type: "connect" | "message" }> = [
         ...connectSteps.map((s) => ({ stepId: s.id, profileUrl: s.sequence.prospect.linkedInUrl, message: s.content, type: "connect" as const })),
         ...messageSteps.map((s) => ({ stepId: s.id, profileUrl: s.sequence.prospect.linkedInUrl, message: s.content, type: "message" as const })),
