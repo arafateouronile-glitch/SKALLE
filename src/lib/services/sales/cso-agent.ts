@@ -351,7 +351,12 @@ export async function generateCsoDecisions(
   const [workspace, personas] = await Promise.all([
     prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { name: true, brandVoice: true, user: { select: { plan: true } } },
+      select: {
+        name: true,
+        brandVoice: true,
+        user: { select: { plan: true } },
+        linkedInAutomationConfig: { select: { sendWithoutNote: true } },
+      },
     }),
     prisma.persona.findMany({
       where: { workspaceId, status: { in: ["ACTIVE", "RUNNING"] } },
@@ -510,11 +515,12 @@ Génère les décisions. Les messages seront personnalisés séparément.
             generateCsoMessages(profile, research, brand, "LINKEDIN"),
             generateCsoMessages(profile, research, brand, "FOLLOWUP"),
           ]);
+          const sendWithoutNote = workspace?.linkedInAutomationConfig?.sendWithoutNote ?? false;
           return {
             ...d,
             actionData: {
               ...d.actionData,
-              connectNote: msg.connectNote ?? msg.content.slice(0, 280),
+              connectNote: sendWithoutNote ? null : (msg.connectNote ?? msg.content.slice(0, 280)),
               postConnectionMessage: msg.content,
               followupMessage: followup.content,
               _angle: msg.angle,
