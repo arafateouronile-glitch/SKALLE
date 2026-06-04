@@ -73,6 +73,7 @@ export function BulkLinkedInLaunchDialog({ workspaceId, open, onClose, onLaunche
     "Bonjour {{prénom}},\n\nMerci d'avoir accepté ma demande ! Je voulais te parler d'une opportunité qui pourrait t'intéresser chez {{entreprise}}.\n\nDisponible pour un appel de 15 min cette semaine ?"
   );
   const [followUpDelayDays, setFollowUpDelayDays] = useState(2);
+  const [withNote, setWithNote] = useState(false);
   const [withFollowUp, setWithFollowUp] = useState(true);
   const [isLaunching, setIsLaunching] = useState(false);
 
@@ -143,7 +144,7 @@ export function BulkLinkedInLaunchDialog({ workspaceId, open, onClose, onLaunche
   }
 
   async function handleLaunch() {
-    if (!selected.size || !connectNote.trim()) return;
+    if (!selected.size) return;
     setIsLaunching(true);
     try {
       const res = await fetch("/api/linkedin-sequences", {
@@ -152,7 +153,7 @@ export function BulkLinkedInLaunchDialog({ workspaceId, open, onClose, onLaunche
         body: JSON.stringify({
           workspaceId,
           prospectIds: [...selected],
-          connectNote,
+          connectNote: withNote ? connectNote : "",
           followUpMessage: withFollowUp ? followUpMessage : undefined,
           followUpDelayDays,
         }),
@@ -327,34 +328,49 @@ export function BulkLinkedInLaunchDialog({ workspaceId, open, onClose, onLaunche
 
               {/* Note de connexion */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setWithNote((v) => !v)}
+                    className={`h-5 w-9 rounded-full transition-colors ${withNote ? "bg-sky-500" : "bg-white/[0.1]"}`}
+                  >
+                    <div className={`h-4 w-4 rounded-full bg-white mx-0.5 transition-transform ${withNote ? "translate-x-4" : ""}`} />
+                  </button>
                   <Label className="text-[12px] text-white font-medium">Note de connexion</Label>
-                  <span className={`text-[10px] ${connectNote.length > 300 ? "text-red-400" : "text-slate-500"}`}>
-                    {connectNote.length}/300 car.
-                  </span>
+                  {!withNote && (
+                    <span className="text-[10px] text-slate-500 ml-auto">Invitation sans note (taux d'acceptation généralement meilleur)</span>
+                  )}
+                  {withNote && (
+                    <span className={`text-[10px] ml-auto ${connectNote.length > 300 ? "text-red-400" : "text-slate-500"}`}>
+                      {connectNote.length}/300 car.
+                    </span>
+                  )}
                 </div>
-                <Textarea
-                  value={connectNote}
-                  onChange={(e) => setConnectNote(e.target.value)}
-                  rows={4}
-                  className="bg-white/[0.03] border-white/[0.08] text-white text-[12px] resize-none placeholder:text-slate-600"
-                />
-                <div className="flex items-center gap-1 flex-wrap">
-                  <Variable className="h-3 w-3 text-slate-500" />
-                  {VARIABLES.map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => insertVar("note", v)}
-                      className="text-[10px] text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded px-1.5 py-0.5 hover:bg-sky-500/20"
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-                {previewProspect && (
-                  <p className="text-[11px] text-slate-400 bg-white/[0.02] border border-white/[0.04] rounded px-2 py-1.5 italic">
-                    {preview(connectNote).slice(0, 150)}{preview(connectNote).length > 150 ? "…" : ""}
-                  </p>
+                {withNote && (
+                  <>
+                    <Textarea
+                      value={connectNote}
+                      onChange={(e) => setConnectNote(e.target.value)}
+                      rows={4}
+                      className="bg-white/[0.03] border-white/[0.08] text-white text-[12px] resize-none placeholder:text-slate-600"
+                    />
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <Variable className="h-3 w-3 text-slate-500" />
+                      {VARIABLES.map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => insertVar("note", v)}
+                          className="text-[10px] text-sky-400 bg-sky-500/10 border border-sky-500/20 rounded px-1.5 py-0.5 hover:bg-sky-500/20"
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    {previewProspect && (
+                      <p className="text-[11px] text-slate-400 bg-white/[0.02] border border-white/[0.04] rounded px-2 py-1.5 italic">
+                        {preview(connectNote).slice(0, 150)}{preview(connectNote).length > 150 ? "…" : ""}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -419,7 +435,7 @@ export function BulkLinkedInLaunchDialog({ workspaceId, open, onClose, onLaunche
                   <Rocket className="h-3.5 w-3.5" />
                   Récapitulatif
                 </div>
-                <p>• {selected.size} prospect{selected.size > 1 ? "s" : ""} · {selected.size} demande{selected.size > 1 ? "s" : ""} de connexion</p>
+                <p>• {selected.size} prospect{selected.size > 1 ? "s" : ""} · {selected.size} demande{selected.size > 1 ? "s" : ""} de connexion {withNote ? "avec note" : "sans note"}</p>
                 {withFollowUp && <p>• {selected.size} message{selected.size > 1 ? "s" : ""} de suivi à J+{followUpDelayDays}</p>}
                 <p className="text-emerald-400/60">Envoi automatique dès le prochain cron (lun–ven 10h)</p>
               </div>
@@ -451,7 +467,7 @@ export function BulkLinkedInLaunchDialog({ workspaceId, open, onClose, onLaunche
             <Button
               size="sm"
               className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 gap-1.5"
-              disabled={isLaunching || !connectNote.trim() || connectNote.length > 300}
+              disabled={isLaunching || (withNote && (!connectNote.trim() || connectNote.length > 300))}
               onClick={handleLaunch}
             >
               {isLaunching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}

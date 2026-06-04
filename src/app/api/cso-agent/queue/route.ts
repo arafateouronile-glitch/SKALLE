@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     where: {
       workspaceId: { in: workspaceIds },
       status: "APPROVED",
-      actionType: { in: ["CSO_LAUNCH_LINKEDIN", "CSO_FOLLOWUP"] },
+      actionType: { in: ["CSO_LAUNCH_LINKEDIN", "CSO_LAUNCH_EMAIL", "CSO_FOLLOWUP"] },
     },
     orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
     take: 20,
