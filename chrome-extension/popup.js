@@ -2,7 +2,7 @@
 
 async function getApiBase() {
   const { skalleApiBase } = await chrome.storage.sync.get({ skalleApiBase: "" });
-  return skalleApiBase?.trim() || "http://localhost:3000";
+  return skalleApiBase?.trim() || "https://skalle.vercel.app";
 }
 
 // ── Token ─────────────────────────────────────────────────────────────────────
@@ -86,7 +86,12 @@ function parseStatus(raw) {
 }
 
 async function refreshStatus() {
-  const data = await chrome.runtime.sendMessage({ type: "SKALLE_GET_STATUS" });
+  let data = {};
+  try {
+    data = await chrome.runtime.sendMessage({ type: "SKALLE_GET_STATUS" }) ?? {};
+  } catch {
+    // Service worker inactif (MV3) — état idle par défaut
+  }
   const { key, count, limit } = parseStatus(data?.automationStatus);
 
   // Challenge alert
@@ -193,7 +198,7 @@ document.getElementById("challengeResolved").addEventListener("click", async () 
   const btn = document.getElementById("challengeResolved");
   btn.disabled = true;
   btn.textContent = "⏳ Réactivation…";
-  await chrome.runtime.sendMessage({ type: "SKALLE_CHALLENGE_RESOLVED" });
+  try { await chrome.runtime.sendMessage({ type: "SKALLE_CHALLENGE_RESOLVED" }); } catch { /* service worker inactif */ }
   await refreshStatus();
   btn.disabled = false;
   btn.textContent = "✅ J'ai résolu le challenge — reprendre";
@@ -205,7 +210,7 @@ document.getElementById("runNow").addEventListener("click", async () => {
   const btn = document.getElementById("runNow");
   btn.disabled = true;
   btn.textContent = "⏳ Lancement…";
-  await chrome.runtime.sendMessage({ type: "SKALLE_RUN_NOW" });
+  try { await chrome.runtime.sendMessage({ type: "SKALLE_RUN_NOW" }); } catch { /* service worker inactif */ }
   await refreshStatus();
   btn.disabled = false;
   btn.textContent = "▶ Lancer maintenant";
