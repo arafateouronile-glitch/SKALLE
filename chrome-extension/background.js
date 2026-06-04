@@ -19,7 +19,7 @@ chrome.storage.sync.get({ skalleApiBase: "" }, (data) => {
 // Mise à jour en temps réel quand l'utilisateur sauvegarde dans le popup
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "sync" && changes.skalleApiBase?.newValue !== undefined) {
-    API_BASE = changes.skalleApiBase.newValue || "http://localhost:3000";
+    API_BASE = changes.skalleApiBase.newValue || "https://skalle.vercel.app";
   }
 });
 const ALARM_NAME = "skalle-automation";
@@ -390,10 +390,20 @@ async function findLinkedInTab() {
 async function sendToContentScript(tabId, message, timeoutMs = 15_000) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve({ ok: false, error: "timeout" }), timeoutMs);
-    chrome.tabs.sendMessage(tabId, message, (response) => {
+    try {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        clearTimeout(timer);
+        // Lire lastError IMMÉDIATEMENT dans le callback pour éviter l'erreur console
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, error: chrome.runtime.lastError.message ?? "port_closed" });
+          return;
+        }
+        resolve(response ?? { ok: false, error: "no_response" });
+      });
+    } catch {
       clearTimeout(timer);
-      resolve(response ?? { ok: false, error: "no_response" });
-    });
+      resolve({ ok: false, error: "send_failed" });
+    }
   });
 }
 
