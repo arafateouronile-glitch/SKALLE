@@ -225,9 +225,9 @@ async function handleAbortCode(abortCode) {
     return true;
   }
   if (abortCode === "RESTRICTED") {
-    // Restriction compte confirmée → pause 4h (pas de désactivation permanente)
-    await setRateLimitState();
-    console.warn("[SKALLE] Compte LinkedIn restreint — pause 4h");
+    // Restriction compte confirmée → même traitement que CHALLENGE (action humaine requise)
+    await setChallengeState();
+    console.warn("[SKALLE] Compte LinkedIn restreint — action humaine requise");
     return true;
   }
   if (abortCode === "RATE_LIMITED") {
@@ -363,6 +363,25 @@ async function incrementCount() {
   });
 }
 
+// Compteur dédié aux demandes de connexion (séparé des messages post-connexion).
+// LinkedIn limite à ~100/semaine, soit ~20/jour pour rester dans les clous.
+async function getConnReqToday() {
+  const today = new Date().toISOString().slice(0, 10);
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["connReqDate", "connReqCount"], (r) => {
+      resolve(r.connReqDate === today ? r.connReqCount ?? 0 : 0);
+    });
+  });
+}
+
+async function incrementConnReq() {
+  const today = new Date().toISOString().slice(0, 10);
+  const count = await getConnReqToday();
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ connReqDate: today, connReqCount: count + 1 }, resolve);
+  });
+}
+
 async function setStatus(status) {
   chrome.storage.local.set({ automationStatus: status, statusAt: Date.now() });
 }
@@ -386,6 +405,31 @@ async function findLinkedInTab() {
   });
 }
 
+// Ouvre un onglet en arrière-plan (non actif) pour l'automation autonome.
+// Ne touche pas à l'onglet courant de l'utilisateur.
+async function openProfileTab(url) {
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url, active: false }, (tab) => resolve(tab));
+  });
+}
+
+// Attend que l'onglet soit chargé (status "complete") avec un timeout de sécurité.
+async function waitForTabLoad(tabId, timeoutMs = 8_000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    const listener = (updatedTabId, info) => {
+      if (updatedTabId === tabId && info.status === "complete") done();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(done, timeoutMs);
+  });
+}
 
 async function sendToContentScript(tabId, message, timeoutMs = 15_000) {
   return new Promise((resolve) => {
@@ -649,32 +693,6 @@ async function checkFollowups() {
 
 // ── Mode autonome ─────────────────────────────────────────────────────────────
 
-/** Navigue un onglet vers une URL et attend que la page soit chargée.
- *  LinkedIn est une SPA : chrome.tabs.onUpdated peut ne jamais déclencher
- *  "complete" pour une navigation client-side. On ajoute un fallback 5s.
- */
-async function navigateTabAndWait(tabId, url, extraDelayMs = 2500) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = () => {
-      if (settled) return;
-      settled = true;
-      chrome.tabs.onUpdated.removeListener(listener);
-      setTimeout(resolve, extraDelayMs);
-    };
-
-    const listener = (updatedTabId, info) => {
-      if (updatedTabId === tabId && info.status === "complete") done();
-    };
-
-    chrome.tabs.onUpdated.addListener(listener);
-    chrome.tabs.update(tabId, { url });
-
-    // Fallback : si onUpdated ne se déclenche pas (SPA pushState), on résout après 5s
-    setTimeout(done, 5_000);
-  });
-}
-
 async function runAutonomousSearch() {
   const config = await getConfig();
   if (!config.skalleToken || !config.autonomousEnabled) return;
@@ -689,6 +707,15 @@ async function runAutonomousSearch() {
   const effectiveLimit = await getEffectiveDailyLimit(config.dailyLimit);
   const count = await getTodayCount();
   if (count >= effectiveLimit) return;
+
+  // Plafond dédié aux demandes de connexion : min(effectiveLimit, 20/jour)
+  // LinkedIn suit les connexions séparément des messages — ~100/semaine max.
+  const connReqToday = await getConnReqToday();
+  const connReqLimit = Math.min(effectiveLimit, 20);
+  if (connReqToday >= connReqLimit) {
+    await setStatus(`conn_req_limit:${connReqToday}/${connReqLimit}`);
+    return;
+  }
 
   // Récupérer les requêtes de recherche depuis le backend
   let searchData;
@@ -729,30 +756,42 @@ async function runAutonomousSearch() {
     return;
   }
 
-  // ── Étape 2 : Pour chaque profil, naviguer vers la page puis connecter ──────
-  const originalUrl = tab.url; // Pour restaurer l'onglet à la fin
+  // ── Étape 2 : Pour chaque profil, ouvrir un onglet dédié puis connecter ─────
+  // Onglet en arrière-plan (active: false) → l'utilisateur garde son onglet intact.
 
   for (const profile of profiles.list) {
     const currentCount = await getTodayCount();
     if (currentCount >= effectiveLimit) break;
 
-    // Naviguer vers le vrai profil LinkedIn (génère un page view réel)
-    await navigateTabAndWait(tab.id, profile.linkedInUrl);
+    // Vérifier le plafond connexions avant chaque tentative
+    const connReqNow = await getConnReqToday();
+    if (connReqNow >= connReqLimit) {
+      await setStatus(`conn_req_limit:${connReqNow}/${connReqLimit}`);
+      break;
+    }
+
+    // Ouvrir un onglet dédié (non actif) pour ce profil
+    const profileTab = await openProfileTab(profile.linkedInUrl);
+    await waitForTabLoad(profileTab.id, 8_000);
+    await sleep(1_500); // Laisser React finir le rendu
 
     // Temps de lecture simulé avec scroll humain (5-15 secondes)
     const readTime = 5_000 + Math.random() * 10_000;
     console.log(`[SKALLE] Lecture profil ${profile.username} (${Math.round(readTime / 1000)}s)…`);
-    await sendToContentScript(tab.id, {
+    await sendToContentScript(profileTab.id, {
       type: "SKALLE_SIMULATE_READING",
       durationMs: readTime,
     }, readTime + 3_000);
 
     // Enrichir et connecter depuis le contexte de la page de profil
-    const result = await sendToContentScript(tab.id, {
+    const result = await sendToContentScript(profileTab.id, {
       type: "SKALLE_PROCESS_AND_CONNECT",
       profile,
       workspaceId: searchData.workspaceId,
     }, 60_000);
+
+    // Fermer l'onglet dédié — qu'il y ait eu succès ou erreur
+    chrome.tabs.remove(profileTab.id);
 
     // Vérifier abort code après chaque action autonome
     if (result?.abortCode && await handleAbortCode(result.abortCode)) break;
@@ -760,6 +799,7 @@ async function runAutonomousSearch() {
     if (result?.ok) {
       await incrementCount();
       await incrementWeekCount();
+      if (result.action === "connection_request") await incrementConnReq();
       await setCooldown(); // 45–90 min avant la prochaine action
       await reportExecuted(config.skalleToken, null, {
         ...result,
@@ -778,9 +818,6 @@ async function runAutonomousSearch() {
       await sleep(delay);
     }
   }
-
-  // Restaurer l'onglet sur le feed LinkedIn
-  chrome.tabs.update(tab.id, { url: "https://www.linkedin.com/feed/" });
 
   const finalCount = await getTodayCount();
   await setStatus(`autonomous_done:${finalCount}/${effectiveLimit}`);
@@ -982,6 +1019,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         "automationStatus", "actionDate", "actionCount", "statusAt",
         "linkedInChallenge", "challengeAt",
         "rateLimitAt", "rateLimitResumeAt",
+        "connReqDate", "connReqCount",
       ],
       (r) => sendResponse(r)
     );

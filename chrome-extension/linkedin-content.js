@@ -6,12 +6,33 @@
  * Envoie vers POST /api/prospects/linkedin-profile → stocké dans enrichmentData du prospect.
  *
  * Stratégies (dans l'ordre) :
- * 1. Intercepte les appels Voyager API que LinkedIn fait lui-même (via linkedin-inject.js)
- * 2. Appel Voyager API direct avec le cookie JSESSIONID comme CSRF token
- * 3. Extraction DOM en dernier recours
+ * 1. Appel Voyager API direct avec le cookie JSESSIONID comme CSRF token
+ * 2. Extraction DOM en dernier recours
  */
 
 // ── Config ────────────────────────────────────────────────────────────────────
+
+// ── Session fingerprint ───────────────────────────────────────────────────────
+// Générés une fois par chargement de page, réutilisés pour tous les appels Voyager.
+// Même format que LinkedIn web : UUID stable sur la durée d'une session page.
+
+const _LI_UUID = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+const _LI_PAGE_INST = (() => {
+  const id = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(18))))
+    .replace(/[+/=]/g, "").slice(0, 24);
+  return `urn:li:page:d_flagship3_profile_view_base;${id}`;
+})();
+
+function voyagerHeaders(csrf) {
+  return {
+    "csrf-token": csrf,
+    "x-restli-protocol-version": "2.0.0",
+    "x-li-lang": "fr_FR",
+    "x-li-uuid": _LI_UUID,
+    "x-li-page-instance": _LI_PAGE_INST,
+    accept: "application/vnd.linkedin.normalized+json+2.1",
+  };
+}
 
 function getApiBase() {
   return new Promise((resolve) => {
@@ -95,45 +116,17 @@ function normalizeLinkedInUrl(pathname) {
   return "https://www.linkedin.com" + pathname.split("?")[0].replace(/\/$/, "");
 }
 
-// ── Stratégie 1 : intercepteur fetch (linkedin-inject.js) ────────────────────
-
-function injectFetchInterceptor() {
-  // chrome.runtime.id est undefined quand le service worker a été tué puis
-  // redémarré — getURL() retournerait "chrome-extension://invalid/..." sinon.
-  if (!chrome.runtime?.id) return;
-
-  // Éviter la double injection sur les re-renders de page LinkedIn
-  if (document.querySelector("script[data-skalle-inject]")) return;
-
-  try {
-    const script = document.createElement("script");
-    script.src = chrome.runtime.getURL("linkedin-inject.js");
-    script.dataset.skalleInject = "1";
-    script.onerror = () => script.remove(); // Nettoyage si le chargement échoue
-    (document.head || document.documentElement).appendChild(script);
-  } catch {
-    // Contexte invalidé — on ignore silencieusement
-  }
-}
-
-// ── Stratégie 2 : Voyager API direct ─────────────────────────────────────────
+// ── Stratégie 1 : Voyager API direct ─────────────────────────────────────────
 
 async function fetchVoyager(username, csrf) {
-  const headers = {
-    "csrf-token": csrf,
-    "x-restli-protocol-version": "2.0.0",
-    "x-li-lang": "fr_FR",
-    accept: "application/vnd.linkedin.normalized+json+2.1",
-  };
-
   const [profRes, posRes] = await Promise.allSettled([
     fetch(`/voyager/api/identity/profiles/${username}`, {
-      headers,
+      headers: voyagerHeaders(csrf),
       credentials: "include",
     }),
     fetch(
       `/voyager/api/identity/profiles/${username}/positions?count=5`,
-      { headers, credentials: "include" }
+      { headers: voyagerHeaders(csrf), credentials: "include" }
     ),
   ]);
 
@@ -166,7 +159,7 @@ async function fetchVoyager(username, csrf) {
   return { headline, about, experiences };
 }
 
-// ── Stratégie 3 : extraction DOM ─────────────────────────────────────────────
+// ── Stratégie 2 : extraction DOM ─────────────────────────────────────────────
 
 function extractDOM() {
   const result = { headline: null, about: null, experiences: [] };
@@ -271,59 +264,23 @@ async function main() {
   const username = getUsername();
   if (!username) return;
 
-  // Stratégie 1 : intercepteur fetch (données viennent via postMessage)
-  injectFetchInterceptor();
-
-  let done = false;
-
-  const interceptHandler = async (event) => {
-    if (done || event.data?.type !== "SKALLE_LI_DATA") return;
-    const { url, data } = event.data;
-
-    // On capture l'appel principal du profil (contient summary)
-    if (
-      url.includes(`/profiles/${username}`) &&
-      !url.includes("/positions") &&
-      !url.includes("/educations") &&
-      data.summary !== undefined
-    ) {
-      done = true;
-      window.removeEventListener("message", interceptHandler);
-      await send({
-        headline: data.headline ?? null,
-        about: data.summary ?? null,
-        experiences: [],
-      });
-    }
-  };
-
-  window.addEventListener("message", interceptHandler);
-
-  // Stratégie 2 : Voyager direct (après 3s pour laisser les cookies s'établir)
-  await new Promise((r) => setTimeout(r, 3000));
-
-  if (!done) {
-    const csrf = getCsrfToken();
-    if (csrf) {
-      try {
-        const enrichment = await fetchVoyager(username, csrf);
-        if (enrichment.headline || enrichment.about) {
-          done = true;
-          window.removeEventListener("message", interceptHandler);
-          await send(enrichment);
-          return;
-        }
-      } catch {}
-    }
+  // Stratégie 1 : Voyager direct (attend 2s pour que la page soit chargée)
+  await new Promise((r) => setTimeout(r, 2000));
+  const csrf = getCsrfToken();
+  if (csrf) {
+    try {
+      const enrichment = await fetchVoyager(username, csrf);
+      if (enrichment.headline || enrichment.about) {
+        await send(enrichment);
+        return;
+      }
+    } catch {}
   }
 
-  // Stratégie 3 : DOM (après 6s pour que React ait rendu la page)
-  if (!done) {
-    await new Promise((r) => setTimeout(r, 3000));
-    window.removeEventListener("message", interceptHandler);
-    const domData = extractDOM();
-    await send(domData);
-  }
+  // Stratégie 2 : DOM (après 4s supplémentaires si React n'a pas encore rendu)
+  await new Promise((r) => setTimeout(r, 4000));
+  const domData = extractDOM();
+  await send(domData);
 }
 
 if (document.readyState === "loading") {
@@ -344,14 +301,7 @@ async function resolveLinkedInProfile(username, csrf) {
   try {
     const res = await fetch(
       `/voyager/api/identity/profiles/${username}`,
-      {
-        headers: {
-          "csrf-token": csrf,
-          "x-restli-protocol-version": "2.0.0",
-          accept: "application/vnd.linkedin.normalized+json+2.1",
-        },
-        credentials: "include",
-      }
+      { headers: voyagerHeaders(csrf), credentials: "include" }
     );
     if (!res.ok) return null;
     const data = await res.json();
@@ -365,17 +315,102 @@ async function resolveLinkedInProfile(username, csrf) {
   }
 }
 
+// ── DOM helpers pour la simulation de clic ───────────────────────────────────
+
+function waitForElement(selector, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const found = document.querySelector(selector);
+    if (found) return resolve(found);
+    const obs = new MutationObserver(() => {
+      const el = document.querySelector(selector);
+      if (el) { obs.disconnect(); resolve(el); }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => { obs.disconnect(); resolve(null); }, timeoutMs);
+  });
+}
+
+function findConnectButton() {
+  // Aria-label = le sélecteur le plus stable (pas dépendant des class names)
+  const byAria = document.querySelector(
+    'button[aria-label*="Se connecter avec"], button[aria-label*="Connect with"]'
+  );
+  if (byAria && !byAria.disabled) return byAria;
+
+  // Texte exact du bouton (fallback si aria-label absent)
+  return Array.from(document.querySelectorAll("button")).find((b) => {
+    const text = b.textContent.trim();
+    return (text === "Se connecter" || text === "Connect") && !b.disabled;
+  }) ?? null;
+}
+
 /**
- * Envoie une demande de connexion LinkedIn avec une note personnalisée
+ * Clique sur le bouton "Se connecter" via le DOM.
+ * LinkedIn génère lui-même la requête normInvitations → headers natifs + timing naturel.
+ */
+async function sendConnectionRequestDOM(connectNote) {
+  const btn = findConnectButton();
+  if (!btn) return { ok: false, reason: "button_not_found" };
+
+  btn.click();
+
+  const modal = await waitForElement('[role="dialog"]', 3000);
+  if (!modal) return { ok: false, reason: "modal_timeout" };
+
+  if (connectNote?.trim()) {
+    const addNoteBtn =
+      modal.querySelector('button[aria-label*="note" i]') ??
+      Array.from(modal.querySelectorAll("button")).find((b) =>
+        b.textContent.trim().toLowerCase().includes("note")
+      );
+
+    if (addNoteBtn) {
+      addNoteBtn.click();
+      await new Promise((r) => setTimeout(r, 600));
+
+      const textarea = await waitForElement("textarea", 1500);
+      if (textarea) {
+        // Contournement React : setter natif pour déclencher le state update
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+        setter?.call(textarea, connectNote.slice(0, 300));
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+  }
+
+  const sendBtn =
+    modal.querySelector('button[aria-label*="Envoyer"]') ??
+    modal.querySelector('button[aria-label*="Send"]') ??
+    Array.from(modal.querySelectorAll("button")).find(
+      (b) =>
+        b.textContent.trim().toLowerCase().startsWith("envoyer") ||
+        b.textContent.trim().toLowerCase() === "send"
+    );
+
+  if (!sendBtn) return { ok: false, reason: "send_button_not_found" };
+
+  sendBtn.click();
+  await new Promise((r) => setTimeout(r, 500));
+  return { ok: true };
+}
+
+/**
+ * Envoie une demande de connexion LinkedIn avec une note personnalisée.
+ * Stratégie 1 : clic DOM sur la page du profil (requête générée par LinkedIn lui-même).
+ * Stratégie 2 : Voyager API direct (fallback — mode queue hors page profil).
  */
 async function sendConnectionRequest(username, connectNote, csrf) {
-  const headers = {
-    "csrf-token": csrf,
-    "content-type": "application/json",
-    "x-restli-protocol-version": "2.0.0",
-  };
+  // DOM click si on est sur la page du profil cible
+  if (window.location.pathname.includes(`/in/${username}`)) {
+    const domResult = await sendConnectionRequestDOM(connectNote);
+    if (domResult.ok) return { ok: true };
+    console.debug("[SKALLE] DOM click échoué:", domResult.reason, "→ fallback Voyager");
+  }
 
-  // Format actuel (2024-2025)
+  // Fallback : Voyager API direct
+  const headers = { ...voyagerHeaders(csrf), "content-type": "application/json" };
+
   const { res, abortCode } = await voyagerFetch("/voyager/api/growth/normInvitations", {
     method: "POST",
     headers,
@@ -391,7 +426,7 @@ async function sendConnectionRequest(username, connectNote, csrf) {
   if (abortCode) return { ok: false, abortCode };
   if (res?.ok) return { ok: true };
 
-  // Fallback : format plus récent
+  // Fallback format plus récent
   const { res: res2, abortCode: ab2 } = await voyagerFetch(
     "/voyager/api/voyagerRelationships/dash/invitations?action=verifyQuotaAndCreateV2",
     {
@@ -416,11 +451,7 @@ async function sendLinkedInMessage(entityUrn, messageText, csrf) {
     "/voyager/api/messaging/conversations?action=create",
     {
       method: "POST",
-      headers: {
-        "csrf-token": csrf,
-        "content-type": "application/json",
-        "x-restli-protocol-version": "2.0.0",
-      },
+      headers: { ...voyagerHeaders(csrf), "content-type": "application/json" },
       body: JSON.stringify({
         keyVersion: "LEGACY_INBOX",
         conversationCreate: {
@@ -489,14 +520,7 @@ async function voyagerSearch(keywords, csrf, count = 15) {
   try {
     const { res, abortCode } = await voyagerFetch(
       `/voyager/api/search/blended?${params.toString()}&filters=List((key:resultType,value:List(PEOPLE)))`,
-      {
-        headers: {
-          "csrf-token": csrf,
-          "x-restli-protocol-version": "2.0.0",
-          "x-li-track": '{"clientVersion":"1.14.0"}',
-          accept: "application/vnd.linkedin.normalized+json+2.1",
-        },
-      }
+      { headers: voyagerHeaders(csrf) }
     );
     // Propager l'abort code pour que le caller puisse stopper
     if (abortCode) return { abortCode, profiles: [] };
@@ -549,11 +573,11 @@ async function fetchFullProfile(username, csrf) {
   try {
     const [profRes, posRes] = await Promise.allSettled([
       fetch(`/voyager/api/identity/profiles/${username}`, {
-        headers: { "csrf-token": csrf, "x-restli-protocol-version": "2.0.0" },
+        headers: voyagerHeaders(csrf),
         credentials: "include",
       }),
       fetch(`/voyager/api/identity/profiles/${username}/positions?count=5`, {
-        headers: { "csrf-token": csrf, "x-restli-protocol-version": "2.0.0" },
+        headers: voyagerHeaders(csrf),
         credentials: "include",
       }),
     ]);
@@ -746,7 +770,7 @@ async function handleSendPostMessage(entityUrn, message) {
 async function getMyEntityUrn(csrf) {
   try {
     const res = await fetch("/voyager/api/identity/profiles/me", {
-      headers: { "csrf-token": csrf, "x-restli-protocol-version": "2.0.0" },
+      headers: voyagerHeaders(csrf),
       credentials: "include",
     });
     if (!res.ok) return null;
@@ -771,10 +795,7 @@ async function checkReplyFromProspect(username, csrf, myUrn) {
     const encodedUrn = encodeURIComponent(profile.entityUrn);
     const convRes = await fetch(
       `/voyager/api/messaging/conversations?keyVersion=LEGACY_INBOX&participants=List(${encodedUrn})&q=participants`,
-      {
-        headers: { "csrf-token": csrf, "x-restli-protocol-version": "2.0.0" },
-        credentials: "include",
-      }
+      { headers: voyagerHeaders(csrf), credentials: "include" }
     );
     if (!convRes.ok) return { replied: false, replyPreview: null };
 
@@ -786,10 +807,7 @@ async function checkReplyFromProspect(username, csrf, myUrn) {
     const convUrn = encodeURIComponent(conversation.entityUrn ?? "");
     const eventsRes = await fetch(
       `/voyager/api/messaging/conversations/${convUrn}/events?keyVersion=LEGACY_INBOX&count=10`,
-      {
-        headers: { "csrf-token": csrf, "x-restli-protocol-version": "2.0.0" },
-        credentials: "include",
-      }
+      { headers: voyagerHeaders(csrf), credentials: "include" }
     );
     if (!eventsRes.ok) return { replied: false, replyPreview: null };
 
@@ -797,16 +815,13 @@ async function checkReplyFromProspect(username, csrf, myUrn) {
     const events = eventsData.elements ?? [];
 
     // Vérifier si au moins un message vient du prospect (pas de nous)
-    const prospectMessages = events.filter((e) => {
+    const hasReply = events.some((e) => {
+      if (!e.eventContent?.["com.linkedin.voyager.messaging.event.MessageEvent"]) return false;
       const senderUrn =
-        e.from?.["com.linkedin.voyager.messaging.MessagingMember"]?.miniProfile?.entityUrn ??
-        e.subtype === "MEMBER_TO_MEMBER" ? null : null;
-      // Si le sender n'est pas nous, c'est une réponse
-      return senderUrn !== myUrn && e.eventContent?.["com.linkedin.voyager.messaging.event.MessageEvent"];
+        e.from?.["com.linkedin.voyager.messaging.MessagingMember"]?.miniProfile?.entityUrn ?? null;
+      if (!senderUrn) return false;
+      return senderUrn !== myUrn;
     });
-
-    // Fallback plus simple : s'il y a plus d'1 message et le dernier n'est pas de nous
-    const hasReply = events.length > 1;
     if (!hasReply) return { replied: false, replyPreview: null };
 
     // Extraire un aperçu du dernier message reçu
@@ -897,11 +912,7 @@ async function handleSimulateReading(durationMs) {
 async function getMyProfileUrn(csrf) {
   try {
     const res = await fetch("/voyager/api/me", {
-      headers: {
-        "csrf-token": csrf,
-        "x-restli-protocol-version": "2.0.0",
-        accept: "application/vnd.linkedin.normalized+json+2.1",
-      },
+      headers: voyagerHeaders(csrf),
       credentials: "include",
     });
     if (!res.ok) return null;
@@ -945,14 +956,7 @@ async function handleScrapeViewers(maxCount = 20) {
     while (leads.length < maxCount) {
       const res = await fetch(
         `/voyager/api/wvmpProfile/views?q=viewedBy&count=${count}&start=${start}`,
-        {
-          headers: {
-            "csrf-token": csrf,
-            "x-restli-protocol-version": "2.0.0",
-            accept: "application/vnd.linkedin.normalized+json+2.1",
-          },
-          credentials: "include",
-        }
+        { headers: voyagerHeaders(csrf), credentials: "include" }
       );
       if (!res.ok) break;
 
@@ -1004,28 +1008,14 @@ async function handleScrapeFollowers(maxCount = 50) {
       const encodedUrn = encodeURIComponent(myUrn);
       const res = await fetch(
         `/voyager/api/relationships/followers?q=followersOf&entityUrn=${encodedUrn}&count=${count}&start=${start}`,
-        {
-          headers: {
-            "csrf-token": csrf,
-            "x-restli-protocol-version": "2.0.0",
-            accept: "application/vnd.linkedin.normalized+json+2.1",
-          },
-          credentials: "include",
-        }
+        { headers: voyagerHeaders(csrf), credentials: "include" }
       );
 
       if (!res.ok) {
         // Fallback : endpoint alternatif observé sur certaines versions LinkedIn
         const fallbackRes = await fetch(
           `/voyager/api/identity/followers?q=followers&count=${count}&start=${start}`,
-          {
-            headers: {
-              "csrf-token": csrf,
-              "x-restli-protocol-version": "2.0.0",
-              accept: "application/vnd.linkedin.normalized+json+2.1",
-            },
-            credentials: "include",
-          }
+          { headers: voyagerHeaders(csrf), credentials: "include" }
         );
         if (!fallbackRes.ok) break;
         const fbData = await fallbackRes.json();
