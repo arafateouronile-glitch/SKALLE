@@ -701,10 +701,10 @@ async function handleProcessAndConnect(profile, workspaceId) {
     token
   );
 
-  if (!result?.connectNote) return { ok: false, error: "backend_error", username };
+  if (!result) return { ok: false, error: "backend_error", username };
 
-  // Envoyer la demande de connexion depuis ce contexte de page
-  const connResult = await sendConnectionRequest(username, result.connectNote, csrf);
+  // connectNote peut être null si sendWithoutNote est activé dans les settings
+  const connResult = await sendConnectionRequest(username, result.connectNote ?? null, csrf);
 
   return {
     ...connResult,

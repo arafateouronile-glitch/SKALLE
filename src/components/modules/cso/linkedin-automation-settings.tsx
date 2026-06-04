@@ -39,6 +39,7 @@ interface AutomationConfig {
   warmupDay: number;
   warmupStartedAt: string | null;
   proxyCountry: string;
+  sendWithoutNote: boolean;
 }
 
 interface LoadResponse {
@@ -80,6 +81,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
   const [dailyMessageLimit, setDailyMessageLimit] = useState(25);
   const [sendAt, setSendAt] = useState("10:00");
   const [proxyCountry, setProxyCountry] = useState("FR");
+  const [sendWithoutNote, setSendWithoutNote] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -99,6 +101,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
         setDailyMessageLimit(data.config.dailyMessageLimit);
         setSendAt(data.config.sendAt);
         setProxyCountry(data.config.proxyCountry ?? "FR");
+        setSendWithoutNote(data.config.sendWithoutNote ?? false);
       }
     } catch {
       toast.error("Erreur de chargement");
@@ -116,6 +119,7 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
         dailyMessageLimit,
         sendAt,
         proxyCountry,
+        sendWithoutNote,
       };
       if (liAt.trim()) body.liAt = liAt.trim();
       if (jsessionId.trim()) body.jsessionId = jsessionId.trim();
@@ -474,6 +478,31 @@ export function LinkedInAutomationSettings({ workspaceId }: Props) {
             </select>
             <p className="text-[10px] text-slate-600">Utilisé pour adapter le comportement anti-ban</p>
           </div>
+        </div>
+      </div>
+
+      {/* Mode connexion */}
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[13px] font-medium text-white">Connexions sans note</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Envoie les demandes sans message d'accroche — acceptance rate ~+20%, contexte réduit.
+              Le message post-connexion est toujours envoyé après acceptation.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSendWithoutNote((v) => !v)}
+            className="ml-4 shrink-0 text-slate-400 hover:text-white transition-colors"
+            title={sendWithoutNote ? "Désactiver" : "Activer"}
+          >
+            {sendWithoutNote ? (
+              <ToggleRight className="h-6 w-6 text-sky-400" />
+            ) : (
+              <ToggleLeft className="h-6 w-6" />
+            )}
+          </button>
         </div>
       </div>
 
