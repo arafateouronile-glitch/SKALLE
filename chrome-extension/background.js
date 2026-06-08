@@ -546,6 +546,7 @@ async function runAutomation() {
   const tab = await findLinkedInTab();
   if (!tab) {
     await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
+    console.log("[SKALLE] → waiting_linkedin");
     return;
   }
 
@@ -1004,7 +1005,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "SKALLE_RUN_NOW") {
     runAutonomousSearch()
       .then(() => runAutomation())
-      .then(() => sendResponse({ ok: true }));
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (msg.type === "SKALLE_IMPORT_WARM_NOW") {

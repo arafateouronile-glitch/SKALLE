@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SKALLE - LinkedIn & Facebook Enricher",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Enrichit vos prospects LinkedIn et automatise l'outreach CSO (connexions + messages) en toute sécurité.",
   "permissions": ["storage", "activeTab", "alarms", "cookies", "tabs", "notifications"],
   "host_permissions": [
