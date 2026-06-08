@@ -149,15 +149,23 @@ async function refreshStatus() {
       parts.push(`Fenêtre : ${toHM(local.windowStart)}–${toHM(local.windowEnd)}`);
     }
 
-    // Objectif du jour
-    if (effectiveTarget) parts.push(`Objectif : ${effectiveTarget} actions`);
-
-    // Warmup
+    // Warmup multiplier
+    let warmupMultiplier = 1;
+    let warmupLabel = null;
     if (local.warmupStartDate) {
       const diffDays = Math.floor((Date.now() - new Date(local.warmupStartDate).getTime()) / 86400000);
       const w = Math.min(Math.floor(diffDays / 7), 3);
-      parts.push(`Warmup S${w + 1} (${["30%","50%","70%","✓"][w]})`);
+      warmupMultiplier = [0.3, 0.5, 0.7, 1.0][w];
+      warmupLabel = `Warmup S${w + 1} (${["30%","50%","70%","✓"][w]})`;
     }
+
+    // Objectif du jour (après warmup)
+    if (effectiveTarget) {
+      const effective = Math.max(1, Math.floor(effectiveTarget * warmupMultiplier));
+      parts.push(`Objectif : ${effective} actions`);
+    }
+
+    if (warmupLabel) parts.push(warmupLabel);
 
     // Actions cette semaine
     if (local.wkCount > 0) parts.push(`${local.wkCount} cette semaine`);
