@@ -7,7 +7,7 @@
  *
  * PATCH /api/cso-agent
  *   { decisionId, workspaceId, action: "approve" | "reject" }
- *   → approve triggers execution via Inngest; reject marks REJECTED immediately
+ *   → approve marks APPROVED (l'extension Chrome exécute + crée la séquence via /executed)
  */
 
 import { type NextRequest, NextResponse } from "next/server";
@@ -101,15 +101,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, status: "REJECTED" });
   }
 
-  // Approve: mark APPROVED then trigger execution via Inngest
+  // Approve: mark APPROVED — l'extension Chrome exécute l'action LinkedIn
+  // et crée la séquence via /api/cso-agent/executed après confirmation
   await prisma.agentDecision.update({
     where: { id: decisionId },
     data: { status: "APPROVED" },
-  });
-
-  await inngest.send({
-    name: "cso/decision.execute",
-    data: { decisionId, workspaceId },
   });
 
   return NextResponse.json({ ok: true, status: "APPROVED" });

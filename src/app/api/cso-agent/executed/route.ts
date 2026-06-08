@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { onConnectionAccepted } from "@/lib/services/smart-sequence-processor";
+import { onConnectionAccepted, FAR_FUTURE } from "@/lib/services/smart-sequence-processor";
 
 export const dynamic = "force-dynamic";
 
@@ -67,17 +67,81 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Mettre à jour le prospect
+    // Mettre à jour le prospect + créer la séquence smart
     if (prospectId) {
-      if (action === "connection_request") {
-        // Demande envoyée — prospect reste en NEW, on note l'interaction
+      if (action === "connection_request" && decision.actionType === "CSO_LAUNCH_LINKEDIN") {
+        // Demande envoyée — créer l'OutreachSequence avec les étapes conditionnelles
         await prisma.prospect.update({
           where: { id: prospectId },
           data: { lastInteractionAt: now },
         });
+
+        const actionData = data as Record<string, unknown>;
+        const sequence = await prisma.outreachSequence.create({
+          data: {
+            workspaceId: decision.workspaceId,
+            prospectId,
+            name: `LinkedIn CSO — ${(actionData.prospectName as string) ?? username ?? ""}`,
+            isActive: true,
+          },
+        });
+
+        // Step 1 : déjà exécuté par l'extension
+        await prisma.sequenceStep.create({
+          data: {
+            sequenceId: sequence.id,
+            stepNumber: 1,
+            channel: "LINKEDIN",
+            linkedInAction: "CONNECTION_REQUEST",
+            content: (actionData.connectNote as string) ?? "",
+            status: "SENT",
+            sentAt: now,
+          },
+        });
+
+        // Step 2 : message post-connexion (déclenché quand connexion acceptée)
+        await prisma.sequenceStep.create({
+          data: {
+            sequenceId: sequence.id,
+            stepNumber: 2,
+            channel: "LINKEDIN",
+            linkedInAction: "POST_CONNECTION_MESSAGE",
+            content: (actionData.postConnectionMessage as string) ?? "",
+            status: "PENDING",
+            scheduledAt: FAR_FUTURE,
+            metadata: { smartBranch: true, waitingFor: "CONNECTION_ACCEPTED" },
+          },
+        });
+
+        // Step 3 : fallback email si connexion non acceptée après 7 jours
+        const notAcceptedAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1_000);
+        await prisma.sequenceStep.create({
+          data: {
+            sequenceId: sequence.id,
+            stepNumber: 3,
+            channel: "EMAIL",
+            content: "",
+            status: "PENDING",
+            scheduledAt: notAcceptedAt,
+            metadata: { smartBranch: true, waitingFor: "NOT_ACCEPTED", daysThreshold: 7 },
+          },
+        });
+
+        // Step 4 : relance si pas de réponse après 5j (activé par onConnectionAccepted)
+        await prisma.sequenceStep.create({
+          data: {
+            sequenceId: sequence.id,
+            stepNumber: 4,
+            channel: "LINKEDIN",
+            linkedInAction: "FOLLOWUP_MESSAGE",
+            content: (actionData.followupMessage as string) ?? "",
+            status: "PENDING",
+            scheduledAt: FAR_FUTURE,
+            metadata: { smartBranch: true, waitingFor: "NO_REPLY", daysThreshold: 5 },
+          },
+        });
       } else if (action === "message_sent") {
         // Prospect déjà connecté (DISTANCE_1) — message envoyé directement
-        // Avancer les branches smart sequence comme si la connexion venait d'être acceptée
         await prisma.prospect.update({
           where: { id: prospectId },
           data: { status: "CONTACTED", lastInteractionAt: now },
