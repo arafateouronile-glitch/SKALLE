@@ -485,7 +485,7 @@ async function reportExecuted(token, decisionId, result) {
 
 // ── Main automation loop ──────────────────────────────────────────────────────
 
-async function runAutomation() {
+async function runAutomation(forceRun = false) {
   const config = await getConfig();
 
   if (!config.skalleToken) {
@@ -510,22 +510,24 @@ async function runAutomation() {
     return;
   }
 
-  if (!isWorkingDay()) {
-    await setStatus("day_off");
-    return;
-  }
+  if (!forceRun) {
+    if (!isWorkingDay()) {
+      await setStatus("day_off");
+      return;
+    }
 
-  // Fenêtre d'activité variable (±45 min autour des heures configurées)
-  const window = await getDailyWindow(config.businessHoursStart, config.businessHoursEnd);
-  if (!isBusinessHours(window.start, window.end)) {
-    await setStatus("outside_hours");
-    return;
-  }
+    // Fenêtre d'activité variable (±45 min autour des heures configurées)
+    const window = await getDailyWindow(config.businessHoursStart, config.businessHoursEnd);
+    if (!isBusinessHours(window.start, window.end)) {
+      await setStatus("outside_hours");
+      return;
+    }
 
-  // Cooldown post-action (45–90 min depuis la dernière action)
-  if (await isInCooldown()) {
-    await setStatus("cooldown");
-    return;
+    // Cooldown post-action (45–90 min depuis la dernière action)
+    if (await isInCooldown()) {
+      await setStatus("cooldown");
+      return;
+    }
   }
 
   const effectiveLimit = await getEffectiveDailyLimit(config.dailyLimit);
@@ -1004,7 +1006,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "SKALLE_RUN_NOW") {
     runAutonomousSearch()
-      .then(() => runAutomation())
+      .then(() => runAutomation(true)) // forceRun=true : bypass cooldown + heures
       .then(() => sendResponse({ ok: true }))
       .catch(() => sendResponse({ ok: false }));
     return true;
