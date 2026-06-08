@@ -80,6 +80,7 @@ model Workspace {
   stripeConnected           Boolean                    @default(false)
   onboardingStep            Int                        @default(1)
   calendarLink              String?
+  signature                 String?
   agentDecisions            AgentDecision[]
   autopilotConfig           AutopilotConfig?
   batchJobs                 BatchJob[]

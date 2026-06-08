@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { CalendarLinkForm } from "@/components/modules/calendar-link-form";
 import { ProfileForm } from "@/components/modules/settings/profile-form";
+import { SignatureForm } from "@/components/modules/settings/signature-form";
 import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
 import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
 import { ChromeExtensionCard } from "@/components/modules/cso/chrome-extension-card";
@@ -59,6 +60,7 @@ export default async function SalesSettingsPage() {
           hasCsoAccess: true,
           calendarLink: true,
           brandVoice: true,
+          signature: true,
           extensionTokens: {
             select: { token: true },
             orderBy: { createdAt: "desc" },
@@ -205,6 +207,14 @@ export default async function SalesSettingsPage() {
         <ApolloSettingsCard
           workspaceId={workspace.id}
           personas={personas}
+        />
+      )}
+
+      {/* Signature */}
+      {workspace && (
+        <SignatureForm
+          workspaceId={workspace.id}
+          initial={workspace.signature ?? null}
         />
       )}
 

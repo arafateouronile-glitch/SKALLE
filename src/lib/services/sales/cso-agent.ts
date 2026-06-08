@@ -354,6 +354,7 @@ export async function generateCsoDecisions(
       select: {
         name: true,
         brandVoice: true,
+        signature: true,
         user: { select: { plan: true } },
         linkedInAutomationConfig: { select: { sendWithoutNote: true } },
       },
@@ -516,26 +517,29 @@ Génère les décisions. Les messages seront personnalisés séparément.
             generateCsoMessages(profile, research, brand, "FOLLOWUP"),
           ]);
           const sendWithoutNote = workspace?.linkedInAutomationConfig?.sendWithoutNote ?? false;
+          const sig = workspace?.signature ? `\n\n${workspace.signature}` : "";
           return {
             ...d,
             actionData: {
               ...d.actionData,
               connectNote: sendWithoutNote ? null : (msg.connectNote ?? msg.content.slice(0, 280)),
-              postConnectionMessage: msg.content,
-              followupMessage: followup.content,
+              postConnectionMessage: msg.content + sig,
+              followupMessage: followup.content + sig,
               _angle: msg.angle,
             },
           };
 
         } else if (d.actionType === "CSO_LAUNCH_EMAIL") {
+          const sig = workspace?.signature ? `\n\n${workspace.signature}` : "";
           const msg = await generateCsoMessages(profile, research, brand, "EMAIL");
-          return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content, _angle: msg.angle } };
+          return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content + sig, _angle: msg.angle } };
 
         } else if (d.actionType === "CSO_FOLLOWUP") {
+          const sig = workspace?.signature ? `\n\n${workspace.signature}` : "";
           const lastMsg = "lastMessage" in prospectData ? (prospectData.lastMessage ?? undefined) : undefined;
           const channel = "channel" in prospectData ? (prospectData.channel as "EMAIL" | "LINKEDIN" | "FOLLOWUP") : "EMAIL";
           const msg = await generateCsoMessages(profile, research, brand, channel === "LINKEDIN" ? "LINKEDIN" : "FOLLOWUP", lastMsg);
-          return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content, _angle: msg.angle } };
+          return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content + sig, _angle: msg.angle } };
         }
       } catch (err) {
         console.warn(`[CSO] Message generation failed for ${d.prospectId}:`, err);
