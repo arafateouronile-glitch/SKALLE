@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { CalendarLinkForm } from "@/components/modules/calendar-link-form";
+import { ProfileForm } from "@/components/modules/settings/profile-form";
 import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
 import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
 import { ChromeExtensionCard } from "@/components/modules/cso/chrome-extension-card";
@@ -107,28 +108,27 @@ export default async function SalesSettingsPage() {
           </CardTitle>
           <CardDescription>Informations de votre compte</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Nom</p>
-              <p className="text-sm font-medium text-gray-900">
-                {user.name ?? "—"}
-              </p>
+        {workspace ? (
+          <ProfileForm
+            workspaceId={workspace.id}
+            userName={user.name ?? null}
+            email={user.email!}
+            workspaceName={workspace.name}
+          />
+        ) : (
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Nom</p>
+                <p className="text-sm font-medium text-gray-900">{user.name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Email</p>
+                <p className="text-sm font-medium text-gray-900">{user.email}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Email</p>
-              <p className="text-sm font-medium text-gray-900">{user.email}</p>
-            </div>
-          </div>
-          {workspace && (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Workspace</p>
-              <p className="text-sm font-medium text-gray-900">
-                {workspace.name}
-              </p>
-            </div>
-          )}
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       {/* Plan & Crédits */}
