@@ -8,6 +8,7 @@ import { inngest } from "@/inngest/client";
 import {
   initializeBrandStrategy,
   type MarketingPersona,
+  type DailyContext,
 } from "@/lib/services/social/content-factory";
 import {
   generateSocialCampaign,
@@ -71,6 +72,7 @@ export async function startContentFactory(
     networks: string[];
     month: number;
     year: number;
+    dailyContext?: DailyContext;
   }
 ) {
   const { error, userId } = await getAuthenticatedWorkspace(workspaceId);
@@ -131,6 +133,7 @@ export async function startContentFactory(
         networks: input.networks,
         month: input.month,
         year: input.year,
+        dailyContext: input.dailyContext,
       },
     });
   } catch (e) {

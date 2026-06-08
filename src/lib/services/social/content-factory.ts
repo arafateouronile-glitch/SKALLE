@@ -32,12 +32,21 @@ export interface MarketingPersona {
 export const ALL_NETWORKS = ["LINKEDIN", "X", "INSTAGRAM", "TIKTOK", "FACEBOOK"] as const;
 export type SocialNetwork = typeof ALL_NETWORKS[number];
 
+export interface DailyContext {
+  todayAccomplishment?: string;
+  recentInsight?: string;
+  currentMood?: string;
+  industryNews?: string;
+  currentProject?: string;
+}
+
 export interface StrategyInput {
   vision: string;
   niche: string;
   objectives: string[];
   networks: string[];
   workspaceId: string;
+  dailyContext?: DailyContext;
 }
 
 export type ConceptCategory = "education" | "conversion" | "awareness";
@@ -61,6 +70,21 @@ export interface GeneratedPostSet {
   instagramImagePrompt?: string;
   tiktokScript?: string;
   facebookPost?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DAILY CONTEXT HELPER
+// ═══════════════════════════════════════════════════════════════════════════
+
+function buildDailyContextPrompt(ctx: DailyContext): string {
+  const lines: string[] = [];
+  if (ctx.todayAccomplishment) lines.push(`- Accomplissement récent : ${ctx.todayAccomplishment}`);
+  if (ctx.recentInsight) lines.push(`- Insight / apprentissage : ${ctx.recentInsight}`);
+  if (ctx.currentMood) lines.push(`- Énergie du moment : ${ctx.currentMood}`);
+  if (ctx.industryNews) lines.push(`- Actualité secteur : ${ctx.industryNews}`);
+  if (ctx.currentProject) lines.push(`- Projet/objectif en cours : ${ctx.currentProject}`);
+  if (lines.length === 0) return "";
+  return `\nCONTEXTE PERSONNEL DU CRÉATEUR (à intégrer naturellement dans les posts "awareness" et "education") :\n${lines.join("\n")}\n`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -268,12 +292,16 @@ export async function generateContentConcepts(
     const allowedNetworks = input.networks.length > 0 ? input.networks : [...ALL_NETWORKS];
     const networksInstruction = `RÉSEAUX AUTORISÉS : ${allowedNetworks.join(", ")} — n'utilise QUE ces réseaux dans "targetNetworks".`;
 
+    const dailyContextSection = input.dailyContext
+      ? buildDailyContextPrompt(input.dailyContext)
+      : "";
+
     const conceptMessages = [
       new SystemMessage(
-        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.\n\n${brandTypeCtx.conceptDistribution}\n\n${brandTypeCtx.conceptInstructions}\n\nRÈGLES :\n- Chaque concept doit avoir un angle unique et un titre accrocheur\n- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)\n- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible\n- Les concepts "awareness" sont basés sur le storytelling et la vision\n- ${networksInstruction}\n- Le "rationale" explique POURQUOI ce post est stratégique\n\nRéponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:\n[\n  {\n    "index": number (0-29),\n    "category": "education" | "conversion" | "awareness",\n    "title": string,\n    "angle": string,\n    "sourceKeyword": string | null,\n    "sourceAdId": string | null,\n    "rationale": string,\n    "targetNetworks": array of ${allowedNetworks.map(n => `"${n}"`).join("|")}\n  }\n]`
+        `Tu es un stratège de contenu social media expert. Tu dois générer exactement 30 concepts de posts pour un mois complet.\n\n${brandTypeCtx.conceptDistribution}\n\n${brandTypeCtx.conceptInstructions}\n\nRÈGLES :\n- Chaque concept doit avoir un angle unique et un titre accrocheur\n- Les concepts "education" doivent utiliser un mot-clé source (sourceKeyword)\n- Les concepts "conversion" doivent référencer un ad ID source (sourceAdId) quand disponible\n- Les concepts "awareness" sont basés sur le storytelling et la vision\n- ${networksInstruction}\n- Le "rationale" explique POURQUOI ce post est stratégique\n- Si un contexte personnel est fourni, intègre-le naturellement dans certains concepts (surtout "awareness") pour plus d'authenticité\n\nRéponds UNIQUEMENT avec un JSON valide: un array de 30 objets avec ces champs:\n[\n  {\n    "index": number (0-29),\n    "category": "education" | "conversion" | "awareness",\n    "title": string,\n    "angle": string,\n    "sourceKeyword": string | null,\n    "sourceAdId": string | null,\n    "rationale": string,\n    "targetNetworks": array of ${allowedNetworks.map(n => `"${n}"`).join("|")}\n  }\n]`
       ),
       new HumanMessage(
-        `CONTEXTE DE LA MARQUE :\nVision: ${input.vision}\nNiche: ${input.niche}\nObjectifs: ${input.objectives.join(", ")}\nRéseaux cibles: ${allowedNetworks.join(", ")}\nPersona: ${persona ? JSON.stringify(persona) : "Non défini"}\n\nDONNÉES SEO (pour concepts "education"):\nMots-clés top:\n${keywordsContext}\n\nQuick Wins SEO:\n${quickWinsContext}\n\nQuestions PAA du public:\n${paaQuestions.length > 0 ? paaQuestions.map((q) => `- ${q}`).join("\n") : "Aucune question PAA"}\n\nDONNÉES PUBLICITAIRES (pour concepts "conversion"):\nAds performantes:\n${adsContext}\n\nGénère les 30 concepts maintenant.`
+        `CONTEXTE DE LA MARQUE :\nVision: ${input.vision}\nNiche: ${input.niche}\nObjectifs: ${input.objectives.join(", ")}\nRéseaux cibles: ${allowedNetworks.join(", ")}\nPersona: ${persona ? JSON.stringify(persona) : "Non défini"}\n${dailyContextSection}\nDONNÉES SEO (pour concepts "education"):\nMots-clés top:\n${keywordsContext}\n\nQuick Wins SEO:\n${quickWinsContext}\n\nQuestions PAA du public:\n${paaQuestions.length > 0 ? paaQuestions.map((q) => `- ${q}`).join("\n") : "Aucune question PAA"}\n\nDONNÉES PUBLICITAIRES (pour concepts "conversion"):\nAds performantes:\n${adsContext}\n\nGénère les 30 concepts maintenant.`
       ),
     ];
 
@@ -317,11 +345,14 @@ export async function generatePostFormats(
   concept: ContentConcept,
   persona: MarketingPersona,
   brandVoice: Record<string, unknown>,
-  brandType: BrandType = "B2C"
+  brandType: BrandType = "B2C",
+  dailyContext?: DailyContext
 ): Promise<GeneratedPostSet> {
   const openai = getOpenAI();
   const parser = getStringParser();
   const brandTypeCtx = getBrandTypeContext(brandType);
+
+  const dailyCtxBlock = dailyContext ? buildDailyContextPrompt(dailyContext) : "";
 
   const brandContext = `
 Ton: ${persona.tone}
@@ -329,7 +360,7 @@ Audience: ${persona.targetAudience}
 Piliers: ${persona.contentPillars.join(", ")}
 Proposition de valeur: ${persona.uniqueValueProp}
 Type de marque: ${brandType === "PERSONAL_BRAND" ? "Personal Brand" : brandType}
-${brandTypeCtx.postToneInstructions}`;
+${brandTypeCtx.postToneInstructions}${dailyCtxBlock ? `\n${dailyCtxBlock}` : ""}`;
 
   const result: GeneratedPostSet = { conceptIndex: concept.index };
 

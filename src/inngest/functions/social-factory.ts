@@ -18,6 +18,7 @@ import {
   autoSchedule,
   type MarketingPersona,
   type ContentConcept,
+  type DailyContext,
 } from "@/lib/services/social/content-factory";
 import { generateImage } from "@/lib/ai/banana";
 
@@ -39,7 +40,19 @@ export const generateSocialFactory = inngest.createFunction(
       networks,
       month,
       year,
-    } = event.data;
+      dailyContext,
+    } = event.data as {
+      contentPlanId: string;
+      workspaceId: string;
+      userId: string;
+      vision: string;
+      niche: string;
+      objectives: string[];
+      networks: string[];
+      month: number;
+      year: number;
+      dailyContext?: DailyContext;
+    };
 
     // Step 1: Marquer le plan comme GENERATING
     await step.run("start-plan", async () => {
@@ -67,6 +80,7 @@ export const generateSocialFactory = inngest.createFunction(
         objectives,
         networks: networks ?? [],
         workspaceId,
+        dailyContext,
       });
 
       if (!result.success || !result.concepts) {
@@ -119,7 +133,8 @@ export const generateSocialFactory = inngest.createFunction(
             concept,
             persona as MarketingPersona,
             brandVoice,
-            workspace?.brandType ?? "B2C"
+            workspace?.brandType ?? "B2C",
+            dailyContext
           );
 
           const ids: Array<{ id: string; type: string; category: string }> = [];

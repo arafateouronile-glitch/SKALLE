@@ -13,12 +13,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Brain, Sparkles, Rocket } from "lucide-react";
+import { Loader2, Brain, Sparkles, Rocket, MessageCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { initializeStrategy, startContentFactory } from "@/actions/social-factory";
 import { getWorkspaceBrandType } from "@/actions/workspace";
-import type { MarketingPersona } from "@/lib/services/social/content-factory";
+import type { MarketingPersona, DailyContext } from "@/lib/services/social/content-factory";
 import { useCreditsContext } from "@/components/providers/credits-provider";
 
 const NETWORKS_OPTIONS = [
@@ -44,6 +44,14 @@ const BRAND_TYPE_LABELS: Record<string, { label: string; icon: string }> = {
   B2C: { label: "B2C", icon: "🛍️" },
 };
 
+const MOOD_OPTIONS = [
+  { value: "Motivé", emoji: "⚡" },
+  { value: "Réfléchi", emoji: "🧠" },
+  { value: "En challenge", emoji: "💪" },
+  { value: "En célébration", emoji: "🎉" },
+  { value: "Inspiré", emoji: "✨" },
+];
+
 interface StrategyFormProps {
   workspaceId: string;
   existingPersona?: MarketingPersona | null;
@@ -64,6 +72,8 @@ export function StrategyForm({
   const [isInitializing, setIsInitializing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [brandType, setBrandType] = useState<string | null>(null);
+  const [showDailyContext, setShowDailyContext] = useState(false);
+  const [dailyContext, setDailyContext] = useState<DailyContext>({});
 
   useEffect(() => {
     getWorkspaceBrandType(workspaceId).then(setBrandType);
@@ -123,6 +133,7 @@ export function StrategyForm({
 
     setIsGenerating(true);
     try {
+      const hasDailyCtx = Object.values(dailyContext).some((v) => v?.trim());
       const result = await startContentFactory(workspaceId, {
         vision,
         niche,
@@ -130,6 +141,7 @@ export function StrategyForm({
         networks,
         month,
         year,
+        dailyContext: hasDailyCtx ? dailyContext : undefined,
       });
 
       if (result.success && result.contentPlanId) {
@@ -323,6 +335,136 @@ export function StrategyForm({
             Générer 30 posts pour le mois prochain
           </Button>
         </CardContent>
+      </Card>
+
+      {/* Daily Context Card */}
+      <Card className="border-violet-100">
+        <CardHeader
+          className="cursor-pointer select-none pb-3"
+          onClick={() => setShowDailyContext((v) => !v)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-violet-500" />
+              <div>
+                <CardTitle className="text-base">Contexte du jour</CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  Partagez votre actualité pour personnaliser les posts générés
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {Object.values(dailyContext).some((v) => v?.trim()) && (
+                <Badge variant="secondary" className="text-xs bg-violet-100 text-violet-700 border-violet-200">
+                  Actif
+                </Badge>
+              )}
+              {showDailyContext ? (
+                <ChevronUp className="h-4 w-4 text-gray-400" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-gray-400" />
+              )}
+            </div>
+          </div>
+        </CardHeader>
+
+        {showDailyContext && (
+          <CardContent className="space-y-4 pt-0">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Qu&apos;avez-vous accompli récemment ?
+                <span className="ml-1 font-normal text-gray-400">(optionnel)</span>
+              </Label>
+              <Textarea
+                placeholder="Ex: J'ai signé un nouveau client, lancé une fonctionnalité, terminé une formation..."
+                value={dailyContext.todayAccomplishment ?? ""}
+                onChange={(e) =>
+                  setDailyContext((prev) => ({ ...prev, todayAccomplishment: e.target.value }))
+                }
+                rows={2}
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Quel insight ou apprentissage récent à partager ?
+                <span className="ml-1 font-normal text-gray-400">(optionnel)</span>
+              </Label>
+              <Textarea
+                placeholder="Ex: J'ai réalisé que les emails courts convertissent 3x mieux, j'ai découvert une nouvelle approche..."
+                value={dailyContext.recentInsight ?? ""}
+                onChange={(e) =>
+                  setDailyContext((prev) => ({ ...prev, recentInsight: e.target.value }))
+                }
+                rows={2}
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Quelle est votre énergie du moment ?</Label>
+              <div className="flex flex-wrap gap-2">
+                {MOOD_OPTIONS.map((mood) => (
+                  <Badge
+                    key={mood.value}
+                    variant={dailyContext.currentMood === mood.value ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors text-sm py-1.5 px-3 ${
+                      dailyContext.currentMood === mood.value
+                        ? "bg-violet-600 hover:bg-violet-700 border-violet-600"
+                        : "hover:border-violet-300 hover:text-violet-700"
+                    }`}
+                    onClick={() =>
+                      setDailyContext((prev) => ({
+                        ...prev,
+                        currentMood:
+                          prev.currentMood === mood.value ? undefined : mood.value,
+                      }))
+                    }
+                  >
+                    {mood.emoji} {mood.value}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Une actualité de votre secteur à commenter ?
+                <span className="ml-1 font-normal text-gray-400">(optionnel)</span>
+              </Label>
+              <Textarea
+                placeholder="Ex: Google vient de lancer une mise à jour majeure, un concurrent a levé des fonds..."
+                value={dailyContext.industryNews ?? ""}
+                onChange={(e) =>
+                  setDailyContext((prev) => ({ ...prev, industryNews: e.target.value }))
+                }
+                rows={2}
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Un projet ou objectif en cours à mettre en avant ?
+                <span className="ml-1 font-normal text-gray-400">(optionnel)</span>
+              </Label>
+              <Textarea
+                placeholder="Ex: Je lance un programme de formation en septembre, je développe un nouveau service..."
+                value={dailyContext.currentProject ?? ""}
+                onChange={(e) =>
+                  setDailyContext((prev) => ({ ...prev, currentProject: e.target.value }))
+                }
+                rows={2}
+                className="text-sm"
+              />
+            </div>
+
+            <p className="text-xs text-gray-400 border-t pt-3">
+              Ces informations sont injectées dans les prompts IA pour que vos posts reflètent votre actualité réelle — plus authentiques, plus engageants.
+            </p>
+          </CardContent>
+        )}
       </Card>
     </div>
   );
