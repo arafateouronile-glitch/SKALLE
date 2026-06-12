@@ -22,6 +22,8 @@ import {
   Database,
   Target,
   Wand2,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -170,16 +172,41 @@ function DecisionCard({
   onApprove,
   onReject,
   onRegenerate,
+  onUpdate,
   loading,
 }: {
   decision: AgentDecision;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onRegenerate: (id: string) => Promise<void>;
+  onUpdate: (id: string, patch: Record<string, string>) => Promise<void>;
   loading: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [draftValue, setDraftValue] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const startEdit = (field: string, current: string) => {
+    setEditingField(field);
+    setDraftValue(current);
+  };
+
+  const cancelEdit = () => {
+    setEditingField(null);
+    setDraftValue("");
+  };
+
+  const saveEdit = async (field: string) => {
+    setIsSaving(true);
+    try {
+      await onUpdate(decision.id, { [field]: draftValue });
+      setEditingField(null);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const cfg = ACTION_CONFIG[decision.actionType as CsoActionType] ?? {
     label: decision.actionType,
@@ -268,25 +295,75 @@ function DecisionCard({
               <>
                 {data.connectNote && (
                   <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
-                    <p className="text-[10px] font-semibold text-blue-600 mb-1.5 uppercase tracking-wide">
-                      Note de connexion (invitation)
-                    </p>
-                    <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">
-                      {data.connectNote as string}
-                    </pre>
-                    <p className="text-[10px] text-blue-400 mt-1.5">
-                      {(data.connectNote as string).length}/280 caractères
-                    </p>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">
+                        Note de connexion (invitation)
+                      </p>
+                      {isPending && editingField !== "connectNote" && (
+                        <button onClick={() => startEdit("connectNote", data.connectNote as string)} className="text-blue-400 hover:text-blue-600 transition-colors">
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                    {editingField === "connectNote" ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={draftValue}
+                          onChange={(e) => setDraftValue(e.target.value)}
+                          maxLength={280}
+                          rows={4}
+                          className="w-full text-[12px] text-gray-700 bg-white border border-blue-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-blue-400">{draftValue.length}/280</span>
+                          <div className="flex gap-2">
+                            <button onClick={cancelEdit} className="text-[11px] text-gray-400 hover:text-gray-600">Annuler</button>
+                            <button onClick={() => saveEdit("connectNote")} disabled={isSaving} className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50">
+                              {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                              Enregistrer
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">{data.connectNote as string}</pre>
+                        <p className="text-[10px] text-blue-400 mt-1.5">{(data.connectNote as string).length}/280 caractères</p>
+                      </>
+                    )}
                   </div>
                 )}
                 {data.postConnectionMessage && (
                   <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
-                    <p className="text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-                      Message après acceptation
-                    </p>
-                    <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">
-                      {data.postConnectionMessage as string}
-                    </pre>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                        Message après acceptation
+                      </p>
+                      {isPending && editingField !== "postConnectionMessage" && (
+                        <button onClick={() => startEdit("postConnectionMessage", data.postConnectionMessage as string)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                    {editingField === "postConnectionMessage" ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={draftValue}
+                          onChange={(e) => setDraftValue(e.target.value)}
+                          rows={6}
+                          className="w-full text-[12px] text-gray-700 bg-white border border-gray-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-violet-400"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={cancelEdit} className="text-[11px] text-gray-400 hover:text-gray-600">Annuler</button>
+                          <button onClick={() => saveEdit("postConnectionMessage")} disabled={isSaving} className="flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-800 font-medium disabled:opacity-50">
+                            {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                            Enregistrer
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">{data.postConnectionMessage as string}</pre>
+                    )}
                   </div>
                 )}
                 {data._angle && (
@@ -308,7 +385,50 @@ function DecisionCard({
               </>
             ) : preview ? (
               <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
-                <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">{preview}</pre>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    {decision.actionType === "CSO_LAUNCH_EMAIL" ? "Email" : "Message de relance"}
+                  </span>
+                  {isPending && editingField !== "content" && (
+                    <button onClick={() => startEdit("content", (data.content as string) ?? preview ?? "")} className="text-gray-400 hover:text-gray-600 transition-colors">
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                {editingField === "content" ? (
+                  <div className="space-y-2">
+                    {decision.actionType === "CSO_LAUNCH_EMAIL" && (
+                      <input
+                        type="text"
+                        placeholder="Objet"
+                        value={(data.subject as string) ?? ""}
+                        onChange={(e) => {
+                          const subject = e.target.value;
+                          setDraftValue((prev) => {
+                            const parts = prev.split("\n\n");
+                            return [subject, ...parts.slice(1)].join("\n\n");
+                          });
+                        }}
+                        className="w-full text-[12px] text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                      />
+                    )}
+                    <textarea
+                      value={draftValue}
+                      onChange={(e) => setDraftValue(e.target.value)}
+                      rows={7}
+                      className="w-full text-[12px] text-gray-700 bg-white border border-gray-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-violet-400"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={cancelEdit} className="text-[11px] text-gray-400 hover:text-gray-600">Annuler</button>
+                      <button onClick={() => saveEdit("content")} disabled={isSaving} className="flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-800 font-medium disabled:opacity-50">
+                        {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                        Enregistrer
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">{preview}</pre>
+                )}
               </div>
             ) : null}
           </div>
@@ -445,6 +565,22 @@ export function CsoAgentQueue({
     } finally {
       setLoading(null);
     }
+  }, [workspaceId]);
+
+  const handleUpdate = useCallback(async (decisionId: string, patch: Record<string, string>) => {
+    const res = await fetch("/api/cso-agent", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decisionId, workspaceId, action: "update", patch }),
+    });
+    const json = await res.json() as { ok?: boolean; error?: string };
+    if (!res.ok || !json.ok) throw new Error(json.error ?? "Erreur sauvegarde");
+    setDecisions((prev) =>
+      prev.map((d) =>
+        d.id === decisionId ? { ...d, actionData: { ...(d.actionData ?? {}), ...patch } } : d
+      )
+    );
+    toast.success("Message mis à jour");
   }, [workspaceId]);
 
   const handleRegenerate = useCallback(async (decisionId: string) => {
@@ -716,6 +852,7 @@ export function CsoAgentQueue({
             onApprove={handleApprove}
             onReject={handleReject}
             onRegenerate={handleRegenerate}
+            onUpdate={handleUpdate}
             loading={loading}
           />
         ))}

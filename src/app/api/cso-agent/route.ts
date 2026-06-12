@@ -82,7 +82,8 @@ export async function PATCH(req: NextRequest) {
   const body = (await req.json()) as {
     decisionId: string;
     workspaceId: string;
-    action: "approve" | "reject";
+    action: "approve" | "reject" | "update";
+    patch?: Record<string, unknown>;
   };
 
   const { decisionId, workspaceId, action } = body;
@@ -100,6 +101,16 @@ export async function PATCH(req: NextRequest) {
     where: { id: decisionId, workspaceId, status: "PENDING" },
   });
   if (!decision) return NextResponse.json({ error: "Décision introuvable ou déjà traitée" }, { status: 404 });
+
+  if (action === "update") {
+    const patch = body.patch ?? {};
+    const current = decision.actionData as Record<string, unknown> ?? {};
+    await prisma.agentDecision.update({
+      where: { id: decisionId },
+      data: { actionData: { ...current, ...patch, _editedAt: new Date().toISOString() } },
+    });
+    return NextResponse.json({ ok: true });
+  }
 
   if (action === "reject") {
     await prisma.agentDecision.update({

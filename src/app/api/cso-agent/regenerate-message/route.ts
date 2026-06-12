@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       linkedInExperiences: liEnrich?.experiences ?? [],
       companyStage: "PME établie",
       topPainPoint: "gestion administrative",
-      suggestedAngle: "productivité" as const,
+      suggestedAngle: "efficiency" as const,
       urgencySignal: "N/A",
       icebreakerLine: "",
       jobTenure: null,
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
 
   await prisma.agentDecision.update({
     where: { id: decisionId },
-    data: { actionData: newActionData },
+    data: { actionData: newActionData as Parameters<typeof prisma.agentDecision.update>[0]["data"]["actionData"] },
   });
 
   return NextResponse.json({ ok: true, actionData: newActionData });

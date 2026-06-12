@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CsoAgentQueue } from "@/components/modules/cso/cso-agent-queue";
-import { Brain, Mail, Linkedin, MessageCircle } from "lucide-react";
+import { Brain, Mail, Linkedin, MessageCircle, Target, Zap } from "lucide-react";
 
 const CSO_ACTION_TYPES = [
   "CSO_LAUNCH_LINKEDIN",
