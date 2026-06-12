@@ -30,6 +30,10 @@ export interface TechnicalReport {
   analyzedAt: string;
 }
 
+// Cache in-process 24h — évite de consommer le quota PageSpeed sur la même URL
+const psCache = new Map<string, { data: TechnicalReport; expiresAt: number }>();
+const PS_CACHE_TTL = 24 * 60 * 60 * 1000;
+
 function scoreToStatus(score: number): "good" | "needs-improvement" | "poor" {
   if (score >= 0.9) return "good";
   if (score >= 0.5) return "needs-improvement";
@@ -93,22 +97,28 @@ export async function analyzeTechnicalSEO(
       normalizedUrl = "https://" + normalizedUrl;
     }
 
+    // Serve from cache if available (évite de consommer le quota PageSpeed)
+    const cached = psCache.get(normalizedUrl);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { success: true, data: cached.data };
+    }
+
     const apiKey = process.env.PAGESPEED_API_KEY ?? "";
     const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(
       normalizedUrl
     )}&strategy=mobile${apiKey ? `&key=${apiKey}` : ""}`;
 
-    const response = await fetch(apiUrl, {
-      next: { revalidate: 0 },
-    });
+    const response = await fetch(apiUrl, { cache: "no-store" });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
+      const msg = (err as { error?: { message?: string } })?.error?.message ?? "";
+      const isQuota = response.status === 429 || msg.toLowerCase().includes("quota");
       return {
         success: false,
-        error:
-          (err as { error?: { message?: string } })?.error?.message ??
-          `PageSpeed API error: ${response.status}`,
+        error: isQuota
+          ? "Quota PageSpeed API épuisé pour aujourd'hui. Réessayez demain ou ajoutez une clé API dans les variables d'environnement (PAGESPEED_API_KEY)."
+          : msg || `PageSpeed API error: ${response.status}`,
       };
     }
 
@@ -191,18 +201,19 @@ export async function analyzeTechnicalSEO(
         opportunities: oppsText,
       });
 
-    return {
-      success: true,
-      data: {
-        url: normalizedUrl,
-        performanceScore: perfScore,
-        overallCategory: overallCat,
-        vitals,
-        opportunities,
-        aiRecommendations,
-        analyzedAt: new Date().toISOString(),
-      },
+    const result: TechnicalReport = {
+      url: normalizedUrl,
+      performanceScore: perfScore,
+      overallCategory: overallCat,
+      vitals,
+      opportunities,
+      aiRecommendations,
+      analyzedAt: new Date().toISOString(),
     };
+
+    psCache.set(normalizedUrl, { data: result, expiresAt: Date.now() + PS_CACHE_TTL });
+
+    return { success: true, data: result };
   } catch (error) {
     console.error("SEO Technical analysis error:", error);
     return {

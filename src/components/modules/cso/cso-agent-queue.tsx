@@ -20,6 +20,8 @@ import {
   XCircle,
   Circle,
   Database,
+  Target,
+  Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -108,6 +110,8 @@ interface AgentDecision {
 interface Props {
   workspaceId: string;
   initialDecisions: AgentDecision[];
+  initialExecutedCount: number;
+  initialProspectsInPipeline: number;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -165,14 +169,17 @@ function DecisionCard({
   decision,
   onApprove,
   onReject,
+  onRegenerate,
   loading,
 }: {
   decision: AgentDecision;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onRegenerate: (id: string) => Promise<void>;
   loading: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   const cfg = ACTION_CONFIG[decision.actionType as CsoActionType] ?? {
     label: decision.actionType,
@@ -333,6 +340,23 @@ function DecisionCard({
               <X className="h-3 w-3 mr-1" />
               Rejeter
             </Button>
+            {(hasLinkedInMessages || preview) && (
+              <button
+                onClick={async () => {
+                  setIsRegenerating(true);
+                  try { await onRegenerate(decision.id); } finally { setIsRegenerating(false); }
+                }}
+                disabled={isRegenerating || isLoading}
+                className="ml-auto flex items-center gap-1.5 text-[11px] text-violet-600 hover:text-violet-800 font-medium disabled:opacity-50 transition-colors"
+              >
+                {isRegenerating ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Wand2 className="h-3 w-3" />
+                )}
+                {isRegenerating ? "Régénération…" : "Régénérer"}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -342,20 +366,42 @@ function DecisionCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
+export function CsoAgentQueue({
+  workspaceId,
+  initialDecisions,
+  initialExecutedCount,
+  initialProspectsInPipeline,
+}: Props) {
   const [decisions, setDecisions] = useState<AgentDecision[]>(initialDecisions);
+  const [executedCount, setExecutedCount] = useState(initialExecutedCount);
+  const [prospectsInPipeline, setProspectsInPipeline] = useState(initialProspectsInPipeline);
   const [loading, setLoading] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [analysisSteps, setAnalysisSteps] = useState<Partial<Record<StepId, StepState>>>({});
   const [isImporting, setIsImporting] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "done">("pending");
   const abortRef = useRef<AbortController | null>(null);
 
-  const reload = useCallback(async () => {
-    const res = await fetch(`/api/cso-agent?workspaceId=${workspaceId}`);
-    if (res.ok) {
-      const json = (await res.json()) as { decisions: AgentDecision[] };
+  const reload = useCallback(async (silent = false) => {
+    if (!silent) setIsRefreshing(true);
+    try {
+      const res = await fetch(`/api/cso-agent?workspaceId=${workspaceId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as {
+        decisions: AgentDecision[];
+        pendingCount: number;
+        executedCount: number;
+        prospectsInPipeline: number;
+      };
       setDecisions(json.decisions);
+      setExecutedCount(json.executedCount);
+      setProspectsInPipeline(json.prospectsInPipeline);
+      if (!silent) toast.success("Données actualisées");
+    } catch {
+      if (!silent) toast.error("Erreur lors de l'actualisation");
+    } finally {
+      if (!silent) setIsRefreshing(false);
     }
   }, [workspaceId]);
 
@@ -398,6 +444,27 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
       }
     } finally {
       setLoading(null);
+    }
+  }, [workspaceId]);
+
+  const handleRegenerate = useCallback(async (decisionId: string) => {
+    try {
+      const res = await fetch("/api/cso-agent/regenerate-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisionId, workspaceId }),
+      });
+      const json = await res.json() as { ok?: boolean; actionData?: Record<string, unknown>; error?: string };
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Erreur régénération");
+      // Mise à jour locale immédiate sans rechargement complet
+      setDecisions((prev) =>
+        prev.map((d) =>
+          d.id === decisionId ? { ...d, actionData: json.actionData ?? d.actionData } : d
+        )
+      );
+      toast.success("Message régénéré");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la régénération");
     }
   }, [workspaceId]);
 
@@ -471,7 +538,7 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
                 [evt.id]: { status: evt.status, label: evt.label },
               }));
             } else if (evt.type === "done") {
-              await reload();
+              await reload(true);
               if (evt.newCount > 0) {
                 toast.success(`${evt.newCount} nouvelle${evt.newCount !== 1 ? "s" : ""} décision${evt.newCount !== 1 ? "s" : ""} en attente`);
               } else {
@@ -495,6 +562,7 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
 
   const pendingDecisions = decisions.filter((d) => d.status === "PENDING");
   const doneDecisions = decisions.filter((d) => d.status !== "PENDING");
+  const pendingCount = pendingDecisions.length;
 
   const filtered =
     filter === "pending" ? pendingDecisions :
@@ -503,6 +571,37 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* ── Stats cards (live) ── */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-white border border-amber-200 flex items-center justify-center shrink-0">
+            <Zap className="h-4 w-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-[22px] font-bold text-gray-900 tabular-nums leading-tight">{pendingCount}</p>
+            <p className="text-[11px] text-gray-500">En attente</p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-white border border-emerald-200 flex items-center justify-center shrink-0">
+            <Target className="h-4 w-4 text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-[22px] font-bold text-gray-900 tabular-nums leading-tight">{executedCount}</p>
+            <p className="text-[11px] text-gray-500">Exécutées</p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-white border border-violet-200 flex items-center justify-center shrink-0">
+            <Brain className="h-4 w-4 text-violet-600" />
+          </div>
+          <div>
+            <p className="text-[22px] font-bold text-gray-900 tabular-nums leading-tight">{prospectsInPipeline}</p>
+            <p className="text-[11px] text-gray-500">Prospects actifs</p>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
@@ -512,7 +611,7 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
           <div>
             <h2 className="text-[14px] font-semibold text-gray-900">File d&apos;approbation CSO</h2>
             <p className="text-[11px] text-gray-500">
-              {pendingDecisions.length} décision{pendingDecisions.length !== 1 ? "s" : ""} en attente
+              {pendingCount} décision{pendingCount !== 1 ? "s" : ""} en attente
             </p>
           </div>
         </div>
@@ -521,12 +620,12 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
           <Button
             size="sm"
             variant="outline"
-            onClick={reload}
-            disabled={isAnalyzing}
+            onClick={() => reload()}
+            disabled={isAnalyzing || isRefreshing}
             className="h-8 text-[12px] rounded-lg border-gray-200"
           >
-            <RefreshCw className="h-3 w-3 mr-1.5" />
-            Actualiser
+            <RefreshCw className={`h-3 w-3 mr-1.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            {isRefreshing ? "Actualisation…" : "Actualiser"}
           </Button>
           <Button
             size="sm"
@@ -616,6 +715,7 @@ export function CsoAgentQueue({ workspaceId, initialDecisions }: Props) {
             decision={decision}
             onApprove={handleApprove}
             onReject={handleReject}
+            onRegenerate={handleRegenerate}
             loading={loading}
           />
         ))}

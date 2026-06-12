@@ -78,7 +78,9 @@ Lis attentivement le titre/headline du prospect et identifie son archétype :
 
 - JAMAIS "Je me permets" / "Je voulais juste" / "solutions" / "Cordialement," seul
 - LinkedIn note de connexion : MAX 280 chars, pas de pitch, observation + question légère
-- LinkedIn message post-connexion : commence par "Bonjour [Prénom], merci pour la connexion !" — 130-180 mots — conversationnel, empathique, montrer qu'on a lu
+- LinkedIn message post-connexion : commence par "Bonjour [Prénom], merci pour la connexion !" — 180-250 mots — conversationnel, empathique, montrer qu'on a vraiment lu
+- MIROIR DE VOCABULAIRE : identifie 3-4 expressions EXACTES du prospect dans sa headline/about et réutilise-les littéralement (ex : si il écrit "OF débordés", répète "OF débordés" — jamais "organismes de formation surchargés")
+- PROGRAMME PARTENAIRE : si le prospect est un prescripteur ET que le contexte de marque mentionne un % de commission, cite ce % nommément dans le message (ex: "20% de commission récurrente à vie")
 - Email : commence par le prénom, objet < 7 mots, 100-140 mots, signe avec "[Ton Prénom]"
 - Le message doit donner l'impression que l'expéditeur a passé 10 minutes à lire le profil
 
@@ -107,12 +109,18 @@ export async function generateOutreachSequence(
     friendly: "décontracté, tutoiement si naturel",
   }[brand.tone];
 
+  const expSummary = research.linkedInExperiences?.slice(0, 3)
+    .map((e) => `${e.title} @ ${e.company}${e.description ? ` — "${e.description.slice(0, 100)}"` : ""}`)
+    .join(" | ") ?? "";
+
   const researchContext = [
     research.companyTrigger ? `🔥 TRIGGER FORT : ${research.companyTrigger}` : null,
     research.hiringSignals.length > 0 ? `💼 RECRUTEMENTS : ${research.hiringSignals.join(", ")}` : null,
     research.recentLinkedInActivity ? `📝 ACTIVITÉ LINKEDIN : "${research.recentLinkedInActivity}"` : null,
     research.recentJobChange ? `🆕 CHANGEMENT DE POSTE RÉCENT (fenêtre idéale 3-9 mois)` : null,
     research.linkedInHeadline ? `👤 HEADLINE LINKEDIN : "${research.linkedInHeadline}"` : null,
+    research.linkedInAbout ? `📋 SECTION "À PROPOS" LINKEDIN (source du miroir vocabulaire) :\n"${research.linkedInAbout.slice(0, 1000)}"` : null,
+    expSummary ? `💼 EXPÉRIENCES : ${expSummary}` : null,
     research.techStack.length > 0 ? `🛠️ STACK DÉTECTÉE : ${research.techStack.join(", ")}` : null,
   ].filter(Boolean).join("\n");
 
@@ -209,8 +217,8 @@ export async function generateCsoMessages(
   const instructions: Record<typeof actionType, string> = {
     LINKEDIN: `Génère DEUX éléments :
 1. "connectNote" : note de connexion LinkedIn. MAX 280 chars. Pas de pitch. Observation sur son rôle + question légère.
-2. "content" : MESSAGE POST-CONNEXION (envoyé après acceptation). Commence OBLIGATOIREMENT par "Bonjour [Prénom], merci pour la connexion !". 130-180 mots. Montre que tu as lu son profil. Identifie son archétype. Nomme sa douleur spécifique. Présente la solution en termes de gain concret pour cet archétype. CTA : échange de 10 min.
-3. "angle" : archétype identifié + angle choisi (ex: "Prescripteur → double productivité + commission")
+2. "content" : MESSAGE POST-CONNEXION (envoyé après acceptation). Commence OBLIGATOIREMENT par "Bonjour [Prénom], merci pour la connexion !". 180-250 mots. MIROIR OBLIGATOIRE : identifie 3-4 expressions exactes du prospect dans sa headline/about et réutilise-les littéralement dans ton message (ex : s'il dit "OF débordés", tu écris "OF débordés", pas autre chose). Identifie l'archétype. Nomme sa douleur en reprenant ses propres mots. Présente la solution. Si archétype=prescripteur ET commission disponible dans le contexte marque : cite le % exact. CTA : échange de 10 min.
+3. "angle" : archétype identifié + angle choisi (ex: "Prescripteur → double productivité + commission 20%")
 Retourne : { "connectNote": "...", "content": "...", "angle": "..." }`,
     EMAIL: `Génère un email (objet + corps 100-140 mots). Corps commence par le prénom. Analyse l'archétype du prospect depuis son titre.
 Retourne : { "subject": "...", "content": "...", "angle": "..." }`,

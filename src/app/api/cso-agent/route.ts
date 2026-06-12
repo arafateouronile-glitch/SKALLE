@@ -45,8 +45,16 @@ export async function GET(req: NextRequest) {
   });
 
   const pendingCount = decisions.filter((d) => d.status === "PENDING").length;
+  const executedCount = decisions.filter((d) => d.status === "EXECUTED").length;
 
-  return NextResponse.json({ decisions, pendingCount });
+  const prospectsInPipeline = await prisma.prospect.count({
+    where: {
+      workspaceId,
+      status: { in: ["NEW", "RESEARCHED", "MESSAGES_GENERATED", "CONTACTED"] },
+    },
+  });
+
+  return NextResponse.json({ decisions, pendingCount, executedCount, prospectsInPipeline });
 }
 
 export async function POST(req: NextRequest) {

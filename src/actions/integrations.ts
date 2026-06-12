@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getGSCAuthUrl } from "@/lib/services/integrations/google-search-console";
+import { getGSCAuthUrl, syncGSCData } from "@/lib/services/integrations/google-search-console";
 
 // Helper : résoudre et valider le workspaceId de l'utilisateur
 async function resolveWorkspaceId(userId: string, workspaceId?: string): Promise<string | null> {
@@ -63,6 +63,25 @@ export async function getGSCStatusAction(workspaceId?: string): Promise<{
     siteUrl: config?.siteUrl ?? undefined,
     lastSyncedAt: config?.lastSyncedAt ?? null,
   };
+}
+
+/** Déclenche une synchro GSC immédiate (sans attendre le cron de 6h) */
+export async function syncGSCNowAction(workspaceId?: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, error: "Non autorisé" };
+
+  const resolvedId = await resolveWorkspaceId(session.user.id, workspaceId);
+  if (!resolvedId) return { success: false, error: "Workspace introuvable" };
+
+  try {
+    await syncGSCData(resolvedId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Erreur de synchro" };
+  }
 }
 
 /** Déconnecte GSC pour le workspace de l'utilisateur connecté */

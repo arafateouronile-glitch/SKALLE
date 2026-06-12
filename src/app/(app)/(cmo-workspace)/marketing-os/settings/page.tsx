@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 import { saveCMSConfig, deleteCMSConfig } from "@/actions/cms";
 import { getCurrentUserSettings } from "@/actions/credits";
-import { getGSCAuthUrlAction, getGSCStatusAction, disconnectGSCAction } from "@/actions/integrations";
+import { getGSCAuthUrlAction, getGSCStatusAction, disconnectGSCAction, syncGSCNowAction } from "@/actions/integrations";
 import { listApiKeysAction, createApiKeyAction, revokeApiKeyAction } from "@/actions/api-keys";
 import { updateWorkspaceBrandType } from "@/actions/workspace";
 import { getMcpServers, addMcpServer, deleteMcpServer, testMcpServer, updateMcpServer } from "@/actions/mcp-servers";
@@ -241,6 +241,7 @@ export default function SettingsPage() {
     lastSyncedAt?: Date | null;
   }>({ isConnected: false });
   const [gscLoading, setGscLoading] = useState(false);
+  const [gscSyncing, setGscSyncing] = useState(false);
 
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
@@ -833,26 +834,48 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex gap-2 shrink-0 ml-4">
                     {gscStatus.isConnected ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-red-200 text-red-500 hover:bg-red-50"
-                        disabled={gscLoading}
-                        onClick={async () => {
-                          setGscLoading(true);
-                          const r = await disconnectGSCAction();
-                          if (r.success) {
-                            setGscStatus({ isConnected: false });
-                            toast.success("Google Search Console déconnecté");
-                          } else {
-                            toast.error(r.error ?? "Erreur");
-                          }
-                          setGscLoading(false);
-                        }}
-                      >
-                        {gscLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
-                        Déconnecter
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={gscSyncing}
+                          onClick={async () => {
+                            setGscSyncing(true);
+                            const r = await syncGSCNowAction();
+                            if (r.success) {
+                              const updated = await getGSCStatusAction();
+                              setGscStatus(updated);
+                              toast.success("Données GSC synchronisées");
+                            } else {
+                              toast.error(r.error ?? "Erreur de synchro");
+                            }
+                            setGscSyncing(false);
+                          }}
+                        >
+                          {gscSyncing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+                          Sync
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-red-200 text-red-500 hover:bg-red-50"
+                          disabled={gscLoading}
+                          onClick={async () => {
+                            setGscLoading(true);
+                            const r = await disconnectGSCAction();
+                            if (r.success) {
+                              setGscStatus({ isConnected: false });
+                              toast.success("Google Search Console déconnecté");
+                            } else {
+                              toast.error(r.error ?? "Erreur");
+                            }
+                            setGscLoading(false);
+                          }}
+                        >
+                          {gscLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
+                          Déconnecter
+                        </Button>
+                      </>
                     ) : (
                       <Button
                         size="sm"

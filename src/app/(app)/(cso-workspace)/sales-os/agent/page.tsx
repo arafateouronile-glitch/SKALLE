@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CsoAgentQueue } from "@/components/modules/cso/cso-agent-queue";
-import { Brain, Zap, Target, Mail, Linkedin, MessageCircle } from "lucide-react";
+import { Brain, Mail, Linkedin, MessageCircle } from "lucide-react";
 
 const CSO_ACTION_TYPES = [
   "CSO_LAUNCH_LINKEDIN",
@@ -27,7 +27,6 @@ async function getCsoAgentData(userId: string) {
     take: 50,
   });
 
-  const pendingCount = decisions.filter((d) => d.status === "PENDING").length;
   const executedCount = decisions.filter((d) => d.status === "EXECUTED").length;
 
   const prospectsInPipeline = await prisma.prospect.count({
@@ -37,35 +36,8 @@ async function getCsoAgentData(userId: string) {
     },
   });
 
-  return { workspaceId: workspace.id, decisions, pendingCount, executedCount, prospectsInPipeline };
+  return { workspaceId: workspace.id, decisions, executedCount, prospectsInPipeline };
 }
-
-const STAT_CARDS = [
-  {
-    key: "pending",
-    label: "En attente",
-    icon: Zap,
-    color: "text-amber-600",
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-  },
-  {
-    key: "executed",
-    label: "Exécutées",
-    icon: Target,
-    color: "text-emerald-600",
-    bg: "bg-emerald-50",
-    border: "border-emerald-200",
-  },
-  {
-    key: "pipeline",
-    label: "Prospects actifs",
-    icon: Brain,
-    color: "text-violet-600",
-    bg: "bg-violet-50",
-    border: "border-violet-200",
-  },
-];
 
 const HOW_IT_WORKS = [
   { icon: Target, label: "Détecte", desc: "les prospects high-score non contactés + les stagnants" },
@@ -81,7 +53,7 @@ export default async function CsoAgentPage() {
   const data = await getCsoAgentData(session.user.id);
   if (!data) redirect("/login");
 
-  const { workspaceId, decisions, pendingCount, executedCount, prospectsInPipeline } = data;
+  const { workspaceId, decisions, executedCount, prospectsInPipeline } = data;
 
   const serializedDecisions = decisions.map((d) => ({
     ...d,
@@ -91,11 +63,7 @@ export default async function CsoAgentPage() {
     executedAt: d.executedAt?.toISOString() ?? null,
   }));
 
-  const statValues: Record<string, number> = {
-    pending: pendingCount,
-    executed: executedCount,
-    pipeline: prospectsInPipeline,
-  };
+  const pendingCount = decisions.filter((d) => d.status === "PENDING").length;
 
   return (
     <div className="space-y-6 pb-8">
@@ -118,26 +86,6 @@ export default async function CsoAgentPage() {
             Votre pipeline manager autonome — détecte, propose, vous validez
           </p>
         </div>
-      </div>
-
-      {/* ── STATS ── */}
-      <div className="grid grid-cols-3 gap-4">
-        {STAT_CARDS.map((card) => (
-          <div
-            key={card.key}
-            className={`rounded-xl border ${card.border} ${card.bg} p-4 flex items-center gap-3`}
-          >
-            <div className={`h-9 w-9 rounded-lg bg-white border ${card.border} flex items-center justify-center shrink-0`}>
-              <card.icon className={`h-4.5 w-4.5 ${card.color}`} />
-            </div>
-            <div>
-              <p className="text-[22px] font-bold text-gray-900 tabular-nums leading-tight">
-                {statValues[card.key]}
-              </p>
-              <p className="text-[11px] text-gray-500">{card.label}</p>
-            </div>
-          </div>
-        ))}
       </div>
 
       {/* ── HOW IT WORKS (if empty) ── */}
@@ -175,8 +123,13 @@ export default async function CsoAgentPage() {
         </div>
       )}
 
-      {/* ── QUEUE ── */}
-      <CsoAgentQueue workspaceId={workspaceId} initialDecisions={serializedDecisions} />
+      {/* ── QUEUE (avec stats live) ── */}
+      <CsoAgentQueue
+        workspaceId={workspaceId}
+        initialDecisions={serializedDecisions}
+        initialExecutedCount={executedCount}
+        initialProspectsInPipeline={prospectsInPipeline}
+      />
     </div>
   );
 }
