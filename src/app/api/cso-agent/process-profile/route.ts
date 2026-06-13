@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
     linkedInUrl: normalizedUrl,
   };
 
-  const sendWithoutNote = workspace.linkedInAutomationConfig?.sendWithoutNote ?? false;
+  const sendWithoutNote = workspace.linkedInAutomationConfig?.sendWithoutNote ?? true;
   let connectNote: string | null = null;
   let postConnectionMessage = "";
 

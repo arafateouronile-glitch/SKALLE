@@ -516,7 +516,7 @@ Génère les décisions. Les messages seront personnalisés séparément.
             generateCsoMessages(profile, research, brand, "LINKEDIN"),
             generateCsoMessages(profile, research, brand, "FOLLOWUP"),
           ]);
-          const sendWithoutNote = workspace?.linkedInAutomationConfig?.sendWithoutNote ?? false;
+          const sendWithoutNote = workspace?.linkedInAutomationConfig?.sendWithoutNote ?? true;
           const sig = workspace?.signature ? `\n\n${workspace.signature}` : "";
           return {
             ...d,

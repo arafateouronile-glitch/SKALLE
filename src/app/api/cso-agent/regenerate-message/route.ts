@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
   };
 
   const sig = ws.signature ? `\n\n${ws.signature}` : "";
-  const sendWithoutNote = ws.linkedInAutomationConfig?.sendWithoutNote ?? false;
+  const sendWithoutNote = ws.linkedInAutomationConfig?.sendWithoutNote ?? true;
 
   let newActionData: Record<string, unknown> = { ...data };
 
