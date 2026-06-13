@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronUp,
 } from "lucide-react";
 import type { MessageType, MessageResult } from "@/app/api/cso-agent/prospects/[prospectId]/message/route";
+import { SequenceFlow } from "@/components/modules/cso/sequence-flow";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,29 @@ interface AiNote {
   content: string;
   type: string;
   createdAt: string;
+}
+
+interface SeqStep {
+  id: string;
+  stepNumber: number;
+  channel: string;
+  linkedInAction: string | null;
+  content: string;
+  status: string;
+  sentAt: string | null;
+  scheduledAt: string | null;
+  metadata: Record<string, unknown> | null;
+  repliedAt: string | null;
+  openedAt: string | null;
+  error: string | null;
+}
+
+interface OutreachSequence {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+  steps: SeqStep[];
 }
 
 interface Prospect {
@@ -55,6 +79,7 @@ interface Prospect {
   persona: { name: string } | null;
   interactions: Interaction[];
   aiNotes: AiNote[];
+  sequences: OutreachSequence[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -507,6 +532,24 @@ export default function ProspectDetailPage({
                 </div>
               )}
             </section>
+
+            {/* ── Sequence flows ─────────────────────────────────────────── */}
+            {prospect.sequences && prospect.sequences.length > 0 && (
+              <section className="space-y-3">
+                <p className="text-[11px] font-mono uppercase tracking-[0.12em]" style={{ color: "var(--fg-mute)" }}>
+                  Séquences actives · {prospect.sequences.length}
+                </p>
+                {prospect.sequences.map((seq) => (
+                  <SequenceFlow
+                    key={seq.id}
+                    name={seq.name}
+                    isActive={seq.isActive}
+                    createdAt={seq.createdAt}
+                    steps={seq.steps as Parameters<typeof SequenceFlow>[0]["steps"]}
+                  />
+                ))}
+              </section>
+            )}
 
             {/* Timeline */}
             <section className="rounded-[18px] p-5"

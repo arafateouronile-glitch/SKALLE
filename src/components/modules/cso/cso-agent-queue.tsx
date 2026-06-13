@@ -28,6 +28,104 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+// ─── Execution steps by action type ──────────────────────────────────────────
+
+const EXECUTION_STEPS: Record<string, { label: string; icon: "pending" | "done" | "waiting" }[]> = {
+  CSO_LAUNCH_LINKEDIN: [
+    { label: "Demande de connexion envoyée",           icon: "done" },
+    { label: "Message post-connexion — attend acceptation", icon: "waiting" },
+    { label: "Relance J+5 si pas de réponse",          icon: "waiting" },
+    { label: "Email fallback J+7 si non accepté",      icon: "waiting" },
+  ],
+  CSO_LAUNCH_EMAIL: [
+    { label: "Email envoyé",                          icon: "done" },
+    { label: "Relance J+3 si pas de réponse",         icon: "waiting" },
+  ],
+  CSO_FOLLOWUP: [
+    { label: "Message de relance envoyé",             icon: "done" },
+  ],
+  CSO_STALE_REJECT: [
+    { label: "Prospect archivé",                      icon: "done" },
+  ],
+};
+
+const PENDING_STEPS: Record<string, string[]> = {
+  CSO_LAUNCH_LINKEDIN: [
+    "Envoi de la demande de connexion…",
+    "Création de la séquence post-connexion",
+    "Programmation des relances",
+  ],
+  CSO_LAUNCH_EMAIL: [
+    "Envoi de l'email…",
+    "Programmation de la relance",
+  ],
+  CSO_FOLLOWUP: ["Envoi de la relance…"],
+  CSO_STALE_REJECT: ["Archivage du prospect…"],
+};
+
+function ExecutionPending({ actionType }: { actionType: string }) {
+  const steps = PENDING_STEPS[actionType] ?? ["Exécution en cours…"];
+  return (
+    <div className="mt-3 ml-11 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Loader2 className="h-3.5 w-3.5 text-amber-500 animate-spin shrink-0" />
+        <span className="text-[12px] font-semibold text-amber-700">
+          {actionType === "CSO_LAUNCH_LINKEDIN"
+            ? "En attente de l'extension Chrome…"
+            : "Exécution en cours…"}
+        </span>
+      </div>
+      <div className="space-y-1.5 pl-5">
+        {steps.map((label, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Circle className="h-3 w-3 text-amber-300 shrink-0" />
+            <span className="text-[11px] text-amber-600">{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExecutionDone({ actionType }: { actionType: string }) {
+  const steps = EXECUTION_STEPS[actionType] ?? [{ label: "Action exécutée", icon: "done" as const }];
+  return (
+    <div className="mt-3 ml-11 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+        <span className="text-[12px] font-semibold text-emerald-700">Séquence créée</span>
+      </div>
+      <div className="space-y-1.5 pl-5">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-2">
+            {step.icon === "done" ? (
+              <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+            ) : (
+              <Clock className="h-3 w-3 text-gray-300 shrink-0" />
+            )}
+            <span className={`text-[11px] ${step.icon === "done" ? "text-emerald-600" : "text-gray-400"}`}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExecutionFailed() {
+  return (
+    <div className="mt-3 ml-11 rounded-xl border border-red-100 bg-red-50/40 p-3">
+      <div className="flex items-center gap-2">
+        <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+        <span className="text-[12px] font-medium text-red-600">
+          Échec de l&apos;exécution — vérifiez l&apos;extension Chrome
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Analysis step tracker ────────────────────────────────────────────────────
 
 type StepStatus = "pending" | "running" | "done" | "error";
@@ -174,6 +272,7 @@ function DecisionCard({
   onRegenerate,
   onUpdate,
   loading,
+  isPolling,
 }: {
   decision: AgentDecision;
   onApprove: (id: string) => void;
@@ -181,6 +280,7 @@ function DecisionCard({
   onRegenerate: (id: string) => Promise<void>;
   onUpdate: (id: string, patch: Record<string, string>) => Promise<void>;
   loading: string | null;
+  isPolling: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -218,6 +318,9 @@ function DecisionCard({
   const statusCfg = STATUS_CONFIG[decision.status] ?? { label: decision.status, dot: "bg-gray-300", textColor: "text-gray-500" };
   const data = decision.actionData ?? {};
   const isPending = decision.status === "PENDING";
+  const isApproved = decision.status === "APPROVED";
+  const isExecuted = decision.status === "EXECUTED";
+  const isFailed = decision.status === "FAILED";
   const isLoading = loading === decision.id;
   const prospectName = (data.prospectName as string) ?? "—";
 
@@ -479,6 +582,17 @@ function DecisionCard({
             )}
           </div>
         )}
+
+        {/* Execution feedback */}
+        {isApproved && isPolling && <ExecutionPending actionType={decision.actionType} />}
+        {isApproved && !isPolling && (
+          <div className="mt-3 ml-11 flex items-center gap-2 text-[11px] text-amber-600">
+            <Clock className="h-3.5 w-3.5 shrink-0" />
+            <span>Approuvé — en attente d&apos;exécution par l&apos;extension Chrome</span>
+          </div>
+        )}
+        {isExecuted && <ExecutionDone actionType={decision.actionType} />}
+        {isFailed && <ExecutionFailed />}
       </div>
     </div>
   );
@@ -501,7 +615,47 @@ export function CsoAgentQueue({
   const [analysisSteps, setAnalysisSteps] = useState<Partial<Record<StepId, StepState>>>({});
   const [isImporting, setIsImporting] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "done">("pending");
+  const [pollingIds, setPollingIds] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
+
+  const pollDecisionStatus = useCallback((decisionId: string) => {
+    setPollingIds((prev) => new Set(prev).add(decisionId));
+    let attempts = 0;
+    const MAX = 30; // 2 min à 4s
+
+    const tick = async (): Promise<void> => {
+      if (attempts >= MAX) {
+        setPollingIds((prev) => { const s = new Set(prev); s.delete(decisionId); return s; });
+        return;
+      }
+      attempts++;
+      try {
+        const res = await fetch(`/api/cso-agent?workspaceId=${workspaceId}`);
+        if (!res.ok) throw new Error();
+        const json = (await res.json()) as {
+          decisions: AgentDecision[];
+          executedCount: number;
+          prospectsInPipeline: number;
+        };
+        const updated = json.decisions.find((d) => d.id === decisionId);
+        if (updated?.status === "EXECUTED" || updated?.status === "FAILED") {
+          setDecisions(json.decisions);
+          setExecutedCount(json.executedCount);
+          setProspectsInPipeline(json.prospectsInPipeline);
+          setPollingIds((prev) => { const s = new Set(prev); s.delete(decisionId); return s; });
+          if (updated.status === "EXECUTED") {
+            toast.success("Action exécutée — séquence créée avec succès");
+          } else {
+            toast.error("Échec de l'exécution — vérifiez l'extension Chrome");
+          }
+          return;
+        }
+      } catch { /* ignore */ }
+      setTimeout(() => { void tick(); }, 4000);
+    };
+
+    setTimeout(() => { void tick(); }, 4000);
+  }, [workspaceId]);
 
   const reload = useCallback(async (silent = false) => {
     if (!silent) setIsRefreshing(true);
@@ -538,6 +692,7 @@ export function CsoAgentQueue({
         setDecisions((prev) =>
           prev.map((d) => (d.id === decisionId ? { ...d, status: "APPROVED" } : d))
         );
+        pollDecisionStatus(decisionId);
       } else {
         toast.error("Erreur lors de l'approbation");
       }
@@ -854,6 +1009,7 @@ export function CsoAgentQueue({
             onRegenerate={handleRegenerate}
             onUpdate={handleUpdate}
             loading={loading}
+            isPolling={pollingIds.has(decision.id)}
           />
         ))}
       </div>
