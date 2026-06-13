@@ -5,7 +5,6 @@
  * Body: {
  *   workspaceId: string
  *   prospectIds: string[]
- *   connectNote?: string         // note de connexion (max 300 car) — vide = sans note
  *   followUpMessage?: string     // message de suivi (optionnel)
  *   followUpDelayDays?: number   // délai avant le suivi (défaut: 2)
  * }
@@ -73,12 +72,11 @@ export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
     workspaceId: string;
     prospectIds: string[];
-    connectNote?: string;
     followUpMessage?: string;
     followUpDelayDays?: number;
   };
 
-  const { workspaceId, prospectIds, connectNote, followUpMessage, followUpDelayDays = 2 } = body;
+  const { workspaceId, prospectIds, followUpMessage, followUpDelayDays = 2 } = body;
 
   if (!workspaceId || !prospectIds?.length) {
     return NextResponse.json({ error: "workspaceId et prospectIds requis" }, { status: 400 });
@@ -133,7 +131,6 @@ export async function POST(req: NextRequest) {
       jobTitle: prospect.jobTitle ?? "",
     };
 
-    const note = connectNote ? interpolate(connectNote, vars).slice(0, 300) : "";
     const followUp = followUpMessage ? interpolate(followUpMessage, vars) : null;
 
     // Crée la séquence + les steps dans une transaction
@@ -154,7 +151,7 @@ export async function POST(req: NextRequest) {
           stepNumber: 1,
           channel: "LINKEDIN",
           linkedInAction: "connect",
-          content: note,
+          content: "",
           status: "PENDING",
           scheduledAt: null,
         },

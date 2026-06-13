@@ -324,15 +324,13 @@ function DecisionCard({
   const isLoading = loading === decision.id;
   const prospectName = (data.prospectName as string) ?? "—";
 
-  // Preview — pour LinkedIn on préfère le message post-connexion (plus informatif que la note courte)
   let preview: string | null = null;
   const hasLinkedInMessages =
     decision.actionType === "CSO_LAUNCH_LINKEDIN" &&
-    Boolean(data.connectNote || data.postConnectionMessage);
+    Boolean(data.postConnectionMessage);
 
   if (decision.actionType === "CSO_LAUNCH_LINKEDIN") {
-    // Afficher le message post-connexion en preview principale s'il existe
-    preview = (data.postConnectionMessage as string) ?? (data.connectNote as string) ?? null;
+    preview = (data.postConnectionMessage as string) ?? null;
   } else if (decision.actionType === "CSO_LAUNCH_EMAIL" && data.content) {
     preview = `Objet : ${data.subject as string}\n\n${data.content as string}`;
   } else if (decision.actionType === "CSO_FOLLOWUP" && data.content) {
@@ -380,11 +378,7 @@ function DecisionCard({
                 className="mt-2 flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-700 font-medium"
               >
                 {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {expanded
-                  ? "Masquer les messages"
-                  : hasLinkedInMessages && data.postConnectionMessage
-                  ? "Voir note de connexion + message post-connexion"
-                  : "Voir le message généré"}
+                {expanded ? "Masquer le message" : "Voir le message généré"}
               </button>
             )}
           </div>
@@ -393,49 +387,8 @@ function DecisionCard({
         {/* Expanded preview */}
         {expanded && (
           <div className="mt-3 ml-11 space-y-3">
-            {/* LinkedIn : affiche les deux messages séparément */}
             {hasLinkedInMessages ? (
               <>
-                {data.connectNote && (
-                  <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">
-                        Note de connexion (invitation)
-                      </p>
-                      {isPending && editingField !== "connectNote" && (
-                        <button onClick={() => startEdit("connectNote", data.connectNote as string)} className="text-blue-400 hover:text-blue-600 transition-colors">
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-                    {editingField === "connectNote" ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={draftValue}
-                          onChange={(e) => setDraftValue(e.target.value)}
-                          maxLength={280}
-                          rows={4}
-                          className="w-full text-[12px] text-gray-700 bg-white border border-blue-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        />
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-blue-400">{draftValue.length}/280</span>
-                          <div className="flex gap-2">
-                            <button onClick={cancelEdit} className="text-[11px] text-gray-400 hover:text-gray-600">Annuler</button>
-                            <button onClick={() => saveEdit("connectNote")} disabled={isSaving} className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50">
-                              {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                              Enregistrer
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <pre className="text-[12px] text-gray-700 whitespace-pre-wrap font-sans">{data.connectNote as string}</pre>
-                        <p className="text-[10px] text-blue-400 mt-1.5">{(data.connectNote as string).length}/280 caractères</p>
-                      </>
-                    )}
-                  </div>
-                )}
                 {data.postConnectionMessage && (
                   <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
                     <div className="flex items-center justify-between mb-1.5">

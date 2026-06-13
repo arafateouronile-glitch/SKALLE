@@ -356,7 +356,6 @@ export async function generateCsoDecisions(
         brandVoice: true,
         signature: true,
         user: { select: { plan: true } },
-        linkedInAutomationConfig: { select: { sendWithoutNote: true } },
       },
     }),
     prisma.persona.findMany({
@@ -516,13 +515,11 @@ Génère les décisions. Les messages seront personnalisés séparément.
             generateCsoMessages(profile, research, brand, "LINKEDIN"),
             generateCsoMessages(profile, research, brand, "FOLLOWUP"),
           ]);
-          const sendWithoutNote = workspace?.linkedInAutomationConfig?.sendWithoutNote ?? true;
           const sig = workspace?.signature ? `\n\n${workspace.signature}` : "";
           return {
             ...d,
             actionData: {
               ...d.actionData,
-              connectNote: sendWithoutNote ? null : (msg.connectNote ?? msg.content.slice(0, 280)),
               postConnectionMessage: msg.content + sig,
               followupMessage: followup.content + sig,
               _angle: msg.angle,

@@ -57,7 +57,6 @@ export async function POST(req: NextRequest) {
       id: true,
       name: true,
       brandVoice: true,
-      linkedInAutomationConfig: { select: { sendWithoutNote: true } },
     },
   });
   if (!workspace) return NextResponse.json({ error: "Workspace non trouvé" }, { status: 403 });
@@ -164,16 +163,12 @@ export async function POST(req: NextRequest) {
     linkedInUrl: normalizedUrl,
   };
 
-  const sendWithoutNote = workspace.linkedInAutomationConfig?.sendWithoutNote ?? true;
-  let connectNote: string | null = null;
   let postConnectionMessage = "";
 
   try {
     const msg = await generateCsoMessages(profile, research, brand, "LINKEDIN");
-    connectNote = sendWithoutNote ? null : (msg.connectNote ?? msg.content.slice(0, 280));
     postConnectionMessage = msg.content;
   } catch {
-    connectNote = sendWithoutNote ? null : `Bonjour ${firstName}, votre profil m'a beaucoup intéressé. J'aimerais échanger avec vous.`;
     postConnectionMessage = `Bonjour ${firstName}, merci pour la connexion ! J'ai découvert votre profil et je pense qu'on a des sujets en commun. Seriez-vous disponible pour un échange de 10 min ?`;
   }
 
@@ -193,7 +188,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     prospectId: prospect.id,
-    connectNote,
     postConnectionMessage,
   });
 }

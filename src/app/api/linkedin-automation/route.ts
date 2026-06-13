@@ -45,7 +45,6 @@ export async function GET(req: NextRequest) {
       warmupDay: true,
       warmupStartedAt: true,
       proxyCountry: true,
-      sendWithoutNote: true,
       // liAt intentionnellement masqué — juste indique si configuré
       liAt: false,
     },
@@ -83,7 +82,6 @@ export async function POST(req: NextRequest) {
     dailyMessageLimit?: number;
     sendAt?: string;
     proxyCountry?: string;
-    sendWithoutNote?: boolean;
   };
 
   const ws = await getWorkspace(body.workspaceId, session.user.id);
@@ -119,7 +117,6 @@ export async function POST(req: NextRequest) {
   if (body.dailyMessageLimit !== undefined) data.dailyMessageLimit = Math.min(body.dailyMessageLimit, 100);
   if (body.sendAt !== undefined) data.sendAt = body.sendAt;
   if (body.proxyCountry !== undefined) data.proxyCountry = body.proxyCountry.toUpperCase().slice(0, 2);
-  if (body.sendWithoutNote !== undefined) data.sendWithoutNote = body.sendWithoutNote;
 
   const config = await prisma.linkedInAutomationConfig.upsert({
     where: { workspaceId: body.workspaceId },
@@ -136,7 +133,6 @@ export async function POST(req: NextRequest) {
       warmupDay: true,
       warmupStartedAt: true,
       proxyCountry: true,
-      sendWithoutNote: true,
     },
   });
 

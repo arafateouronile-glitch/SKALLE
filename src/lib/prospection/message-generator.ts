@@ -195,7 +195,7 @@ export async function generateCsoMessages(
   brand: BrandContext,
   actionType: "LINKEDIN" | "EMAIL" | "FOLLOWUP",
   lastMessage?: string
-): Promise<{ subject?: string; content: string; connectNote?: string; angle: string }> {
+): Promise<{ subject?: string; content: string; angle: string }> {
   const llm = getClaude();
 
   const expSummary = research.linkedInExperiences?.slice(0, 3).map(
@@ -215,11 +215,9 @@ export async function generateCsoMessages(
   ].filter(Boolean).join("\n");
 
   const instructions: Record<typeof actionType, string> = {
-    LINKEDIN: `Génère DEUX éléments :
-1. "connectNote" : note de connexion LinkedIn. MAX 280 chars. Pas de pitch. Observation sur son rôle + question légère.
-2. "content" : MESSAGE POST-CONNEXION (envoyé après acceptation). Commence OBLIGATOIREMENT par "Bonjour [Prénom], merci pour la connexion !". 180-250 mots. MIROIR OBLIGATOIRE : identifie 3-4 expressions exactes du prospect dans sa headline/about et réutilise-les littéralement dans ton message (ex : s'il dit "OF débordés", tu écris "OF débordés", pas autre chose). Identifie l'archétype. Nomme sa douleur en reprenant ses propres mots. Présente la solution. Si archétype=prescripteur ET commission disponible dans le contexte marque : cite le % exact. CTA : échange de 10 min.
-3. "angle" : archétype identifié + angle choisi (ex: "Prescripteur → double productivité + commission 20%")
-Retourne : { "connectNote": "...", "content": "...", "angle": "..." }`,
+    LINKEDIN: `Génère le MESSAGE POST-CONNEXION (envoyé après acceptation de l'invitation). Commence OBLIGATOIREMENT par "Bonjour [Prénom], merci pour la connexion !". 180-250 mots. MIROIR OBLIGATOIRE : identifie 3-4 expressions exactes du prospect dans sa headline/about et réutilise-les littéralement dans ton message (ex : s'il dit "OF débordés", tu écris "OF débordés", pas autre chose). Identifie l'archétype. Nomme sa douleur en reprenant ses propres mots. Présente la solution. Si archétype=prescripteur ET commission disponible dans le contexte marque : cite le % exact. CTA : échange de 10 min.
+"angle" : archétype identifié + angle choisi (ex: "Prescripteur → double productivité + commission 20%")
+Retourne : { "content": "...", "angle": "..." }`,
     EMAIL: `Génère un email (objet + corps 100-140 mots). Corps commence par le prénom. Analyse l'archétype du prospect depuis son titre.
 Retourne : { "subject": "...", "content": "...", "angle": "..." }`,
     FOLLOWUP: `Génère un message de relance (${lastMessage ? "contexte : " + lastMessage.slice(0, 100) : "pas de contexte"}).
@@ -266,7 +264,7 @@ ${instructions[actionType]}`);
     : (response.content as Array<{ text?: string }>)[0]?.text ?? "";
 
   const cleaned = raw.replace(/^```[\w]*\s*/m, "").replace(/```\s*$/m, "").trim();
-  return JSON.parse(cleaned) as { subject?: string; content: string; connectNote?: string; angle: string };
+  return JSON.parse(cleaned) as { subject?: string; content: string; angle: string };
 }
 
 // ─── Brand context builder ─────────────────────────────────────────────────

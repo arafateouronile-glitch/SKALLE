@@ -1,7 +1,7 @@
 /**
  * POST /api/cso-agent/regenerate-message
  *
- * Régénère les messages d'une décision CSO (connectNote, postConnectionMessage,
+ * Régénère les messages d'une décision CSO (postConnectionMessage,
  * emailSubject/body, followup…).
  *
  * Body: { decisionId, workspaceId }
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const ws = await prisma.workspace.findFirst({
     where: { id: workspaceId, userId: session.user.id },
-    select: { id: true, name: true, brandVoice: true, signature: true, linkedInAutomationConfig: { select: { sendWithoutNote: true } } },
+    select: { id: true, name: true, brandVoice: true, signature: true },
   });
   if (!ws) return NextResponse.json({ error: "Workspace non trouvé" }, { status: 403 });
 
@@ -105,7 +105,6 @@ export async function POST(req: NextRequest) {
   };
 
   const sig = ws.signature ? `\n\n${ws.signature}` : "";
-  const sendWithoutNote = ws.linkedInAutomationConfig?.sendWithoutNote ?? true;
 
   let newActionData: Record<string, unknown> = { ...data };
 
@@ -117,7 +116,6 @@ export async function POST(req: NextRequest) {
       ]);
       newActionData = {
         ...data,
-        connectNote: sendWithoutNote ? null : (msg.connectNote ?? msg.content.slice(0, 280)),
         postConnectionMessage: msg.content + sig,
         followupMessage: followup.content + sig,
         _angle: msg.angle,
