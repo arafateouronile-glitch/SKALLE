@@ -1,3 +1,14 @@
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// chrome.runtime.sendMessage peut rester bloqué indéfiniment si le service
+// worker MV3 est en veille. Ce wrapper ajoute un timeout de 2s.
+function sendMsg(msg, timeoutMs = 2000) {
+  return Promise.race([
+    chrome.runtime.sendMessage(msg),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("sw_timeout")), timeoutMs)),
+  ]);
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 async function getApiBase() {
@@ -88,7 +99,7 @@ function parseStatus(raw) {
 async function refreshStatus() {
   let data = {};
   try {
-    data = await chrome.runtime.sendMessage({ type: "SKALLE_GET_STATUS" }) ?? {};
+    data = await sendMsg({ type: "SKALLE_GET_STATUS" }) ?? {};
   } catch {
     // Service worker inactif (MV3) — état idle par défaut
   }
@@ -206,7 +217,7 @@ document.getElementById("challengeResolved").addEventListener("click", async () 
   const btn = document.getElementById("challengeResolved");
   btn.disabled = true;
   btn.textContent = "⏳ Réactivation…";
-  try { await chrome.runtime.sendMessage({ type: "SKALLE_CHALLENGE_RESOLVED" }); } catch { /* service worker inactif */ }
+  try { await sendMsg({ type: "SKALLE_CHALLENGE_RESOLVED" }); } catch { /* service worker inactif */ }
   await refreshStatus();
   btn.disabled = false;
   btn.textContent = "✅ J'ai résolu le challenge — reprendre";
@@ -218,7 +229,7 @@ document.getElementById("runNow").addEventListener("click", async () => {
   const btn = document.getElementById("runNow");
   btn.disabled = true;
   btn.textContent = "⏳ Lancement…";
-  try { await chrome.runtime.sendMessage({ type: "SKALLE_RUN_NOW" }); } catch { /* service worker inactif */ }
+  try { await sendMsg({ type: "SKALLE_RUN_NOW" }); } catch { /* service worker inactif */ }
   await refreshStatus();
   btn.disabled = false;
   btn.textContent = "▶ Lancer maintenant";
