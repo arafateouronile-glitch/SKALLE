@@ -556,6 +556,20 @@ async function runAutomation(forceRun = false) {
   const decision = decisions[0];
   const result = await sendToContentScript(tab.id, { type: "SKALLE_EXECUTE", decision });
 
+  // Si le content script n'est pas injecté (onglet LinkedIn rechargé sans refresh
+  // de l'extension, ou tab pas encore prêt), ne pas marquer FAILED — réessayer
+  // au prochain cycle. L'utilisateur doit rafraîchir l'onglet LinkedIn.
+  if (!result?.ok && (
+    result?.error?.includes("Receiving end does not exist") ||
+    result?.error?.includes("Could not establish connection") ||
+    result?.error === "port_closed" ||
+    result?.error === "timeout"
+  )) {
+    await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
+    console.warn("[SKALLE] Content script non disponible — rafraîchissez l'onglet LinkedIn. Décision conservée en APPROVED.");
+    return;
+  }
+
   // Vérifier si le content script a détecté un challenge ou rate-limit
   if (result?.abortCode && await handleAbortCode(result.abortCode)) {
     return; // Stopper immédiatement
