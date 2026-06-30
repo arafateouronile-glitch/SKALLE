@@ -82,7 +82,7 @@ export async function PATCH(req: NextRequest) {
   const body = (await req.json()) as {
     decisionId: string;
     workspaceId: string;
-    action: "approve" | "reject" | "update";
+    action: "approve" | "reject" | "update" | "reset";
     patch?: Record<string, unknown>;
   };
 
@@ -96,6 +96,19 @@ export async function PATCH(req: NextRequest) {
     select: { id: true },
   });
   if (!ws) return NextResponse.json({ error: "Workspace non trouvé" }, { status: 403 });
+
+  // Reset: remet une décision FAILED ou REJECTED en PENDING pour réessayer
+  if (action === "reset") {
+    const failedDecision = await prisma.agentDecision.findFirst({
+      where: { id: decisionId, workspaceId, status: { in: ["FAILED", "REJECTED"] } },
+    });
+    if (!failedDecision) return NextResponse.json({ error: "Décision introuvable ou non réinitialisable" }, { status: 404 });
+    await prisma.agentDecision.update({
+      where: { id: decisionId },
+      data: { status: "PENDING", result: { reset: true } },
+    });
+    return NextResponse.json({ ok: true, status: "PENDING" });
+  }
 
   const decision = await prisma.agentDecision.findFirst({
     where: { id: decisionId, workspaceId, status: "PENDING" },

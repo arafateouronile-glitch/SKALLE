@@ -58,6 +58,7 @@ export default async function CsoAgentPage() {
   const serializedDecisions = decisions.map((d) => ({
     ...d,
     actionData: d.actionData as Record<string, unknown> | null,
+    result: d.result as Record<string, unknown> | null,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
     executedAt: d.executedAt?.toISOString() ?? null,

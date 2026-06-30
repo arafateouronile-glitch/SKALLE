@@ -117,14 +117,26 @@ function ExecutionDone({ actionType }: { actionType: string }) {
   );
 }
 
-function ExecutionFailed() {
+function ExecutionFailed({ errorDetail, onRetry }: { errorDetail?: string; onRetry?: () => void }) {
   return (
     <div className="mt-3 ml-11 rounded-xl border border-red-100 bg-red-50/40 p-3">
-      <div className="flex items-center gap-2">
-        <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
-        <span className="text-[12px] font-medium text-red-600">
-          Échec de la création de la séquence — réessayez ou vérifiez la configuration
-        </span>
+      <div className="flex items-start gap-2">
+        <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <span className="text-[12px] font-medium text-red-600">
+            Échec de l&apos;exécution
+            {errorDetail ? ` — ${errorDetail}` : " — vérifiez que LinkedIn est ouvert dans Chrome"}
+          </span>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-red-700 hover:text-red-900 underline underline-offset-2 transition-colors"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Réessayer
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -208,6 +220,7 @@ interface AgentDecision {
   priority: number;
   status: string;
   actionData: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -275,6 +288,7 @@ function DecisionCard({
   onReject,
   onRegenerate,
   onUpdate,
+  onReset,
   loading,
   isPolling,
 }: {
@@ -283,6 +297,7 @@ function DecisionCard({
   onReject: (id: string) => void;
   onRegenerate: (id: string) => Promise<void>;
   onUpdate: (id: string, patch: Record<string, string>) => Promise<void>;
+  onReset: (id: string) => void;
   loading: string | null;
   isPolling: boolean;
 }) {
@@ -549,7 +564,12 @@ function DecisionCard({
           </div>
         )}
         {isExecuted && <ExecutionDone actionType={decision.actionType} />}
-        {isFailed && <ExecutionFailed />}
+        {isFailed && (
+          <ExecutionFailed
+            errorDetail={(decision.result as Record<string, unknown> | null)?.error as string | undefined}
+            onRetry={() => onReset(decision.id)}
+          />
+        )}
       </div>
     </div>
   );
@@ -673,6 +693,27 @@ export function CsoAgentQueue({
         );
       } else {
         toast.error("Erreur lors du rejet");
+      }
+    } finally {
+      setLoading(null);
+    }
+  }, [workspaceId]);
+
+  const handleReset = useCallback(async (decisionId: string) => {
+    setLoading(decisionId);
+    try {
+      const res = await fetch("/api/cso-agent", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisionId, workspaceId, action: "reset" }),
+      });
+      if (res.ok) {
+        setDecisions((prev) =>
+          prev.map((d) => (d.id === decisionId ? { ...d, status: "PENDING", result: null as unknown as Record<string, unknown> } : d))
+        );
+        toast.success("Décision remise en attente — vous pouvez la réapprouver");
+      } else {
+        toast.error("Impossible de réinitialiser cette décision");
       }
     } finally {
       setLoading(null);
@@ -965,6 +1006,7 @@ export function CsoAgentQueue({
             onReject={handleReject}
             onRegenerate={handleRegenerate}
             onUpdate={handleUpdate}
+            onReset={handleReset}
             loading={loading}
             isPolling={pollingIds.has(decision.id)}
           />
