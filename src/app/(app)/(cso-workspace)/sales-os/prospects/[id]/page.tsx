@@ -247,7 +247,7 @@ export default function ProspectDetailPage({
       <AppTopBar title="Prospect" breadcrumb="sales-os / prospects" accent="violet" />
       <div className="p-6">
         <p style={{ color: "var(--fg-mute)" }}>Prospect introuvable.</p>
-        <Link href="/sales-os/pipeline" className="text-[13px] mt-2 inline-block" style={{ color: "var(--violet-fg)" }}>← Retour au pipeline</Link>
+        <Link href="/sales-os/leads" className="text-[13px] mt-2 inline-block" style={{ color: "var(--violet-fg)" }}>← Retour au pipeline</Link>
       </div>
     </>
   );
@@ -259,13 +259,13 @@ export default function ProspectDetailPage({
     <>
       <AppTopBar
         title={prospect.name}
-        breadcrumb={`sales-os / pipeline / ${prospect.name}`}
+        breadcrumb={`sales-os / leads / ${prospect.name}`}
         accent="violet"
       />
 
       <div className="p-6 max-w-[1300px]">
         <Link
-          href="/sales-os/pipeline"
+          href="/sales-os/leads"
           className="inline-flex items-center gap-1.5 text-[12px] font-medium mb-5 hover:opacity-70 transition-all"
           style={{ color: "var(--fg-mute)" }}
         >

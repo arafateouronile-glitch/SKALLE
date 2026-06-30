@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Mail, Linkedin, MessageSquare, ExternalLink, Calendar,
   Copy, Check, Sparkles, Loader2, CheckCircle2, Clock,
-  User, Building2, ChevronRight,
+  Building2, ChevronRight, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -20,6 +20,14 @@ interface SentStep {
   status: string;
   sentAt: string | null;
   openedAt: string | null;
+}
+
+interface LinkedInReply {
+  id: string;
+  senderName: string;
+  messageText: string;
+  receivedAt: string;
+  isRead: boolean;
 }
 
 interface Conversation {
@@ -38,11 +46,14 @@ interface Conversation {
   respondedAt: string | null;
   pendingMessage: string | null;
   sentSteps: SentStep[];
+  linkedInReplies: LinkedInReply[];
 }
 
 interface Props {
   conversations: Conversation[];
   calendarLink: string | null;
+  workspaceId: string;
+  unreadCount: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -82,7 +93,8 @@ function getInitials(name: string) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function CsoInbox({ conversations, calendarLink }: Props) {
+export function CsoInbox({ conversations, calendarLink, workspaceId, unreadCount }: Props) {
+  const router = useRouter();
   const [selected, setSelected] = useState<string | null>(conversations[0]?.id ?? null);
 
   const [suggestions, setSuggestions] = useState<Record<string, { intent: string; intentLabel: string; suggestedReply: string; reasoning: string }>>({});
@@ -90,6 +102,8 @@ export function CsoInbox({ conversations, calendarLink }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [bookedIds, setBookedIds] = useState<Set<string>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   const conversation = conversations.find((c) => c.id === selected) ?? null;
 
@@ -137,6 +151,32 @@ export function CsoInbox({ conversations, calendarLink }: Props) {
     }
   }, []);
 
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await fetch("/api/linkedin-inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+      toast.success("Vérification lancée — actualisation dans quelques secondes");
+      setTimeout(() => router.refresh(), 3000);
+    } catch {
+      toast.error("Erreur lors de la vérification");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [workspaceId, router]);
+
+  const markReplyRead = useCallback(async (replyId: string) => {
+    setReadIds((prev) => new Set([...prev, replyId]));
+    await fetch("/api/linkedin-inbox", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ replyId }),
+    }).catch(() => {});
+  }, []);
+
   if (conversations.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-3">
@@ -155,11 +195,30 @@ export function CsoInbox({ conversations, calendarLink }: Props) {
       <div className="w-72 shrink-0 flex flex-col"
         style={{ borderRight: "1px solid var(--line)" }}>
 
-        <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--line)" }}>
-          <h2 className="text-[14px] font-semibold" style={{ color: "var(--fg)" }}>Inbox</h2>
-          <p className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
-            {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
-          </p>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[14px] font-semibold" style={{ color: "var(--fg)" }}>Inbox</h2>
+              {unreadCount > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                  style={{ background: "var(--violet-fg)", color: "white" }}>
+                  {unreadCount}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
+              {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-1.5 rounded-lg transition-colors hover:brightness-110 disabled:opacity-40"
+            style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-mute)" }}
+            title="Vérifier les nouvelles réponses LinkedIn"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -280,8 +339,37 @@ export function CsoInbox({ conversations, calendarLink }: Props) {
               </div>
             )}
 
-            {/* Réponse du prospect */}
-            {conversation.replyPreview && (
+            {/* Vraies réponses LinkedIn (LinkedInReply table) */}
+            {conversation.linkedInReplies.map((reply) => {
+              const isUnread = !reply.isRead && !readIds.has(reply.id);
+              return (
+                <div key={reply.id} className="flex justify-start"
+                  onMouseEnter={() => isUnread && markReplyRead(reply.id)}>
+                  <div className="max-w-[75%] space-y-1">
+                    <div className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--fg-mute)" }}>
+                      <Linkedin className="h-3 w-3" />
+                      <span>{reply.senderName}</span>
+                      <span>· {timeAgo(reply.receivedAt)}</span>
+                      {isUnread && (
+                        <span className="h-1.5 w-1.5 rounded-full shrink-0"
+                          style={{ background: "var(--violet-fg)" }} />
+                      )}
+                    </div>
+                    <div className="rounded-[12px] px-3.5 py-2.5 text-[12.5px] leading-relaxed whitespace-pre-wrap"
+                      style={{
+                        background: "var(--bg-2)",
+                        border: isUnread ? "1px solid var(--violet-line)" : "1px solid var(--line)",
+                        color: "var(--fg-dim)",
+                      }}>
+                      {reply.messageText}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Fallback : replyPreview si pas de LinkedInReply en DB */}
+            {conversation.replyPreview && conversation.linkedInReplies.length === 0 && (
               <div className="flex justify-start">
                 <div className="max-w-[75%] space-y-1">
                   <div className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--fg-mute)" }}>
@@ -291,7 +379,7 @@ export function CsoInbox({ conversations, calendarLink }: Props) {
                   </div>
                   <div className="rounded-[12px] px-3.5 py-2.5 text-[12.5px] leading-relaxed italic"
                     style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-dim)" }}>
-                    "{conversation.replyPreview}"
+                    &ldquo;{conversation.replyPreview}&rdquo;
                   </div>
                 </div>
               </div>

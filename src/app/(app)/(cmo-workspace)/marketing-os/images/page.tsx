@@ -14,14 +14,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
   Image as ImageIcon,
   Loader2,
   Sparkles,
@@ -44,13 +36,20 @@ interface GeneratedImage {
   createdAt: Date;
 }
 
+type DalleFormat = "square" | "landscape" | "portrait";
+
+const DALLE_FORMATS: { id: DalleFormat; label: string; size: string; width: number; height: number }[] = [
+  { id: "square", label: "Carré", size: "1024 × 1024", width: 1024, height: 1024 },
+  { id: "landscape", label: "Paysage", size: "1792 × 1024", width: 1792, height: 1024 },
+  { id: "portrait", label: "Portrait", size: "1024 × 1792", width: 1024, height: 1792 },
+];
+
 export default function ImagesPage() {
   const { isDepleted } = useCreditsContext();
   const [prompt, setPrompt] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [selectedStyle, setSelectedStyle] = useState("minimal");
-  const [width, setWidth] = useState(1024);
-  const [height, setHeight] = useState(1024);
+  const [selectedFormat, setSelectedFormat] = useState<DalleFormat>("square");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
 
@@ -67,8 +66,6 @@ export default function ImagesPage() {
     if (template) {
       setSelectedTemplate(templateId);
       setPrompt(template.prompt);
-      setWidth(template.width);
-      setHeight(template.height);
     }
   };
 
@@ -81,9 +78,10 @@ export default function ImagesPage() {
     setIsGenerating(true);
     try {
       const enhancedPrompt = await enhancePrompt(prompt, selectedStyle);
-      const result = await generateAIImage("workspace-id", enhancedPrompt, {
-        width,
-        height,
+      const format = DALLE_FORMATS.find((f) => f.id === selectedFormat)!;
+      const result = await generateAIImage(enhancedPrompt, {
+        width: format.width,
+        height: format.height,
       });
 
       if (result.success && result.data) {
@@ -217,44 +215,24 @@ export default function ImagesPage() {
                 </div>
               </div>
 
-              {/* Dimensions */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-gray-700">Largeur (px)</Label>
-                  <Select
-                    value={width.toString()}
-                    onValueChange={(v) => setWidth(parseInt(v))}
-                  >
-                    <SelectTrigger className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200 text-gray-900">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
-                      <SelectItem value="512">512</SelectItem>
-                      <SelectItem value="768">768</SelectItem>
-                      <SelectItem value="1024">1024</SelectItem>
-                      <SelectItem value="1200">1200</SelectItem>
-                      <SelectItem value="1584">1584</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-gray-700">Hauteur (px)</Label>
-                  <Select
-                    value={height.toString()}
-                    onValueChange={(v) => setHeight(parseInt(v))}
-                  >
-                    <SelectTrigger className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200 text-gray-900">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
-                      <SelectItem value="396">396</SelectItem>
-                      <SelectItem value="512">512</SelectItem>
-                      <SelectItem value="630">630</SelectItem>
-                      <SelectItem value="768">768</SelectItem>
-                      <SelectItem value="1024">1024</SelectItem>
-                      <SelectItem value="1080">1080</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Format DALL-E 3 */}
+              <div className="space-y-2">
+                <Label className="text-gray-700">Format</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {DALLE_FORMATS.map((fmt) => (
+                    <button
+                      key={fmt.id}
+                      onClick={() => setSelectedFormat(fmt.id)}
+                      className={`p-3 rounded-lg border text-center transition-all ${
+                        selectedFormat === fmt.id
+                          ? "border-emerald-500 bg-emerald-500/10"
+                          : "border-gray-200 bg-white/50 backdrop-blur-sm hover:border-gray-300"
+                      }`}
+                    >
+                      <p className="text-sm font-medium text-gray-700">{fmt.label}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{fmt.size}</p>
+                    </button>
+                  ))}
                 </div>
               </div>
 

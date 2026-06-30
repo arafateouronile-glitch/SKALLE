@@ -11,7 +11,6 @@ interface ImageGenerationResult {
 }
 
 export async function generateAIImage(
-  workspaceId: string,
   prompt: string,
   options?: { width?: number; height?: number }
 ): Promise<{ success: boolean; data?: ImageGenerationResult; error?: string }> {
@@ -21,16 +20,14 @@ export async function generateAIImage(
       return { success: false, error: "Non autorisé" };
     }
 
-    // Verify workspace ownership
     const workspace = await prisma.workspace.findFirst({
-      where: { id: workspaceId, userId: session.user.id },
+      where: { userId: session.user.id },
     });
 
     if (!workspace) {
       return { success: false, error: "Workspace non trouvé" };
     }
 
-    // Check credits
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { credits: true },
@@ -40,28 +37,26 @@ export async function generateAIImage(
       return { success: false, error: "Crédits insuffisants" };
     }
 
-    // Generate image
     const imageUrl = await generateImage(prompt, {
       width: options?.width || 1024,
       height: options?.height || 1024,
     });
 
-    // Track API usage
-    await prisma.aPIUsage.create({
-      data: {
-        service: "banana",
-        operation: "image",
-        credits: 1,
-        workspaceId,
-        metadata: { prompt, ...options },
-      },
-    });
-
-    // Deduct credit
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { credits: { decrement: 1 } },
-    });
+    await Promise.all([
+      prisma.aPIUsage.create({
+        data: {
+          service: "openai-dalle",
+          operation: "image",
+          credits: 1,
+          workspaceId: workspace.id,
+          metadata: { prompt, ...options },
+        },
+      }),
+      prisma.user.update({
+        where: { id: session.user.id },
+        data: { credits: { decrement: 1 } },
+      }),
+    ]);
 
     return {
       success: true,
@@ -73,7 +68,6 @@ export async function generateAIImage(
   }
 }
 
-// Re-export for backward compatibility
 export { imageTemplates };
 
 export async function enhancePrompt(

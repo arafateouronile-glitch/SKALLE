@@ -99,11 +99,33 @@ export default function PrivacyPage() {
 
             <Subsection title="2.4 Extension Chrome">
               <p>
-                Si vous utilisez notre extension Chrome, nous collectons les
-                tokens d&apos;accès Facebook que vous fournissez
-                volontairement pour l&apos;import de membres de groupes. Ces
-                tokens sont stockés de façon chiffrée et ne sont utilisés
-                qu&apos;à votre demande explicite.
+                Si vous utilisez notre extension Chrome, nous collectons un
+                token d&apos;authentification permettant à l&apos;extension de
+                capturer automatiquement les profils LinkedIn que vous visitez
+                (informations, expériences professionnelles) afin d&apos;enrichir
+                vos prospects. Ce token est stocké de façon chiffrée et n&apos;est
+                utilisé qu&apos;à votre demande explicite.
+              </p>
+            </Subsection>
+
+            <Subsection title="2.5 Données de prospection B2B (tiers)">
+              <p className="mb-2">
+                Dans le cadre des fonctionnalités de prospection commerciale, Skalle collecte des
+                données sur des <strong>tiers</strong> (vos prospects) à partir de sources publiques :
+              </p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Profils LinkedIn publics (nom, poste, entreprise, URL)</li>
+                <li>E-mails professionnels trouvés via recherche Google (Serper)</li>
+                <li>Données d&apos;enrichissement B2B via Apollo.io (e-mail, téléphone, taille d&apos;entreprise, secteur)</li>
+                <li>Données Google Business (établissements locaux : nom, adresse, téléphone, site web)</li>
+              </ul>
+              <p className="mt-3 text-sm">
+                <strong>Base légale :</strong> intérêt légitime B2B (RGPD art. 6.1.f) — prospection
+                commerciale entre professionnels. Les personnes concernées peuvent s&apos;opposer à ce
+                traitement à tout moment en écrivant à{" "}
+                <a href="mailto:privacy@skalle.io" className="underline">privacy@skalle.io</a>.
+                Ces données ne sont <strong>jamais revendues</strong> ni partagées avec des tiers à des
+                fins publicitaires.
               </p>
             </Subsection>
           </Section>
@@ -124,6 +146,10 @@ export default function PrivacyPage() {
                   [
                     "Génération de contenu IA (SEO, social, prospection)",
                     "Exécution du contrat",
+                  ],
+                  [
+                    "Prospection B2B — collecte et enrichissement automatique de données prospects depuis sources publiques (LinkedIn, Google, Apollo)",
+                    "Intérêt légitime",
                   ],
                   [
                     "Envoi d'e-mails transactionnels et notifications",
@@ -188,6 +214,16 @@ export default function PrivacyPage() {
                   name: "Vercel",
                   role: "Hébergement et déploiement",
                   region: "EU / USA",
+                },
+                {
+                  name: "Serper",
+                  role: "Recherche Google B2B (enrichissement prospects)",
+                  region: "USA",
+                },
+                {
+                  name: "Apollo.io",
+                  role: "Enrichissement de données B2B (email, téléphone, entreprise)",
+                  region: "USA",
                 },
               ].map(({ name, role, region }) => (
                 <li
@@ -347,13 +383,6 @@ export default function PrivacyPage() {
                 <li>
                   Identifiant utilisateur Facebook, nom et adresse e-mail (via
                   Facebook Login)
-                </li>
-                <li>
-                  Membres de groupes Facebook (noms, profils publics) — uniquement
-                  lors d&apos;un import manuel via l&apos;extension Chrome
-                </li>
-                <li>
-                  Token d&apos;accès à l&apos;API Graph fourni volontairement
                 </li>
               </ul>
             </Subsection>

@@ -44,6 +44,7 @@ import { toast } from "sonner";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Channel = "EMAIL" | "LINKEDIN" | "PHONE" | "SMS";
+const CREATABLE_CHANNELS: Channel[] = ["EMAIL", "LINKEDIN"];
 
 interface Prospect {
   id: string;
@@ -449,7 +450,7 @@ export function SequenceBuilder({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-[#1a1d27] border-white/[0.08] text-white">
-                            {(Object.keys(CHANNEL_CONFIG) as Channel[]).map((c) => {
+                            {CREATABLE_CHANNELS.map((c) => {
                               const CIcon = CHANNEL_CONFIG[c].icon;
                               return (
                                 <SelectItem key={c} value={c} className="text-[12px]">

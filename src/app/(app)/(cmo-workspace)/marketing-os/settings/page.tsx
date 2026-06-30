@@ -1125,11 +1125,6 @@ export default function SettingsPage() {
                     status: true,
                   },
                   { name: "Serper", envVar: "SERPER_API_KEY", status: true },
-                  {
-                    name: "Banana.dev",
-                    envVar: "BANANA_API_KEY",
-                    status: false,
-                  },
                 ].map((api) => (
                   <div
                     key={api.name}

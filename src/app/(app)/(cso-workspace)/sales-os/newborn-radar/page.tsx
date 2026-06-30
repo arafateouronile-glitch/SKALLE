@@ -279,6 +279,7 @@ function LeadRow({
 // Main page
 // ═══════════════════════════════════════════════════════════════════════════
 
+export { NewbornRadarPage as NewbornRadarTab };
 export default function NewbornRadarPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import Link from "next/link";
-import { Search, Download, Loader2, CheckCircle, Copy, Check, UserPlus, Sparkles, Eye, Heart, Users, Linkedin, ArrowRight, Zap, TrendingUp, ScanLine, ExternalLink } from "lucide-react";
+import { Search, Download, Loader2, CheckCircle, Copy, Check, UserPlus, Sparkles, Eye, Heart, Users, Linkedin, ArrowRight, Zap, ScanLine, ExternalLink } from "lucide-react";
 import { getUserWorkspace } from "@/actions/leads";
 import {
   scanJobSignalsAction,
@@ -40,9 +40,7 @@ const WARM_SOURCES = [
     emoji: "👁",
     title: "Profile Viewers",
     desc: "Ceux qui ont visité votre profil LinkedIn récemment",
-    stat: "38% taux de réponse",
     pitch: "Ils vous connaissent déjà — relancez pendant qu'ils se souviennent de vous.",
-    dataPoints: 63,
     color: "violet",
   },
   {
@@ -51,9 +49,7 @@ const WARM_SOURCES = [
     emoji: "💬",
     title: "Post Engagers",
     desc: "Likes, commentaires et partages sur vos posts",
-    stat: "45% taux de réponse",
     pitch: "Déjà engagés avec votre contenu — la conversion la plus facile.",
-    dataPoints: 71,
     color: "amber",
   },
   {
@@ -62,9 +58,7 @@ const WARM_SOURCES = [
     emoji: "➕",
     title: "Followers",
     desc: "Nouveaux abonnés à votre profil ou page",
-    stat: "15–30% taux de réponse",
     pitch: "Ils ont décidé de vous suivre — ils attendent juste que vous parliez.",
-    dataPoints: 58,
     color: "emerald",
   },
 ] as const;
@@ -234,7 +228,7 @@ function fmtPostLabel(post: LinkedInPost): string {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function HuntPage() {
+export function HuntTab() {
   const searchParams = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedMode, setSelectedMode] = useState<HuntMode>("jobs");
@@ -447,10 +441,7 @@ export default function HuntPage() {
   }
 
   return (
-    <>
-      <AppTopBar title="Hunt" breadcrumb="sales-os / hunt" accent="amber" />
-
-      <div className="p-6 space-y-6 max-w-[1200px]">
+    <div className="p-6 space-y-6 max-w-[1200px]">
 
         {/* ─── Warm Leads ────────────────────────────────────────── */}
         <section className="rounded-[18px] p-8"
@@ -495,10 +486,6 @@ export default function HuntPage() {
                       style={{ background: `var(--${src.color}-soft)`, border: `1px solid var(--${src.color}-line)` }}>
                       <Icon className="h-4 w-4" style={{ color: `var(--${src.color}-fg)` }} />
                     </div>
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-[6px] font-mono"
-                      style={{ background: "var(--emerald-soft)", color: "var(--emerald-fg)", border: "1px solid var(--emerald-line)" }}>
-                      {src.stat}
-                    </span>
                   </div>
                   <p className="text-[14px] font-semibold mb-1" style={{ color: "var(--fg)" }}>{src.title}</p>
                   <p className="text-[12px] leading-snug mb-3" style={{ color: "var(--fg-mute)" }}>{src.desc}</p>
@@ -506,10 +493,6 @@ export default function HuntPage() {
                     &ldquo;{src.pitch}&rdquo;
                   </p>
                   <div className="flex items-center gap-2 mb-4">
-                    <div className="flex items-center gap-1.5 text-[10.5px] font-medium" style={{ color: "var(--fg-mute)" }}>
-                      <TrendingUp className="h-3 w-3" style={{ color: `var(--${src.color}-fg)` }} />
-                      {src.dataPoints} data points
-                    </div>
                     <div className="flex items-center gap-1 text-[10.5px]" style={{ color: "var(--fg-mute)" }}>
                       <Zap className="h-3 w-3" style={{ color: "var(--amber-fg)" }} />
                       IA personnalisée
@@ -911,7 +894,15 @@ export default function HuntPage() {
           </div>
         )}
 
-      </div>
+    </div>
+  );
+}
+
+export default function HuntPage() {
+  return (
+    <>
+      <AppTopBar title="Hunt" breadcrumb="sales-os / hunt" accent="amber" />
+      <HuntTab />
     </>
   );
 }

@@ -58,6 +58,7 @@ function PainBadge({ tag }: { tag: LocalPainTag }) {
   return null;
 }
 
+export { LocalRadarPage as LocalRadarTab };
 export default function LocalRadarPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [activity, setActivity] = useState("");

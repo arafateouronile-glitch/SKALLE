@@ -1,11 +1,14 @@
 /**
+ * GET  /api/partners
+ *   → Retourne les partenaires sauvegardés (Prospects source PARTNER_SOCIAL / PARTNER_SEO)
+ *
  * POST /api/partners
- *
- * Le workspaceId est résolu depuis la session (jamais fait confiance au client).
- *
- * Body: { type: "social" | "seo", saveToCRM?: boolean, ...params }
+ *   Body: { type: "social" | "seo", ...params }
  *   Social : { niche, minFollowers, maxFollowers, platform }
  *   SEO    : { keyword }
+ *
+ * PATCH /api/partners  { prospectId, status }
+ *   → Met à jour le statut pipeline d'un partenaire (ex: CONTACTED)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,6 +21,60 @@ import {
   runBlogPartnerSearch,
   type SocialPlatform,
 } from "@/lib/services/sales/partnership-engine";
+
+export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+
+  const workspace = await getOrCreateWorkspace(session);
+
+  const partners = await prisma.prospect.findMany({
+    where: {
+      workspaceId: workspace.id,
+      source: { in: ["PARTNER_SOCIAL", "PARTNER_SEO"] },
+    },
+    select: {
+      id: true,
+      name: true,
+      company: true,
+      jobTitle: true,
+      linkedInUrl: true,
+      email: true,
+      status: true,
+      source: true,
+      score: true,
+      createdAt: true,
+      enrichmentData: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+
+  return NextResponse.json({ partners });
+}
+
+export async function PATCH(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+
+  const { prospectId, status } = (await req.json()) as { prospectId: string; status: string };
+  if (!prospectId || !status) return NextResponse.json({ error: "prospectId et status requis" }, { status: 400 });
+
+  const workspace = await getOrCreateWorkspace(session);
+
+  const prospect = await prisma.prospect.findFirst({
+    where: { id: prospectId, workspaceId: workspace.id, source: { in: ["PARTNER_SOCIAL", "PARTNER_SEO"] } },
+    select: { id: true },
+  });
+  if (!prospect) return NextResponse.json({ error: "Partenaire introuvable" }, { status: 404 });
+
+  await prisma.prospect.update({
+    where: { id: prospectId },
+    data: { status: status as never },
+  });
+
+  return NextResponse.json({ ok: true });
+}
 
 export async function POST(req: NextRequest) {
   const session = await auth();

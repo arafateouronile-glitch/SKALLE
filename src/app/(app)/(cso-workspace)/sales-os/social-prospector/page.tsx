@@ -29,13 +29,7 @@ import {
   disconnectPageAction,
   toggleAutoGenerateAction,
 } from "@/actions/meta-connection";
-import {
-  listFacebookGroupsAction,
-  getGroupMembersAction,
-  generateExtensionTokenAction,
-  deleteFacebookGroupAction,
-  triggerColdDMBatchAction,
-} from "@/actions/facebook-groups";
+import { generateExtensionTokenAction } from "@/actions/facebook-groups";
 import {
   Card,
   CardContent,
@@ -107,7 +101,6 @@ import {
   XCircle,
   Inbox,
   ArrowRight,
-  UsersRound,
   Key,
   Download,
 } from "lucide-react";
@@ -1121,182 +1114,6 @@ function EmptyState({ message, cta, onCta }: { message: string; cta: string; onC
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 🧱 ONGLET GROUPES FACEBOOK
-// ═══════════════════════════════════════════════════════════════════════════
-
-function FacebookGroupsTab({ workspaceId }: { workspaceId: string }) {
-  const [groups, setGroups] = useState<Array<{ id: string; name: string; url: string; memberCount: number; lastSyncedAt: string | null }>>([]);
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [members, setMembers] = useState<Interaction[]>([]);
-  const [memberTotal, setMemberTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [tokenGen, setTokenGen] = useState<string | null>(null);
-  const [loadingToken, setLoadingToken] = useState(false);
-  const [triggeringBatch, setTriggeringBatch] = useState(false);
-
-  const loadGroups = useCallback(async () => {
-    const result = await listFacebookGroupsAction(workspaceId);
-    if (result.success && result.data) setGroups(result.data);
-  }, [workspaceId]);
-
-  useEffect(() => {
-    setLoading(true);
-    loadGroups().finally(() => setLoading(false));
-  }, [loadGroups]);
-
-  useEffect(() => {
-    if (!selectedGroup) { setMembers([]); setMemberTotal(0); return; }
-    getGroupMembersAction(workspaceId, selectedGroup, { limit: 100 }).then((r) => {
-      if (r.success && r.data) {
-        setMembers(r.data.members as unknown as Interaction[]);
-        setMemberTotal(r.data.total);
-      }
-    });
-  }, [workspaceId, selectedGroup]);
-
-  async function handleGenerateToken() {
-    setLoadingToken(true);
-    const res = await generateExtensionTokenAction(workspaceId);
-    setLoadingToken(false);
-    if (res.success && res.data?.token) {
-      setTokenGen(res.data.token);
-      toast.success("Token généré ! Copiez-le dans l'extension Chrome.");
-    } else toast.error(res.error || "Erreur");
-  }
-
-  async function handleDeleteGroup(groupId: string) {
-    if (!confirm("Supprimer ce groupe et tous ses membres importés ?")) return;
-    const res = await deleteFacebookGroupAction(workspaceId, groupId);
-    if (res.success) { toast.success("Groupe supprimé"); loadGroups(); setSelectedGroup(null); }
-    else toast.error(res.error || "Erreur");
-  }
-
-  async function handleTriggerBatch() {
-    setTriggeringBatch(true);
-    const res = await triggerColdDMBatchAction(workspaceId);
-    setTriggeringBatch(false);
-    if (res.success) toast.success("Envoi des DM en cours (traitement asynchrone).");
-    else toast.error(res.error ?? "Erreur");
-  }
-
-  const g = groups.find((x) => x.id === selectedGroup);
-
-  return (
-    <div className="space-y-6">
-      {/* ToS Warning */}
-      <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-        <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-amber-800">Utilisation responsable — CGU Facebook</p>
-          <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
-            <li>L&apos;extraction de membres sans consentement peut violer les <strong>CGU Facebook (Section 3.2)</strong> et entraîner la suspension de votre compte.</li>
-            <li>N&apos;envoyez des DM qu&apos;aux membres avec qui vous avez un lien professionnel légitime et une valeur ajoutée claire.</li>
-            <li>Respectez le <strong>RGPD</strong> : les données extraites ne doivent pas être partagées ou revendues.</li>
-            <li>Limitez les imports à <strong>50–100 membres/jour</strong> pour éviter les détections automatiques.</li>
-          </ul>
-        </div>
-      </div>
-
-      <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Key className="h-5 w-5" /> Token Extension Chrome
-          </CardTitle>
-          <CardDescription>
-            Génèrez un token pour l&apos;extension Chrome qui scrape les membres des groupes Facebook. Installez l&apos;extension depuis le dossier chrome-extension.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button onClick={handleGenerateToken} disabled={loadingToken} variant="outline" size="sm">
-            {loadingToken ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-            Générer un token
-          </Button>
-          {tokenGen && (
-            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-              <Input value={tokenGen} readOnly className="font-mono text-sm" />
-              <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(tokenGen); toast.success("Copié"); }}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-          <div className="pt-2 border-t">
-            <Button onClick={handleTriggerBatch} disabled={triggeringBatch} variant="outline" size="sm">
-              {triggeringBatch ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-              Lancer l&apos;envoi des DM approuvés
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60 md:col-span-1">
-          <CardHeader>
-            <CardTitle>Groupes importés</CardTitle>
-            <CardDescription>Groupes dont les membres ont été importés via l&apos;extension</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-emerald-500" /></div>
-            ) : groups.length === 0 ? (
-              <p className="text-sm text-gray-500">Aucun groupe. Utilisez l&apos;extension Chrome sur la page membres d&apos;un groupe Facebook.</p>
-            ) : (
-              <div className="space-y-2">
-                {groups.map((gr) => (
-                  <button
-                    key={gr.id}
-                    onClick={() => setSelectedGroup(gr.id)}
-                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedGroup === gr.id ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:bg-gray-50"}`}
-                  >
-                    <div className="font-medium truncate">{gr.name}</div>
-                    <div className="text-xs text-gray-500">{gr.memberCount} membres</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white/60 backdrop-blur-sm shadow-sm border-gray-200/60 md:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>{g?.name || "Sélectionnez un groupe"}</CardTitle>
-              <CardDescription>{g ? `${memberTotal} membres au total` : "—"}</CardDescription>
-            </div>
-            {g && (
-              <Button variant="outline" size="sm" onClick={() => handleDeleteGroup(g.id)} className="text-red-600">
-                <Trash2 className="h-4 w-4 mr-1" /> Supprimer
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            {!g ? (
-              <p className="text-sm text-gray-500">Sélectionnez un groupe pour voir ses membres.</p>
-            ) : members.length === 0 ? (
-              <p className="text-sm text-gray-500">Chargement...</p>
-            ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {members.map((m) => (
-                  <ProspectCard
-                    key={m.id}
-                    interaction={m}
-                    workspaceId={workspaceId}
-                    onUpdate={() => selectedGroup && getGroupMembersAction(workspaceId, selectedGroup).then((r) => {
-                      if (r.success && r.data) {
-                        setMembers(r.data.members as unknown as Interaction[]);
-                        setMemberTotal(r.data.total);
-                      }
-                    })}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🖥️ PAGE PRINCIPALE
@@ -1349,9 +1166,6 @@ export default function SocialProspectorPage() {
           <TabsTrigger value="connection" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
             <Plug className="h-4 w-4 mr-2" /> Connexion
           </TabsTrigger>
-          <TabsTrigger value="groups" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-            <UsersRound className="h-4 w-4 mr-2" /> Groupes Facebook
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="prospects">
@@ -1368,9 +1182,6 @@ export default function SocialProspectorPage() {
 
         <TabsContent value="connection">
           <MetaConnectionTab workspaceId={workspaceId} />
-        </TabsContent>
-        <TabsContent value="groups">
-          <FacebookGroupsTab workspaceId={workspaceId} />
         </TabsContent>
       </Tabs>
     </div>

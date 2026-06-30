@@ -17,15 +17,14 @@ import {
   Target,
   LayoutGrid,
   BarChart3,
-  Radio,
-  MapPin,
-  Building2,
+  Telescope,
   Handshake,
   LogOut,
   AlertCircle,
   FlaskConical,
   Brain,
   UserSearch,
+  Inbox,
 } from "lucide-react";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -70,17 +69,15 @@ const sections: NavSection[] = [
   {
     label: "Intelligence",
     items: [
-      { name: "Radar à Signaux", href: "/sales-os/signals-radar", icon: Radio },
-      { name: "Local Radar", href: "/sales-os/local-radar", icon: MapPin },
-      { name: "Newborn Radar", href: "/sales-os/newborn-radar", icon: Building2 },
+      { name: "Discovery", href: "/sales-os/discovery", icon: Telescope, matchHref: "/sales-os/discovery" },
       { name: "Lead Scoring", href: "/sales-os/dashboard", icon: Target },
     ],
   },
   {
     label: "CRM & Pipeline",
     items: [
-      { name: "CRM Pipeline", href: "/sales-os/crm", icon: LayoutGrid },
-      { name: "Pipeline Analytics", href: "/sales-os/analytics", icon: BarChart3 },
+      { name: "CRM Pipeline", href: "/sales-os/leads", icon: LayoutGrid },
+      { name: "Insights", href: "/sales-os/insights", icon: BarChart3 },
       {
         name: "A/B Email",
         href: "/sales-os/analytics/ab-tests",
@@ -95,20 +92,13 @@ const sections: NavSection[] = [
       { name: "Personas", href: "/sales-os/personas", icon: UserSearch },
       { name: "Prospection", href: "/sales-os/prospection", icon: Users },
       {
-        name: "Séquences",
-        href: "/sales-os/sequences",
+        name: "Outreach",
+        href: "/sales-os/outreach",
         icon: GitMerge,
         indent: true,
       },
-      {
-        name: "Découverte",
-        href: "/sales-os/prospection?tab=leads",
-        icon: Target,
-        matchHref: "/sales-os/prospection",
-        indent: true,
-      },
       { name: "Social Prospector", href: "/sales-os/social-prospector", icon: MessageCircle },
-      { name: "Reply Assistant", href: "/sales-os/reply-assistant", icon: MessageCircle },
+      { name: "Inbox", href: "/sales-os/inbox", icon: Inbox },
       { name: "Partnership Hub", href: "/sales-os/partnerships", icon: Handshake },
     ],
   },

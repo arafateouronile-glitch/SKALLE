@@ -9,7 +9,7 @@
  * Design : Bento Grid · Glassmorphism · Spotlight hover · AI Glow · Framer Motion
  */
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,6 +71,20 @@ interface BlogPartner {
   position: number;
   keyword: string;
   pitch?: string;
+}
+
+interface SavedPartner {
+  id: string;
+  name: string;
+  company: string;
+  jobTitle: string | null;
+  linkedInUrl: string | null;
+  email: string | null;
+  status: string;
+  source: string;
+  score: number;
+  createdAt: string;
+  enrichmentData: Record<string, unknown> | null;
 }
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
@@ -563,6 +577,18 @@ export default function PartnershipsPage() {
   const [loadingSocial, setLoadingSocial] = useState(false);
   const [loadingSeo, setLoadingSeo] = useState(false);
 
+  // Saved partners from DB
+  const [savedPartners, setSavedPartners] = useState<SavedPartner[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/partners")
+      .then((r) => r.json())
+      .then((d: { partners?: SavedPartner[] }) => setSavedPartners(d.partners ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingSaved(false));
+  }, []);
+
   const audienceToRange = (a: string) => {
     if (a === "nano") return { min: 1_000, max: 10_000 };
     if (a === "micro") return { min: 10_000, max: 100_000 };
@@ -579,12 +605,13 @@ export default function PartnershipsPage() {
       const res = await fetch("/api/partners", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "social", niche, platform, minFollowers: min, maxFollowers: max }),
+        body: JSON.stringify({ type: "social", niche, platform, minFollowers: min, maxFollowers: max, saveToCRM: true }),
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error ?? "Erreur"); return; }
       setSocialPartners(data.partners ?? []);
-      toast.success(`${data.partners?.length ?? 0} influenceurs détectés · ${data.creditsUsed} crédits`);
+      toast.success(`${data.partners?.length ?? 0} influenceurs détectés et sauvegardés · ${data.creditsUsed} crédits`);
+      fetch("/api/partners").then((r) => r.json()).then((d: { partners?: SavedPartner[] }) => setSavedPartners(d.partners ?? [])).catch(() => {});
     } catch { toast.error("Erreur réseau"); }
     finally { setLoadingSocial(false); }
   }
@@ -597,12 +624,13 @@ export default function PartnershipsPage() {
       const res = await fetch("/api/partners", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "seo", keyword }),
+        body: JSON.stringify({ type: "seo", keyword, saveToCRM: true }),
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error ?? "Erreur"); return; }
       setBlogPartners(data.partners ?? []);
-      toast.success(`${data.partners?.length ?? 0} blogs détectés · ${data.creditsUsed} crédits`);
+      toast.success(`${data.partners?.length ?? 0} blogs détectés et sauvegardés · ${data.creditsUsed} crédits`);
+      fetch("/api/partners").then((r) => r.json()).then((d: { partners?: SavedPartner[] }) => setSavedPartners(d.partners ?? [])).catch(() => {});
     } catch { toast.error("Erreur réseau"); }
     finally { setLoadingSeo(false); }
   }
@@ -860,6 +888,56 @@ export default function PartnershipsPage() {
         </AnimatePresence>
       </div>
 
+      {/* ── Section partenaires sauvegardés ── */}
+      {(savedPartners.length > 0 || loadingSaved) && (
+        <div className="px-6 lg:px-8 pb-8">
+          <div className="border-t border-white/10 pt-8">
+            <div className="flex items-center gap-2 mb-4">
+              <Handshake className="h-4 w-4 text-indigo-400" />
+              <h2 className="text-[13px] font-semibold text-white/80">
+                Mes partenaires sauvegardés
+              </h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                {savedPartners.length}
+              </span>
+            </div>
+            {loadingSaved ? (
+              <div className="flex items-center gap-2 text-white/30 text-xs">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Chargement…
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="border-b border-white/8">
+                      <th className="text-left py-2 pr-4 text-white/30 font-medium">Nom</th>
+                      <th className="text-left py-2 pr-4 text-white/30 font-medium">Source</th>
+                      <th className="text-left py-2 pr-4 text-white/30 font-medium">Statut</th>
+                      <th className="text-left py-2 pr-4 text-white/30 font-medium">Email</th>
+                      <th className="text-left py-2 text-white/30 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savedPartners.map((p) => (
+                      <SavedPartnerRow
+                        key={p.id}
+                        partner={p}
+                        onStatusChange={(id, status) => {
+                          setSavedPartners((prev) =>
+                            prev.map((sp) => sp.id === id ? { ...sp, status } : sp)
+                          );
+                        }}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Global shimmer keyframe */}
       <style>{`
         @keyframes shimmer {
@@ -867,5 +945,95 @@ export default function PartnershipsPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+// ─── Saved Partner Row ────────────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  NEW: { label: "Nouveau", color: "text-white/40" },
+  RESEARCHED: { label: "Étudié", color: "text-blue-400" },
+  MESSAGES_GENERATED: { label: "Message prêt", color: "text-violet-400" },
+  CONTACTED: { label: "Contacté", color: "text-amber-400" },
+  RESPONDED: { label: "A répondu", color: "text-emerald-400" },
+  MEETING_BOOKED: { label: "RDV booké", color: "text-emerald-500" },
+  CONVERTED: { label: "Converti", color: "text-emerald-600" },
+};
+
+function SavedPartnerRow({
+  partner,
+  onStatusChange,
+}: {
+  partner: SavedPartner;
+  onStatusChange: (id: string, status: string) => void;
+}) {
+  const [updating, setUpdating] = useState(false);
+  const s = STATUS_LABELS[partner.status] ?? { label: partner.status, color: "text-white/40" };
+
+  async function markContacted() {
+    if (partner.status === "CONTACTED" || updating) return;
+    setUpdating(true);
+    try {
+      const res = await fetch("/api/partners", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId: partner.id, status: "CONTACTED" }),
+      });
+      if (res.ok) {
+        onStatusChange(partner.id, "CONTACTED");
+        toast.success("Statut mis à jour");
+      }
+    } catch { toast.error("Erreur réseau"); }
+    finally { setUpdating(false); }
+  }
+
+  return (
+    <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+      <td className="py-2.5 pr-4">
+        <p className="text-white/80 font-medium truncate max-w-[160px]">{partner.name}</p>
+        <p className="text-white/30 text-[10px] truncate max-w-[160px]">{partner.company}</p>
+      </td>
+      <td className="py-2.5 pr-4">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+          partner.source === "PARTNER_SOCIAL"
+            ? "bg-indigo-500/15 border-indigo-500/30 text-indigo-300"
+            : "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+        }`}>
+          {partner.source === "PARTNER_SOCIAL" ? "Social" : "SEO"}
+        </span>
+      </td>
+      <td className="py-2.5 pr-4">
+        <span className={`text-[11px] font-medium ${s.color}`}>{s.label}</span>
+      </td>
+      <td className="py-2.5 pr-4">
+        {partner.email ? (
+          <a href={`mailto:${partner.email}`} className="text-white/50 hover:text-white/80 font-mono text-[10px] transition-colors">
+            {partner.email}
+          </a>
+        ) : (
+          <span className="text-white/20 text-[10px]">—</span>
+        )}
+      </td>
+      <td className="py-2.5">
+        <div className="flex items-center gap-2">
+          {partner.linkedInUrl && (
+            <a href={partner.linkedInUrl} target="_blank" rel="noopener noreferrer"
+              className="h-6 w-6 flex items-center justify-center rounded-lg border border-white/10 text-white/30 hover:text-white/60 hover:border-white/20 transition-colors">
+              <Linkedin className="h-3 w-3" />
+            </a>
+          )}
+          {partner.status !== "CONTACTED" && partner.status !== "RESPONDED" && partner.status !== "MEETING_BOOKED" && partner.status !== "CONVERTED" && (
+            <button
+              onClick={markContacted}
+              disabled={updating}
+              className="flex items-center gap-1 h-6 px-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 text-[10px] font-semibold hover:bg-amber-500/20 transition-colors disabled:opacity-40"
+            >
+              {updating ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Mail className="h-2.5 w-2.5" />}
+              Contacté
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }

@@ -32,10 +32,10 @@ import { toast } from "sonner";
 
 const EXECUTION_STEPS: Record<string, { label: string; icon: "pending" | "done" | "waiting" }[]> = {
   CSO_LAUNCH_LINKEDIN: [
-    { label: "Demande de connexion envoyée",           icon: "done" },
-    { label: "Message post-connexion — attend acceptation", icon: "waiting" },
-    { label: "Relance J+5 si pas de réponse",          icon: "waiting" },
-    { label: "Email fallback J+7 si non accepté",      icon: "waiting" },
+    { label: "Invitation en file d'attente — envoi automatique (10h)", icon: "waiting" },
+    { label: "Message post-connexion — attend acceptation",             icon: "waiting" },
+    { label: "Relance J+5 si pas de réponse",                          icon: "waiting" },
+    { label: "Email fallback J+7 si non accepté",                      icon: "waiting" },
   ],
   CSO_LAUNCH_EMAIL: [
     { label: "Email envoyé",                          icon: "done" },
@@ -51,8 +51,8 @@ const EXECUTION_STEPS: Record<string, { label: string; icon: "pending" | "done" 
 
 const PENDING_STEPS: Record<string, string[]> = {
   CSO_LAUNCH_LINKEDIN: [
-    "Envoi de la demande de connexion…",
-    "Création de la séquence post-connexion",
+    "Création de la séquence…",
+    "Programmation des étapes post-connexion",
     "Programmation des relances",
   ],
   CSO_LAUNCH_EMAIL: [
@@ -70,9 +70,7 @@ function ExecutionPending({ actionType }: { actionType: string }) {
       <div className="flex items-center gap-2 mb-2">
         <Loader2 className="h-3.5 w-3.5 text-amber-500 animate-spin shrink-0" />
         <span className="text-[12px] font-semibold text-amber-700">
-          {actionType === "CSO_LAUNCH_LINKEDIN"
-            ? "En attente de l'extension Chrome…"
-            : "Exécution en cours…"}
+          {"Création de la séquence…"}
         </span>
       </div>
       <div className="space-y-1.5 pl-5">
@@ -109,6 +107,12 @@ function ExecutionDone({ actionType }: { actionType: string }) {
           </div>
         ))}
       </div>
+      {actionType === "CSO_LAUNCH_LINKEDIN" && (
+        <p className="mt-2.5 pl-5 text-[10px] text-amber-600 leading-relaxed">
+          Pour envoyer maintenant : onglet <strong>LinkedIn &rsaquo; File d&apos;envoi</strong> dans Prospection,
+          ou activez l&apos;automation dans les <strong>Paramètres CSO</strong>.
+        </p>
+      )}
     </div>
   );
 }
@@ -119,7 +123,7 @@ function ExecutionFailed() {
       <div className="flex items-center gap-2">
         <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
         <span className="text-[12px] font-medium text-red-600">
-          Échec de l&apos;exécution — vérifiez l&apos;extension Chrome
+          Échec de la création de la séquence — réessayez ou vérifiez la configuration
         </span>
       </div>
     </div>

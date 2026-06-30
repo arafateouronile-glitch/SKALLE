@@ -41,6 +41,7 @@ import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
 
 const COST = CREDIT_COSTS.job_board_signals;
 
+export { SignalsRadarPage as SignalsRadarTab };
 export default function SignalsRadarPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
@@ -80,7 +81,7 @@ export default function SignalsRadarPage() {
           setSignals(res.signals);
           setIsMockData(!!res.isMockData);
           if (res.isMockData) {
-            toast.warning("Données de démonstration — configurez SERPAPI_API_KEY ou SERPER_API_KEY pour les vraies offres d'emploi.");
+            toast.error("Aucune API configurée — ces résultats sont fictifs et ne peuvent pas être importés dans le CRM.");
           } else {
             toast.success(`${res.signals.length} signal(ux) détecté(s).`);
           }
@@ -206,31 +207,35 @@ export default function SignalsRadarPage() {
                   <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                   {signals.length} signal{signals.length > 1 ? "aux" : ""} détecté{signals.length > 1 ? "s" : ""}
                 </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 rounded-xl px-2 text-xs text-gray-500 hover:bg-gray-100"
-                  onClick={toggleSelectAll}
-                >
-                  {selectedIds.size === signals.length ? (
-                    <><CheckSquare className="mr-1 h-3.5 w-3.5" />Tout désélectionner</>
-                  ) : (
-                    <><Square className="mr-1 h-3.5 w-3.5" />Tout sélectionner</>
-                  )}
-                </Button>
-                {selectedIds.size > 0 && (
-                  <Button
-                    size="sm"
-                    disabled={bulkImporting}
-                    onClick={handleLaunchCampaign}
-                    className="h-7 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500"
-                  >
-                    {bulkImporting ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <><Rocket className="mr-1 h-3 w-3" />Campagne ({selectedIds.size})</>
+                {!isMockData && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 rounded-xl px-2 text-xs text-gray-500 hover:bg-gray-100"
+                      onClick={toggleSelectAll}
+                    >
+                      {selectedIds.size === signals.length ? (
+                        <><CheckSquare className="mr-1 h-3.5 w-3.5" />Tout désélectionner</>
+                      ) : (
+                        <><Square className="mr-1 h-3.5 w-3.5" />Tout sélectionner</>
+                      )}
+                    </Button>
+                    {selectedIds.size > 0 && (
+                      <Button
+                        size="sm"
+                        disabled={bulkImporting}
+                        onClick={handleLaunchCampaign}
+                        className="h-7 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500"
+                      >
+                        {bulkImporting ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <><Rocket className="mr-1 h-3 w-3" />Campagne ({selectedIds.size})</>
+                        )}
+                      </Button>
                     )}
-                  </Button>
+                  </>
                 )}
               </div>
             )}
@@ -361,6 +366,7 @@ export default function SignalsRadarPage() {
                   adding={addingId === id}
                   selected={selectedIds.has(id)}
                   onToggleSelect={() => toggleSelect(id)}
+                  isDemo={isMockData}
                 />
               );
             })}
@@ -462,19 +468,20 @@ export default function SignalsRadarPage() {
               {/* CTA */}
               <div className="flex gap-2 pt-2 border-t border-gray-100">
                 <Button
-                  className="flex-1 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 font-semibold text-white shadow-sm hover:from-indigo-500 hover:to-violet-500"
+                  className="flex-1 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 font-semibold text-white shadow-sm hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 disabled:cursor-not-allowed"
                   onClick={() => {
                     handleAddToCrm(detailSignal);
                     setDetailSignal(null);
                   }}
-                  disabled={addingId === detailSignal.companyName + detailSignal.jobTitle}
+                  disabled={isMockData || addingId === detailSignal.companyName + detailSignal.jobTitle}
+                  title={isMockData ? "Données fictives — configurez une API pour importer" : undefined}
                 >
                   {addingId === detailSignal.companyName + detailSignal.jobTitle ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <UserPlus className="mr-2 h-4 w-4" />
                   )}
-                  Ajouter au CRM
+                  {isMockData ? "Données fictives" : "Ajouter au CRM"}
                 </Button>
                 <Button
                   variant="ghost"
@@ -502,6 +509,7 @@ function SignalCard({
   adding,
   selected,
   onToggleSelect,
+  isDemo = false,
 }: {
   signal: AnalyzedSignal;
   onView: () => void;
@@ -510,6 +518,7 @@ function SignalCard({
   adding: boolean;
   selected: boolean;
   onToggleSelect: () => void;
+  isDemo?: boolean;
 }) {
   const [removing, setRemoving] = useState(false);
   const initial = signal.companyName.slice(0, 2).toUpperCase();
@@ -533,18 +542,20 @@ function SignalCard({
     >
       {/* Header */}
       <div className="flex items-center gap-3 p-4 pb-3">
-        {/* Checkbox */}
-        <div
-          className="shrink-0"
-          onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-        >
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={onToggleSelect}
-            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30"
-          />
-        </div>
+        {/* Checkbox — masquée en mode démo */}
+        {!isDemo && (
+          <div
+            className="shrink-0"
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+          >
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30"
+            />
+          </div>
+        )}
         {/* Avatar */}
         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50">
           <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-indigo-600">
@@ -567,9 +578,15 @@ function SignalCard({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
-            Récent
-          </span>
+          {isDemo ? (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
+              DÉMO
+            </span>
+          ) : (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
+              Récent
+            </span>
+          )}
           <button
             className="flex h-6 w-6 items-center justify-center rounded-lg text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-500"
             onClick={(e) => {
@@ -608,19 +625,20 @@ function SignalCard({
       >
         <Button
           size="sm"
-          className="h-8 flex-1 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500"
+          className="h-8 flex-1 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 disabled:cursor-not-allowed"
           onClick={(e) => {
             e.preventDefault();
-            onAdd();
+            if (!isDemo) onAdd();
           }}
-          disabled={adding}
+          disabled={isDemo || adding}
+          title={isDemo ? "Données fictives — configurez une API pour importer" : undefined}
         >
           {adding ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <>
               <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-              Ajouter au CRM
+              {isDemo ? "Données fictives" : "Ajouter au CRM"}
             </>
           )}
         </Button>

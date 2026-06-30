@@ -22,7 +22,6 @@ import { CalendarLinkForm } from "@/components/modules/calendar-link-form";
 import { ProfileForm } from "@/components/modules/settings/profile-form";
 import { SignatureForm } from "@/components/modules/settings/signature-form";
 import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
-import { LinkedInAutomationSettings } from "@/components/modules/cso/linkedin-automation-settings";
 import { ChromeExtensionCard } from "@/components/modules/cso/chrome-extension-card";
 import { BrandVoiceCard } from "@/components/modules/cso/brand-voice-card";
 import { ApolloSettingsCard } from "@/components/modules/cso/apollo-settings-card";
@@ -216,11 +215,6 @@ export default async function SalesSettingsPage() {
           workspaceId={workspace.id}
           initial={workspace.signature ?? null}
         />
-      )}
-
-      {/* LinkedIn Automation */}
-      {workspace && (
-        <LinkedInAutomationSettings workspaceId={workspace.id} />
       )}
 
       {/* Extension Chrome */}

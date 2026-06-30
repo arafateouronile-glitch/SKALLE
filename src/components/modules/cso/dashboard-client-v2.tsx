@@ -242,7 +242,7 @@ export function CSODashboardClientV2({
                   {hotCount > 0 ? `Actionner les ${hotCount} HOT` : "Voir le pipeline"}
                   <ArrowUpRight className="h-4 w-4" />
                 </Link>
-                <Link href="/sales-os/hunt"
+                <Link href="/sales-os/discovery"
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all"
                   style={{ background: "var(--bg)", border: "1px solid var(--line-strong)", color: "var(--fg-dim)" }}>
                   Lancer un scan
@@ -360,7 +360,7 @@ export function CSODashboardClientV2({
                   </div>
                   <p className="text-sm font-medium mb-1" style={{ color: "var(--fg-dim)" }}>Aucun lead HOT</p>
                   <p className="text-xs mb-4" style={{ color: "var(--fg-mute)" }}>Lancez un scan Hunt pour trouver des prospects.</p>
-                  <Link href="/sales-os/hunt"
+                  <Link href="/sales-os/discovery"
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
                     style={{ background: C.violet }}>
                     <Search className="h-3.5 w-3.5" /> Lancer un scan
@@ -631,7 +631,7 @@ export function CSODashboardClientV2({
           <div className="grid grid-cols-2 lg:grid-cols-4"
             style={{ borderColor: "var(--line)" }}>
             {[
-              { title: "Hunt",      desc: "Trouver des leads",        href: "/sales-os/hunt",     icon: Search     },
+              { title: "Discovery",  desc: "Trouver des leads",        href: "/sales-os/discovery", icon: Search     },
               { title: "Séquence",  desc: "Lancer une campagne",      href: "/sales-os/outreach", icon: Zap        },
               { title: "Magic DM",  desc: "Message personnalisé IA",  href: "/sales-os/leads",    icon: Send       },
               { title: "Analytics", desc: "Insights pipeline",        href: "/sales-os/insights", icon: TrendingUp },
