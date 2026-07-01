@@ -110,20 +110,25 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, status: "PENDING" });
   }
 
-  const decision = await prisma.agentDecision.findFirst({
-    where: { id: decisionId, workspaceId, status: "PENDING" },
-  });
-  if (!decision) return NextResponse.json({ error: "Décision introuvable ou déjà traitée" }, { status: 404 });
-
+  // Pour "update", on accepte PENDING et APPROVED (correction d'URL avant exécution)
   if (action === "update") {
+    const editableDecision = await prisma.agentDecision.findFirst({
+      where: { id: decisionId, workspaceId, status: { in: ["PENDING", "APPROVED"] } },
+    });
+    if (!editableDecision) return NextResponse.json({ error: "Décision introuvable ou non modifiable" }, { status: 404 });
     const patch = body.patch ?? {};
-    const current = decision.actionData as Record<string, unknown> ?? {};
+    const current = editableDecision.actionData as Record<string, unknown> ?? {};
     await prisma.agentDecision.update({
       where: { id: decisionId },
       data: { actionData: { ...current, ...patch, _editedAt: new Date().toISOString() } },
     });
     return NextResponse.json({ ok: true });
   }
+
+  const decision = await prisma.agentDecision.findFirst({
+    where: { id: decisionId, workspaceId, status: "PENDING" },
+  });
+  if (!decision) return NextResponse.json({ error: "Décision introuvable ou déjà traitée" }, { status: 404 });
 
   if (action === "reject") {
     await prisma.agentDecision.update({

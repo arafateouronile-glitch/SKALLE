@@ -474,7 +474,7 @@ function DecisionCard({
                           <Linkedin className="h-3 w-3" />
                           {data.linkedInUrl as string}
                         </a>
-                        {isPending && (
+                        {(isPending || isApproved) && (
                           <button onClick={() => startEdit("linkedInUrl", data.linkedInUrl as string)} className="text-gray-400 hover:text-gray-600 transition-colors">
                             <Pencil className="h-3 w-3" />
                           </button>
