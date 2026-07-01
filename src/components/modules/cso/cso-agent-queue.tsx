@@ -447,15 +447,41 @@ function DecisionCard({
                   </p>
                 )}
                 {data.linkedInUrl && (
-                  <a
-                    href={data.linkedInUrl as string}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
-                  >
-                    <Linkedin className="h-3 w-3" />
-                    Voir le profil LinkedIn
-                  </a>
+                  <div className="flex items-center gap-2">
+                    {editingField === "linkedInUrl" ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={draftValue}
+                          onChange={(e) => setDraftValue(e.target.value)}
+                          className="flex-1 text-[11px] text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                          placeholder="https://www.linkedin.com/in/..."
+                        />
+                        <button onClick={cancelEdit} className="text-[11px] text-gray-400 hover:text-gray-600">Annuler</button>
+                        <button onClick={() => saveEdit("linkedInUrl")} disabled={isSaving} className="flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-800 font-medium disabled:opacity-50">
+                          {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <a
+                          href={data.linkedInUrl as string}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                        >
+                          <Linkedin className="h-3 w-3" />
+                          {data.linkedInUrl as string}
+                        </a>
+                        {isPending && (
+                          <button onClick={() => startEdit("linkedInUrl", data.linkedInUrl as string)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
               </>
             ) : preview ? (
