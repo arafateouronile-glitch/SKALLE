@@ -572,18 +572,25 @@ async function runAutomation(forceRun = false) {
 
   const result = await sendToContentScript(tab.id, { type: "SKALLE_EXECUTE", decision });
 
-  // Si le content script n'est pas injecté (onglet LinkedIn rechargé sans refresh
-  // de l'extension, ou tab pas encore prêt), ne pas marquer FAILED — réessayer
-  // au prochain cycle. L'utilisateur doit rafraîchir l'onglet LinkedIn.
-  if (!result?.ok && (
-    result?.error?.includes("Receiving end does not exist") ||
-    result?.error?.includes("Could not establish connection") ||
-    result?.error === "port_closed" ||
-    result?.error === "timeout"
-  )) {
-    await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
-    console.warn("[SKALLE] Content script non disponible — rafraîchissez l'onglet LinkedIn. Décision conservée en APPROVED.");
-    return;
+  // Erreurs non-fatales : laisser la décision en APPROVED sans marquer FAILED.
+  // L'utilisateur doit corriger puis relancer.
+  if (!result?.ok) {
+    const err = result?.error ?? "";
+    if (
+      err.includes("Receiving end does not exist") ||
+      err.includes("Could not establish connection") ||
+      err === "port_closed" ||
+      err === "timeout"
+    ) {
+      await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
+      console.warn("[SKALLE] Content script non disponible — rafraîchissez l'onglet LinkedIn. Décision conservée en APPROVED.");
+      return;
+    }
+    if (err.startsWith("profile_mismatch")) {
+      await setStatus(`idle:${count}/${effectiveLimit}`);
+      console.warn(`[SKALLE] ${err} — URL LinkedIn incorrecte dans la décision. Corrigez-la dans le queue agent.`);
+      return; // Ne pas marquer FAILED, ne pas incrémenter le compteur
+    }
   }
 
   // Vérifier si le content script a détecté un challenge ou rate-limit

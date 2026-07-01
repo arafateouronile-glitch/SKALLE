@@ -468,6 +468,22 @@ async function sendLinkedInMessage(entityUrn, messageText, csrf) {
 /**
  * Handler principal — exécute une décision CSO
  */
+// Vérifie que le nom du profil LinkedIn affiché dans le DOM correspond
+// au prospect attendu. Normalise accents + casse + ponctuation.
+// Retourne true si tous les tokens du nom attendu sont présents dans le nom DOM.
+function profileNameMatches(expectedName, domName) {
+  if (!expectedName || !domName) return true; // pas de donnée → pas de blocage
+  const norm = (s) => s
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // accents
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ").trim();
+  const exp = norm(expectedName);
+  const dom = norm(domName);
+  // Tous les tokens du nom attendu doivent apparaître dans le nom DOM
+  return exp.split(" ").every((tok) => dom.includes(tok));
+}
+
 async function executeDecision(decision) {
   const csrf = getCsrfToken();
   if (!csrf) return { ok: false, error: "no_csrf — non connecté à LinkedIn" };
@@ -479,6 +495,18 @@ async function executeDecision(decision) {
     const usernameMatch = linkedInUrl.match(/\/in\/([^/?#]+)/);
     if (!usernameMatch) return { ok: false, error: "invalid_linkedin_url" };
     const username = usernameMatch[1];
+
+    // ── Vérification DOM : s'assurer qu'on est sur le bon profil ──────────
+    // Le background.js navigue vers l'URL du prospect avant d'appeler SKALLE_EXECUTE,
+    // donc window.location.pathname doit matcher /in/${username}.
+    if (window.location.pathname.includes(`/in/${username}`)) {
+      const domName = document.querySelector("h1")?.textContent?.trim() ?? "";
+      const expectedName = (data.prospectName as string) ?? "";
+      if (!profileNameMatches(expectedName, domName)) {
+        console.warn(`[SKALLE] profile_mismatch: attendu "${expectedName}", trouvé "${domName}" — action annulée`);
+        return { ok: false, error: `profile_mismatch: attendu "${expectedName}", trouvé "${domName}"` };
+      }
+    }
 
     // Résoudre le profil (URN + distance)
     const profile = await resolveLinkedInProfile(username, csrf);
