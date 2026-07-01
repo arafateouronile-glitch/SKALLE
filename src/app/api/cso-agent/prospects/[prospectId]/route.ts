@@ -98,6 +98,7 @@ export async function PATCH(
     status?: string;
     notes?: string;
     temperature?: string;
+    linkedInUrl?: string;
   };
 
   const VALID_STATUSES = new Set([
@@ -121,6 +122,7 @@ export async function PATCH(
       ...(body.status ? { status: body.status as "NEW" | "CONTACTED" | "REPLIED" | "CONVERTED" | "REJECTED" | "RESEARCHED" | "MESSAGES_GENERATED" | "RESPONDED" | "MEETING_BOOKED" | "LOST" | "UNSUBSCRIBED" } : {}),
       ...(body.notes !== undefined ? { notes: body.notes } : {}),
       ...(body.temperature ? { temperature: body.temperature } : {}),
+      ...(body.linkedInUrl !== undefined ? { linkedInUrl: body.linkedInUrl } : {}),
       lastInteractionAt: new Date(),
     },
     select: { id: true, status: true, notes: true, temperature: true },

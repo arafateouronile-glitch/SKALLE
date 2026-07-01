@@ -7,7 +7,7 @@ import {
   ArrowLeft, Mail, Linkedin, MapPin, Building2, Briefcase,
   Flame, Zap, Snowflake, CheckCircle2, AlertCircle, Copy,
   Check, RefreshCw, Sparkles, MessageSquare, ExternalLink,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Pencil, Save, X,
 } from "lucide-react";
 import type { MessageType, MessageResult } from "@/app/api/cso-agent/prospects/[prospectId]/message/route";
 import { SequenceFlow } from "@/components/modules/cso/sequence-flow";
@@ -179,6 +179,9 @@ export default function ProspectDetailPage({
   const [savingNotes, setSavingNotes] = useState(false);
 
   const [showAllInteractions, setShowAllInteractions] = useState(false);
+  const [editingLinkedIn, setEditingLinkedIn] = useState(false);
+  const [linkedInDraft, setLinkedInDraft] = useState("");
+  const [savingLinkedIn, setSavingLinkedIn] = useState(false);
 
   useEffect(() => {
     fetch(`/api/cso-agent/prospects/${id}`)
@@ -221,6 +224,19 @@ export default function ProspectDetailPage({
       body: JSON.stringify({ notes }),
     }).catch(() => null);
     setSavingNotes(false);
+  }
+
+  async function handleSaveLinkedIn() {
+    if (!prospect) return;
+    setSavingLinkedIn(true);
+    await fetch(`/api/cso-agent/prospects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkedInUrl: linkedInDraft.trim() }),
+    }).catch(() => null);
+    setProspect((prev) => prev ? { ...prev, linkedInUrl: linkedInDraft.trim() } : prev);
+    setEditingLinkedIn(false);
+    setSavingLinkedIn(false);
   }
 
   async function handleStatusChange(status: string) {
@@ -338,13 +354,43 @@ export default function ProspectDetailPage({
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2 pt-1">
-                <a href={prospect.linkedInUrl} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-[8px] transition-all hover:brightness-110"
-                  style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)", color: "var(--violet-fg)" }}>
-                  <Linkedin className="h-3.5 w-3.5" /> LinkedIn
-                  <ExternalLink className="h-2.5 w-2.5 opacity-60" />
-                </a>
+              <div className="flex items-center gap-2 pt-1 flex-wrap">
+                {editingLinkedIn ? (
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={linkedInDraft}
+                      onChange={(e) => setLinkedInDraft(e.target.value)}
+                      placeholder="https://www.linkedin.com/in/..."
+                      className="flex-1 text-[12px] border border-gray-200 rounded-[8px] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-violet-400 bg-white"
+                    />
+                    <button onClick={handleSaveLinkedIn} disabled={savingLinkedIn}
+                      className="flex items-center gap-1 text-[12px] font-semibold px-3 py-2 rounded-[8px] text-white disabled:opacity-50"
+                      style={{ background: "var(--violet-fg)" }}>
+                      {savingLinkedIn ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      OK
+                    </button>
+                    <button onClick={() => setEditingLinkedIn(false)} className="p-2 text-gray-400 hover:text-gray-600">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <a href={prospect.linkedInUrl} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-[8px] transition-all hover:brightness-110"
+                      style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)", color: "var(--violet-fg)" }}>
+                      <Linkedin className="h-3.5 w-3.5" /> LinkedIn
+                      <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                    </a>
+                    <button
+                      onClick={() => { setLinkedInDraft(prospect.linkedInUrl ?? ""); setEditingLinkedIn(true); }}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
+                      title="Corriger l'URL LinkedIn"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
                 {prospect.email && (
                   <a href={`mailto:${prospect.email}`}
                     className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-2 rounded-[8px] transition-all hover:brightness-95"
