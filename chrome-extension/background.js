@@ -554,6 +554,22 @@ async function runAutomation(forceRun = false) {
 
   // ── 1 action par cycle (l'alarme 30 min gère la suivante) ─────────────────
   const decision = decisions[0];
+  const linkedInUrl = decision.actionData?.linkedInUrl;
+
+  // Naviguer vers le profil du prospect AVANT d'envoyer SKALLE_EXECUTE.
+  // Ça garantit que le content script est sur la bonne page et peut cliquer
+  // le bouton "Se connecter" en DOM natif (sans Voyager API → profile_not_found).
+  if (decision.actionType === "CSO_LAUNCH_LINKEDIN" && linkedInUrl) {
+    try {
+      await chrome.tabs.update(tab.id, { url: linkedInUrl });
+      await waitForTabLoad(tab.id, 12_000);
+      // Laisser React/LinkedIn hydrate la page
+      await new Promise((r) => setTimeout(r, 1800));
+    } catch (e) {
+      console.warn("[SKALLE] Impossible de naviguer vers le profil:", e);
+    }
+  }
+
   const result = await sendToContentScript(tab.id, { type: "SKALLE_EXECUTE", decision });
 
   // Si le content script n'est pas injecté (onglet LinkedIn rechargé sans refresh
