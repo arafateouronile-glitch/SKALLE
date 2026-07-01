@@ -410,7 +410,8 @@ export async function generateCsoDecisions(
           `Confiance research: ${r.confidence}`,
         ].filter(Boolean).join(" | ")
       : "Pas de signal fort détecté";
-    return `- ${p.name} | ${p.company} | ${p.jobTitle ?? "N/A"} | Score: ${p.score} | Email: ${p.hasEmail ? "✓" : "✗"} | LinkedIn: ${p.hasLinkedIn ? "✓" : "✗"} | SIGNALS: [${signals}] | id: ${p.id}`;
+    const liUrl = p.linkedInUrl ? `linkedInUrl: ${p.linkedInUrl}` : "LinkedIn: ✗";
+    return `- ${p.name} | ${p.company} | ${p.jobTitle ?? "N/A"} | Score: ${p.score} | Email: ${p.hasEmail ? "✓" : "✗"} | ${liUrl} | SIGNALS: [${signals}] | id: ${p.id}`;
   });
 
   const humanPrompt = `
@@ -509,6 +510,11 @@ Génère les décisions. Les messages seront personnalisés séparément.
         linkedInUrl: "linkedInUrl" in prospectData ? prospectData.linkedInUrl : undefined,
       };
 
+      // Garantir que linkedInUrl vient toujours de la DB, jamais de Claude.
+      // Claude peut halluciner des URLs plausibles (mathieu-dias au lieu de
+      // mathieu-dias-6482b0296). La valeur DB est la seule source de vérité.
+      const dbLinkedInUrl = "linkedInUrl" in prospectData ? (prospectData.linkedInUrl ?? undefined) : undefined;
+
       try {
         if (d.actionType === "CSO_LAUNCH_LINKEDIN") {
           const [msg, followup] = await Promise.all([
@@ -520,6 +526,7 @@ Génère les décisions. Les messages seront personnalisés séparément.
             ...d,
             actionData: {
               ...d.actionData,
+              ...(dbLinkedInUrl ? { linkedInUrl: dbLinkedInUrl } : {}),
               postConnectionMessage: msg.content + sig,
               followupMessage: followup.content + sig,
               _angle: msg.angle,
