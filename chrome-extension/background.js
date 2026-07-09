@@ -413,22 +413,279 @@ async function openProfileTab(url) {
   });
 }
 
+// Retourne un onglet LinkedIn utilisable — existant ou ouvert silencieusement en arrière-plan.
+// Élimine l'état "waiting_linkedin" quand l'utilisateur n'a pas LinkedIn ouvert.
+async function getOrOpenLinkedInTab() {
+  // 1. Priorité à un onglet déjà ouvert par l'utilisateur
+  const existing = await findLinkedInTab();
+  if (existing) return existing;
+
+  // 2. Réutiliser l'onglet background persisté s'il est encore vivant
+  const stored = await new Promise((resolve) =>
+    chrome.storage.local.get(["bgLinkedInTabId"], (r) => resolve(r.bgLinkedInTabId ?? null))
+  );
+  if (stored) {
+    try {
+      const tab = await chrome.tabs.get(stored);
+      if (tab && !tab.url?.includes("/login")) {
+        console.log(`[SKALLE] Onglet background LinkedIn réutilisé (id=${stored})`);
+        return tab;
+      }
+    } catch { /* tab supprimé entre-temps */ }
+    await chrome.storage.local.remove(["bgLinkedInTabId"]);
+  }
+
+  // 3. Ouvrir un nouvel onglet silencieux (active: false → invisible pour l'utilisateur)
+  console.log("[SKALLE] Aucun onglet LinkedIn — ouverture silencieuse en arrière-plan…");
+  const tab = await new Promise((resolve) =>
+    chrome.tabs.create({ url: "https://www.linkedin.com/feed/", active: false }, resolve)
+  );
+  await chrome.storage.local.set({ bgLinkedInTabId: tab.id });
+  await waitForTabLoad(tab.id, 15_000);
+  await new Promise((r) => setTimeout(r, 2_000)); // laisser React hydrater + content script s'injecter
+  await pingUntilReady(tab.id, null, 5, 800);
+
+  console.log(`[SKALLE] Onglet background LinkedIn prêt (id=${tab.id})`);
+  return tab;
+}
+
+// Purger le tabId persisté si l'onglet est fermé manuellement
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.local.get(["bgLinkedInTabId"], (r) => {
+    if (r.bgLinkedInTabId === tabId) chrome.storage.local.remove(["bgLinkedInTabId"]);
+  });
+});
+
 // Attend que l'onglet soit chargé (status "complete") avec un timeout de sécurité.
 async function waitForTabLoad(tabId, timeoutMs = 8_000) {
   return new Promise((resolve) => {
     let settled = false;
-    const done = () => {
+    const done = (via) => {
       if (settled) return;
       settled = true;
       chrome.tabs.onUpdated.removeListener(listener);
+      console.log(`[SKALLE] waitForTabLoad: ${via}`);
       resolve();
     };
     const listener = (updatedTabId, info) => {
-      if (updatedTabId === tabId && info.status === "complete") done();
+      if (updatedTabId === tabId && info.status === "complete") done("complete event");
     };
     chrome.tabs.onUpdated.addListener(listener);
-    setTimeout(done, timeoutMs);
+    setTimeout(() => done(`timeout ${timeoutMs}ms`), timeoutMs);
   });
+}
+
+const getPath = (u) => {
+  try { return new URL(u).pathname.replace(/\/$/, "").toLowerCase(); }
+  catch { return (u ?? "").toLowerCase(); }
+};
+
+// Ping le content script jusqu'à ce qu'il réponde sur la bonne URL.
+// Compare le pathname uniquement (ignore www/fr subdomain + trailing slash).
+async function pingUntilReady(tabId, expectedUrl = null, maxAttempts = 6, delayMs = 800) {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, delayMs));
+    const result = await sendToContentScript(tabId, { type: "SKALLE_PING" }, 2000);
+    if (!result?.ok) {
+      console.log(`[SKALLE] Ping ${i + 1}/${maxAttempts} — pas prêt (${result?.error ?? "unknown"})`);
+      continue;
+    }
+    if (expectedUrl && getPath(result.url) !== getPath(expectedUrl)) {
+      console.log(`[SKALLE] Ping ok — URL: ${result.url} (attendu: ${getPath(expectedUrl)}) — attente navigation`);
+      continue;
+    }
+    console.log(`[SKALLE] Content script prêt (tentative ${i + 1}) v${result.v ?? "?"} — ${result.url}`);
+    return true;
+  }
+  return false;
+}
+
+// Navigue vers un profil LinkedIn et attend que le content script soit prêt.
+// Stratégie : waitForTabLoad → ping (6×) → injection forcée via scripting API → ping (3×).
+async function navigateAndWaitReady(tabId, url) {
+  console.log(`[SKALLE] Navigation tab ${tabId} → ${url}`);
+  await chrome.tabs.update(tabId, { url });
+  await waitForTabLoad(tabId, 15_000);
+
+  // Diagnostic : URL réelle du tab après navigation
+  const tabInfo = await chrome.tabs.get(tabId).catch(() => null);
+  console.log(`[SKALLE] Tab post-nav: url=${tabInfo?.url} status=${tabInfo?.status}`);
+
+  // Courte pause pour laisser React hydrater
+  await new Promise((r) => setTimeout(r, 1500));
+
+  // Test MAIN world : page accessible ?
+  try {
+    const testMain = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => ({ url: window.location.href, readyState: document.readyState }),
+    });
+    console.log("[SKALLE] MAIN world:", JSON.stringify(testMain[0]?.result));
+  } catch (e) {
+    console.warn("[SKALLE] MAIN world inaccessible:", e?.message);
+  }
+
+  // Test ISOLATED world : content script présent ?
+  try {
+    const testIso = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "ISOLATED",
+      func: () => ({
+        runtimeId: chrome.runtime?.id ?? "ABSENT",
+        registered: typeof window._skalleListenerRegistered !== "undefined",
+      }),
+    });
+    console.log("[SKALLE] ISOLATED world:", JSON.stringify(testIso[0]?.result));
+  } catch (e) {
+    console.warn("[SKALLE] ISOLATED world inaccessible:", e?.message);
+  }
+
+  // Tentative 1 : ping normal (content script auto-injecté par Chrome)
+  if (await pingUntilReady(tabId, url, 6, 800)) return true;
+
+  // Tentative 2 : injection forcée (fallback si Chrome a raté l'auto-injection)
+  console.log("[SKALLE] Pings échoués — injection forcée via scripting API…");
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["linkedin-content.js"] });
+    await new Promise((r) => setTimeout(r, 800));
+  } catch (e) {
+    console.warn("[SKALLE] scripting.executeScript échoué:", e?.message);
+    return false;
+  }
+  return pingUntilReady(tabId, url, 3, 600);
+}
+
+// ── Fallback MAIN world : clic via React props (contourne isTrusted) ────────────
+async function connectViaMainWorld(tabId) {
+  let res;
+  try {
+    [res] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: async () => {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const logs = [];
+        const log = (...a) => logs.push(a.map((x) => (typeof x === "object" ? JSON.stringify(x) : String(x))).join(" "));
+
+        // Appel React onClick directement (bypass isTrusted)
+        const getReactOnClick = (el) => {
+          const k = Object.keys(el).find((k) => k.startsWith("__reactProps"));
+          return k ? el[k]?.onClick : null;
+        };
+        const fireClick = (el) => {
+          const handler = getReactOnClick(el);
+          if (handler) {
+            log("react props click:", el.tagName, el.getAttribute("aria-label")?.slice(0, 40) ?? el.textContent.trim().slice(0, 30));
+            handler({ type: "click", bubbles: true, preventDefault: () => {}, stopPropagation: () => {}, nativeEvent: { type: "click", isTrusted: true }, persist: () => {} });
+            return "react";
+          }
+          log("native click:", el.tagName, el.getAttribute("aria-label")?.slice(0, 40) ?? el.textContent.trim().slice(0, 30));
+          el.click();
+          return "native";
+        };
+        const isVis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        const isInvite = (el) => {
+          const a = (el.getAttribute("aria-label") ?? "").toLowerCase();
+          const t = el.textContent.trim().toLowerCase();
+          return a.includes("inviter") || a.includes("se connecter") || t === "se connecter" || t === "connect";
+        };
+
+        // Étape 1 : bouton Se connecter direct ?
+        let connectBtn = [...document.querySelectorAll("button")].find(
+          (b) => !b.disabled && isVis(b) && (b.getAttribute("aria-label") ?? "").toLowerCase().includes("se connecter")
+        );
+        log("bouton direct:", connectBtn ? "oui" : "non");
+
+        // Étape 1b : vérifier si un menu est déjà ouvert (dropdown laissé ouvert par content script)
+        if (!connectBtn) {
+          const openMenu = document.querySelector('[role="menu"], .artdeco-dropdown__content--opened');
+          if (openMenu) {
+            connectBtn = [...openMenu.querySelectorAll("a, button, [role='menuitem'], li")]
+              .find((el) => isInvite(el) && isVis(el));
+            log("menu déjà ouvert — connectBtn:", connectBtn ? (connectBtn.getAttribute("aria-label") ?? connectBtn.textContent.trim().slice(0, 40)) : "null");
+          }
+        }
+
+        // Étape 2 : passer par le dropdown Plus
+        if (!connectBtn) {
+          // Debug : lister tous les boutons visibles
+          const allBtns = [...document.querySelectorAll("button")].filter(isVis);
+          log("boutons visibles:", JSON.stringify(allBtns.slice(0, 15).map(b => ({ a: b.getAttribute("aria-label"), t: b.textContent.trim().slice(0, 20) }))));
+
+          const plusBtn = allBtns.find((b) => {
+            if (b.disabled) return false;
+            const a = (b.getAttribute("aria-label") ?? "").toLowerCase();
+            return a === "plus" || a === "plus d'options" || a.includes("actions") || a.includes("more options");
+          }) ?? allBtns.find(b => !b.disabled && b.textContent.trim().toLowerCase() === "plus");
+
+          log("plusBtn:", plusBtn ? (plusBtn.getAttribute("aria-label") ?? plusBtn.textContent.trim()) : "non trouvé", "| expanded:", plusBtn?.getAttribute("aria-expanded"));
+
+          if (!plusBtn) return { ok: false, reason: "no_plus", logs };
+
+          // Ouvrir le dropdown
+          fireClick(plusBtn);
+          await sleep(1500);
+          log("aria-expanded après click:", plusBtn.getAttribute("aria-expanded"));
+
+          // Chercher dans le menu ouvert via [role="menu"] dans tout le DOM
+          const openMenu2 = document.querySelector('[role="menu"], .artdeco-dropdown__content--opened');
+          if (openMenu2) {
+            connectBtn = [...openMenu2.querySelectorAll("a, button, [role='menuitem'], li")]
+              .find((el) => isInvite(el) && isVis(el));
+            log("connectBtn dans openMenu2:", connectBtn ? (connectBtn.getAttribute("aria-label") ?? connectBtn.textContent.trim().slice(0, 40)) : "null");
+          }
+
+          if (!connectBtn) {
+            // Fallback : chercher depuis parent du plusBtn
+            const plusParent = plusBtn.closest('[class*="dropdown"], [class*="overflow"]') ?? plusBtn.parentElement;
+            connectBtn = plusParent
+              ? [...plusParent.querySelectorAll("a, button, [role='menuitem']")].find(el => el !== plusBtn && isInvite(el) && isVis(el))
+              : null;
+            log("connectBtn (parent fallback):", connectBtn ? (connectBtn.getAttribute("aria-label") ?? connectBtn.textContent.trim().slice(0, 40)) : "null");
+          }
+
+          if (!connectBtn) return { ok: false, reason: "dropdown_no_connect", expanded: plusBtn.getAttribute("aria-expanded"), logs };
+        }
+
+        // Étape 3 : cliquer Se connecter
+        fireClick(connectBtn);
+
+        // Étape 4 : attendre "Envoyer sans note"
+        const sendBtn = await new Promise((resolve) => {
+          const find = () =>
+            [...document.querySelectorAll("button, [role='button']")].find((b) => {
+              if (b.disabled) return false;
+              const t = (b.textContent ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+              return t.includes("sans") || t.includes("without") || t === "envoyer" || t === "send";
+            });
+          const f = find();
+          if (f) { log("sendBtn immédiat"); return resolve(f); }
+          const obs = new MutationObserver(() => {
+            const ff = find();
+            if (ff) { obs.disconnect(); clearTimeout(timer); log("sendBtn via observer"); resolve(ff); }
+          });
+          obs.observe(document.body, { childList: true, subtree: true });
+          const timer = setTimeout(() => {
+            obs.disconnect();
+            log("sendBtn timeout — btns:", [...document.querySelectorAll("button")].slice(0, 10).map((b) => b.textContent.trim().slice(0, 20)));
+            resolve(null);
+          }, 8000);
+        });
+
+        if (!sendBtn) return { ok: false, reason: "no_send_btn", logs };
+
+        fireClick(sendBtn);
+        log("sendBtn cliqué !");
+        return { ok: true, logs };
+      },
+    });
+  } catch (e) {
+    console.warn("[SKALLE] connectViaMainWorld error:", e?.message);
+    return { ok: false, reason: "executeScript_error", error: e?.message };
+  }
+  const r = res?.result ?? { ok: false, reason: "no_result" };
+  if (r.logs?.length) console.log("[SKALLE] MAIN world logs:", r.logs.join(" | "));
+  return r;
 }
 
 async function sendToContentScript(tabId, message, timeoutMs = 15_000) {
@@ -533,8 +790,11 @@ async function runAutomation(forceRun = false) {
   const effectiveLimit = await getEffectiveDailyLimit(config.dailyLimit);
   const count = await getTodayCount();
   if (count >= effectiveLimit) {
-    await setStatus(`limit_reached:${count}/${effectiveLimit}`);
-    return;
+    if (!forceRun) {
+      await setStatus(`limit_reached:${count}/${effectiveLimit}`);
+      return;
+    }
+    console.log(`[SKALLE] Limite atteinte (${count}/${effectiveLimit}) mais forceRun — on continue`);
   }
 
   await setStatus("running");
@@ -545,32 +805,53 @@ async function runAutomation(forceRun = false) {
     return;
   }
 
-  const tab = await findLinkedInTab();
-  if (!tab) {
-    await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
-    console.log("[SKALLE] → waiting_linkedin");
-    return;
-  }
+  const tab = await getOrOpenLinkedInTab();
 
   // ── 1 action par cycle (l'alarme 30 min gère la suivante) ─────────────────
   const decision = decisions[0];
   const linkedInUrl = decision.actionData?.linkedInUrl;
 
   // Naviguer vers le profil du prospect AVANT d'envoyer SKALLE_EXECUTE.
-  // Ça garantit que le content script est sur la bonne page et peut cliquer
-  // le bouton "Se connecter" en DOM natif (sans Voyager API → profile_not_found).
+  // Ça garantit que le content script est sur la bonne page (resolveLinkedInProfile
+  // utilise le contexte de la page pour les appels Voyager).
   if (decision.actionType === "CSO_LAUNCH_LINKEDIN" && linkedInUrl) {
     try {
-      await chrome.tabs.update(tab.id, { url: linkedInUrl });
-      await waitForTabLoad(tab.id, 12_000);
-      // Laisser React/LinkedIn hydrate la page
-      await new Promise((r) => setTimeout(r, 1800));
+      const ready = await navigateAndWaitReady(tab.id, linkedInUrl);
+      if (!ready) {
+        await setStatus(`waiting_linkedin:${count}/${effectiveLimit}`);
+        console.warn("[SKALLE] Content script non disponible — rafraîchissez l'onglet LinkedIn manuellement.");
+        return;
+      }
     } catch (e) {
-      console.warn("[SKALLE] Impossible de naviguer vers le profil:", e);
+      console.warn("[SKALLE] Erreur de navigation:", e);
     }
   }
 
-  const result = await sendToContentScript(tab.id, { type: "SKALLE_EXECUTE", decision });
+  // Debug temporaire : lister les boutons visibles sur la page
+  try {
+    const btns = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const els = Array.from(document.querySelectorAll('button, [role="button"], a[href]'));
+        const connect = els.filter((el) => {
+          const aria = (el.getAttribute("aria-label") ?? "").toLowerCase();
+          const text = el.textContent.trim().toLowerCase();
+          return aria.includes("connecter") || aria.includes("connect") || aria.includes("inviter")
+            || text.startsWith("se connecter") || text === "connect" || text.startsWith("inviter");
+        }).map((el) => ({ tag: el.tagName, a: el.getAttribute("aria-label"), t: el.textContent.trim().slice(0, 50) }));
+        const all = Array.from(document.querySelectorAll("button")).slice(0, 20).map((b) => ({
+          a: b.getAttribute("aria-label"), t: b.textContent.trim().slice(0, 40), d: b.disabled,
+        }));
+        return { connect, all };
+      },
+    });
+    const scanResult = btns[0]?.result ?? {};
+    console.log("[SKALLE] Boutons Se connecter:", JSON.stringify(scanResult.connect));
+    console.log("[SKALLE] Boutons page (20):", JSON.stringify(scanResult.all));
+  } catch {}
+
+  let result = await sendToContentScript(tab.id, { type: "SKALLE_EXECUTE", decision }, 30_000);
+  console.log(`[SKALLE] EXECUTE result: ${JSON.stringify(result)}`);
 
   // Erreurs non-fatales : laisser la décision en APPROVED sans marquer FAILED.
   // L'utilisateur doit corriger puis relancer.
@@ -613,8 +894,7 @@ async function checkReplies() {
   const config = await getConfig();
   if (!config.skalleToken) return;
 
-  const tab = await findLinkedInTab();
-  if (!tab) return;
+  const tab = await getOrOpenLinkedInTab();
 
   // Récupérer les prospects CONTACTED depuis le backend
   let prospects = [];
@@ -667,8 +947,7 @@ async function checkFollowups() {
   const config = await getConfig();
   if (!config.skalleToken) return;
 
-  const tab = await findLinkedInTab();
-  if (!tab) return;
+  const tab = await getOrOpenLinkedInTab();
 
   // Récupérer les prospects éligibles à une relance
   let prospects = [];
@@ -770,12 +1049,7 @@ async function runAutonomousSearch() {
 
   if (!searchData?.queries?.length) return;
 
-  // Trouver un onglet LinkedIn ouvert — ne jamais en créer un
-  const tab = await findLinkedInTab();
-  if (!tab) {
-    await setStatus(`autonomous_waiting_linkedin:${count}/${effectiveLimit}`);
-    return;
-  }
+  const tab = await getOrOpenLinkedInTab();
 
   const remaining = effectiveLimit - count;
   const maxThisCycle = Math.min(1, remaining); // 1 profil/cycle — le reste attend le prochain alarm
@@ -870,8 +1144,7 @@ async function importWarmLeads() {
   if (!config.skalleToken) return;
   if (!isWorkingDay()) return;
 
-  const tab = await findLinkedInTab();
-  if (!tab) return;
+  const tab = await getOrOpenLinkedInTab();
 
   console.log("[SKALLE] Import warm leads : viewers + followers…");
 
@@ -935,8 +1208,7 @@ async function checkAcceptedConnections() {
   const config = await getConfig();
   if (!config.skalleToken) return;
 
-  const tab = await findLinkedInTab();
-  if (!tab) return;
+  const tab = await getOrOpenLinkedInTab();
 
   // Récupérer les invitations en attente depuis le backend
   let pending = [];
@@ -1041,6 +1313,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // Manual trigger from popup
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "SKALLE_CS_LOG") {
+    console.log(msg.msg);
+    return; // pas de sendResponse nécessaire
+  }
   if (msg.type === "SKALLE_RUN_NOW") {
     runAutonomousSearch()
       .then(() => runAutomation(true)) // forceRun=true : bypass cooldown + heures

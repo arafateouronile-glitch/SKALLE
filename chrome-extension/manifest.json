@@ -1,9 +1,17 @@
 {
   "manifest_version": 3,
   "name": "SKALLE - LinkedIn Enricher",
-  "version": "1.6.3",
-  "description": "Enrichit vos prospects LinkedIn et automatise l'outreach CSO (connexions + messages) en toute sécurité.",
-  "permissions": ["storage", "activeTab", "alarms", "cookies", "tabs", "notifications"],
+  "version": "2.0.6",
+  "description": "Enrichit vos prospects LinkedIn et automatise l'outreach CSO (connexions + messages) en toute s\u00e9curit\u00e9.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "alarms",
+    "cookies",
+    "tabs",
+    "notifications",
+    "scripting"
+  ],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://fr.linkedin.com/*",
@@ -27,15 +35,22 @@
         "https://www.linkedin.com/*",
         "https://fr.linkedin.com/*"
       ],
-      "js": ["linkedin-content.js"],
+      "js": [
+        "linkedin-content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["linkedin-inject.js"],
-      "matches": ["https://www.linkedin.com/*", "https://fr.linkedin.com/*"]
+      "resources": [
+        "linkedin-inject.js"
+      ],
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://fr.linkedin.com/*"
+      ]
     }
   ],
   "icons": {

@@ -50,6 +50,13 @@ function getToken() {
   });
 }
 
+// ── Log relay vers background.js (visible dans l'extension DevTools) ─────────
+function csLog(...args) {
+  const msg = args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+  console.log("[SKALLE-CS]", msg);
+  try { chrome.runtime.sendMessage({ type: "SKALLE_CS_LOG", msg: "[CS] " + msg }); } catch (_) {}
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -299,18 +306,47 @@ if (document.readyState === "loading") {
  */
 async function resolveLinkedInProfile(username, csrf) {
   try {
+    // Essai 1 : API dash/profiles (format actuel LinkedIn)
     const res = await fetch(
+      `/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${username}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.ProfileEntityUrn-1`,
+      { headers: { ...voyagerHeaders(csrf), accept: "application/vnd.linkedin.normalized+json+2.1" }, credentials: "include" }
+    );
+    csLog("resolveLinkedInProfile HTTP:", res.status, username);
+    if (res.ok) {
+      const json = await res.json();
+      // LinkedIn renvoie un wrapper CollectionResponse — chercher urn:li:fsd_profile: récursivement
+      const findFsdUrn = (o, depth) => {
+        if (depth > 6) return null;
+        if (typeof o === "string") return o.startsWith("urn:li:fsd_profile:") ? o : null;
+        if (!o || typeof o !== "object") return null;
+        if (Array.isArray(o)) { for (const v of o) { const r = findFsdUrn(v, depth + 1); if (r) return r; } return null; }
+        if (typeof o.entityUrn === "string" && o.entityUrn.startsWith("urn:li:fsd_profile:")) return o.entityUrn;
+        for (const v of Object.values(o)) { const r = findFsdUrn(v, depth + 1); if (r) return r; }
+        return null;
+      };
+      const entityUrn = findFsdUrn(json, 0);
+      const el = json?.elements?.[0] ?? json?.data ?? json ?? {};
+      const distance = el.distance?.value ?? el.connectionDistance ?? "DISTANCE_2";
+      csLog("resolveLinkedInProfile entityUrn:", entityUrn, "distance:", distance);
+      if (entityUrn) return { entityUrn, distance, firstName: el.firstName ?? "" };
+    }
+
+    // Essai 2 : ancien endpoint
+    const res2 = await fetch(
       `/voyager/api/identity/profiles/${username}`,
       { headers: voyagerHeaders(csrf), credentials: "include" }
     );
-    if (!res.ok) return null;
-    const data = await res.json();
+    csLog("resolveLinkedInProfile (legacy) HTTP:", res2.status);
+    if (!res2.ok) return null;
+    const data = await res2.json();
+    csLog("resolveLinkedInProfile (legacy) entityUrn:", data.entityUrn);
     return {
       entityUrn: data.entityUrn ?? null,
       distance: data.distance?.value ?? "DISTANCE_2",
       firstName: data.firstName ?? "",
     };
-  } catch {
+  } catch (e) {
+    console.warn("[SKALLE] Voyager erreur:", e?.message);
     return null;
   }
 }
@@ -331,17 +367,41 @@ function waitForElement(selector, timeoutMs = 3000) {
 }
 
 function findConnectButton() {
-  // Aria-label = le sélecteur le plus stable (pas dépendant des class names)
-  const byAria = document.querySelector(
-    'button[aria-label*="Se connecter avec"], button[aria-label*="Connect with"]'
+  // Priorité 1 : <button> avec aria-label explicite — exclut les <a> "People Also Viewed"
+  // qui naviguent en SPA au lieu d'ouvrir la modal de connexion
+  const byAriaBtn = document.querySelector(
+    'button[aria-label*="Se connecter"], button[aria-label*="Connect with"], button[aria-label*="Inviter"], button[aria-label*="connecter"]'
   );
-  if (byAria && !byAria.disabled) return byAria;
+  if (byAriaBtn && !byAriaBtn.disabled) return byAriaBtn;
 
-  // Texte exact du bouton (fallback si aria-label absent)
-  return Array.from(document.querySelectorAll("button")).find((b) => {
-    const text = b.textContent.trim();
-    return (text === "Se connecter" || text === "Connect") && !b.disabled;
-  }) ?? null;
+  // Priorité 2 : [role="button"] avec aria-label (div/span stylé en bouton)
+  const byAriaRole = document.querySelector(
+    '[role="button"][aria-label*="Se connecter"], [role="button"][aria-label*="Connect with"], [role="button"][aria-label*="Inviter"]'
+  );
+  if (byAriaRole) return byAriaRole;
+
+  // Priorité 3 : <button> par texte (pas de <a> — ils naviguent, pas de modal)
+  const byText = Array.from(document.querySelectorAll('button, [role="button"]')).find((el) => {
+    if (el.disabled) return false;
+    const text = el.textContent.trim().toLowerCase();
+    return text === "se connecter" || text === "connect" || text === "inviter";
+  });
+  if (byText) return byText;
+  return null;
+}
+
+// Attend que le bouton "Se connecter" apparaisse (LinkedIn hydrate en différé)
+function waitForConnectButton(timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    const found = findConnectButton();
+    if (found) return resolve(found);
+    const obs = new MutationObserver(() => {
+      const btn = findConnectButton();
+      if (btn) { obs.disconnect(); clearTimeout(timer); resolve(btn); }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+    const timer = setTimeout(() => { obs.disconnect(); resolve(null); }, timeoutMs);
+  });
 }
 
 /**
@@ -349,98 +409,306 @@ function findConnectButton() {
  * LinkedIn génère lui-même la requête normInvitations → headers natifs + timing naturel.
  */
 async function sendConnectionRequestDOM(connectNote) {
-  const btn = findConnectButton();
-  if (!btn) return { ok: false, reason: "button_not_found" };
+  // Attendre que le bouton apparaisse (LinkedIn hydrate en différé, max 5s)
+  // Cherche uniquement button/<[role=button]> — les <a> sont des pré-rendus cachés qui ne déclenchent pas le modal
+  let btn = await waitForConnectButton(5000);
 
-  btn.click();
+  // Mode "Follow" : Se connecter est dans le dropdown "Plus"
+  if (!btn) {
+    const allBtns = Array.from(document.querySelectorAll("button"));
+    const isVisible = (b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    // IMPORTANT : on cible UNIQUEMENT le bouton VISIBLE — il peut exister plusieurs boutons
+    // aria-label="Plus" sur la page (dont des pré-rendus display:none avec bottom=0).
+    const plusBtn =
+      allBtns.find((b) => {
+        if (b.disabled || !isVisible(b)) return false;
+        const aria = (b.getAttribute("aria-label") ?? "").trim().toLowerCase();
+        return aria === "plus" || aria === "plus d'options";
+      }) ??
+      allBtns.find((b) => {
+        if (b.disabled || !isVisible(b)) return false;
+        const text = b.textContent.trim().toLowerCase();
+        return text === "plus";
+      });
+    csLog("plusBtn:", plusBtn ? (plusBtn.getAttribute("aria-label") ?? plusBtn.textContent.trim()) : "non trouvé",
+          "| visible:", plusBtn ? isVisible(plusBtn) : false,
+          "| bottom:", plusBtn ? Math.round(plusBtn.getBoundingClientRect().bottom) : 0);
 
-  const modal = await waitForElement('[role="dialog"]', 3000);
-  if (!modal) return { ok: false, reason: "modal_timeout" };
+    if (plusBtn) {
+      const isInviteEl = (el) => {
+        const a = (el.getAttribute("aria-label") ?? "").toLowerCase();
+        const t = el.textContent.trim().toLowerCase();
+        // includes() au lieu de === pour attraper les <li> avec textContent composite (texte + SVG + espace)
+        return a.includes("inviter") || a.includes("se connecter") || a.includes("connect") ||
+               t.includes("se connecter") || t === "connect" || t.includes("connect with");
+      };
 
-  if (connectNote?.trim()) {
-    const addNoteBtn =
-      modal.querySelector('button[aria-label*="note" i]') ??
-      Array.from(modal.querySelectorAll("button")).find((b) =>
-        b.textContent.trim().toLowerCase().includes("note")
+      // Snapshot AVANT ouverture — position du Plus + quels éléments sont déjà interactifs
+      const plusRect = plusBtn.getBoundingClientRect();
+      const inviteSelectors = "a, button, [role='menuitem'], .artdeco-dropdown__item, li button, li a";
+      const wasInteractable = new Set(
+        Array.from(document.querySelectorAll(inviteSelectors))
+          .filter(el => isInviteEl(el) && window.getComputedStyle(el).pointerEvents !== "none")
       );
+      csLog("plusBtn bottom:", Math.round(plusRect.bottom), "| déjà interactifs:", wasInteractable.size);
 
-    if (addNoteBtn) {
-      addNoteBtn.click();
-      await new Promise((r) => setTimeout(r, 600));
+      // v2.0.3 — cherche <a> PYMK dans la zone du header AVANT d'ouvrir Plus.
+      // Ouvrir Plus crée un backdrop qui intercepte stopPropagation() sur les MouseEvents :
+      // notre clickEl() bulle, traverse le backdrop qui l'arrête → React root ne le reçoit
+      // jamais → le modal d'invitation ne s'ouvre pas (confirmé par snapshots pré/post clic).
+      // En cliquant le <a> SANS ouvrir Plus, l'event bubble librement jusqu'à React → modal.
+      const pymkA = Array.from(document.querySelectorAll("a")).find((el) => {
+        if (!isInviteEl(el)) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.top >= plusRect.top - 30 && r.top <= plusRect.bottom + 400;
+      });
+      csLog("pymkA (avant Plus):", pymkA ? (pymkA.getAttribute("aria-label") ?? pymkA.textContent.trim().slice(0, 40)) : "null");
 
-      const textarea = await waitForElement("textarea", 1500);
-      if (textarea) {
-        // Contournement React : setter natif pour déclencher le state update
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-        setter?.call(textarea, connectNote.slice(0, 300));
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-        await new Promise((r) => setTimeout(r, 300));
+      if (pymkA) {
+        btn = pymkA;
+      } else {
+      csLog("Aucun pymkA → ouverture Plus dropdown");
+      // Clic Plus avec MouseEvent complet (coordonnées réelles) pour que LinkedIn l'accepte
+      const clickWithCoords = (el) => {
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 };
+        el.dispatchEvent(new MouseEvent("mousedown", opts));
+        el.dispatchEvent(new MouseEvent("mouseup", opts));
+        el.dispatchEvent(new MouseEvent("click", opts));
+      };
+      clickWithCoords(plusBtn);
+
+      // Attendre un peu et vérifier si le dropdown s'est ouvert (aria-expanded)
+      await new Promise(r => setTimeout(r, 600));
+      const expandedAfter = plusBtn.getAttribute("aria-expanded");
+      csLog("aria-expanded après click Plus:", expandedAfter);
+
+      // Si aria-expanded pas true, essayer via React props directement
+      if (expandedAfter !== "true") {
+        const rKey = Object.keys(plusBtn).find(k => k.startsWith("__reactProps"));
+        if (rKey && plusBtn[rKey]?.onClick) {
+          csLog("React props onClick — appel direct");
+          plusBtn[rKey].onClick({ type: "click", bubbles: true, preventDefault: () => {}, stopPropagation: () => {} });
+          await new Promise(r => setTimeout(r, 800));
+          csLog("aria-expanded après React onClick:", plusBtn.getAttribute("aria-expanded"));
+        } else {
+          csLog("React props non disponibles — clé:", rKey ?? "none");
+        }
       }
+      await new Promise(r => setTimeout(r, 600)); // total ~2s
+
+      // Approche 1 : chercher dans le menu OUVERT (portal ou inline) via [role="menu"]
+      const openMenu = document.querySelector(
+        '[role="menu"], .artdeco-dropdown__content--opened, [class*="artdeco-dropdown__content"][class*="opened"]'
+      );
+      // Log des items dans le menu pour diagnostic
+      if (openMenu) {
+        const sample = Array.from(openMenu.querySelectorAll("*")).slice(0, 20).map(el => ({
+          tag: el.tagName, a: el.getAttribute("aria-label"), t: el.textContent.trim().slice(0, 25),
+        }));
+        csLog("openMenu classes:", openMenu.className.slice(0, 80), "| items:", openMenu.children.length);
+        csLog("openMenu sample:", JSON.stringify(sample.slice(0, 8)));
+      } else {
+        csLog("openMenu: null");
+      }
+
+      // Priorité aux éléments interactifs natifs (<a>, <button>) — éviter les DIV wrappers
+      // dont le clic ne bubble pas jusqu'au handler React du bon élément.
+      const dropdownItem = openMenu
+        ? (Array.from(openMenu.querySelectorAll("a, button, [role='menuitem']"))
+            .find(el => isInviteEl(el) && el.getBoundingClientRect().width > 0)
+          ?? Array.from(openMenu.querySelectorAll("*"))
+            .find(el => isInviteEl(el) && el.getBoundingClientRect().width > 0))
+        : null;
+      csLog("dropdownItem via openMenu:", dropdownItem ? `${dropdownItem.tagName} — ${dropdownItem.getAttribute("aria-label") ?? dropdownItem.textContent.trim().slice(0, 40)}` : "null");
+
+      if (dropdownItem) {
+        btn = dropdownItem;
+      } else {
+        // Fallback inline : depuis le parent du bouton Plus
+        const plusParent = plusBtn.closest('[class*="dropdown"], [class*="overflow"]') ?? plusBtn.parentElement;
+        const parentItem = plusParent
+          ? Array.from(plusParent.querySelectorAll("*"))
+              .find(el => el !== plusBtn && isInviteEl(el) && el.getBoundingClientRect().width > 0)
+          : null;
+        csLog("parentItem (inline fallback):", parentItem ? (parentItem.getAttribute("aria-label") ?? parentItem.textContent.trim().slice(0, 40)) : "null");
+
+        // nearPlus : dernier recours (Plus déjà ouvert → backdrop actif → risque de blocage)
+        // Ce chemin n'est atteint que si pymkA était null (pas de PYMK visible avant ouverture Plus).
+        const nearPlus = Array.from(document.querySelectorAll("a, button, [role='menuitem'], li")).find(el => {
+          if (!isInviteEl(el)) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && r.top >= plusRect.top - 30 && r.top <= plusRect.bottom + 400;
+        });
+        csLog("nearPlus (fallback positionnel):", nearPlus ? (nearPlus.getAttribute("aria-label") ?? nearPlus.textContent.trim().slice(0, 40)) : "null");
+        csLog("nearPlus inDOM:", nearPlus ? document.body.contains(nearPlus) : false);
+
+        btn = parentItem ?? nearPlus ?? null;
+        if (!btn) return { ok: false, reason: "plus_no_connect_in_dropdown", openMenu: openMenu?.className?.slice(0, 40) ?? "null" };
+      }
+      } // fin else { pymkA non trouvé → flow Plus dropdown }
+    } else {
+      return { ok: false, reason: "no_plus_no_connect", h1: (document.querySelector("main h1, h1")?.textContent ?? "").trim().slice(0, 50) };
     }
   }
 
-  const sendBtn =
-    modal.querySelector('button[aria-label*="Envoyer"]') ??
-    modal.querySelector('button[aria-label*="Send"]') ??
-    Array.from(modal.querySelectorAll("button")).find(
-      (b) =>
-        b.textContent.trim().toLowerCase().startsWith("envoyer") ||
-        b.textContent.trim().toLowerCase() === "send"
-    );
+  if (!btn) return { ok: false, reason: "button_not_found" };
 
-  if (!sendBtn) return { ok: false, reason: "send_button_not_found" };
+  // Clic avec MouseEvent complet + fallback React props
+  const clickEl = (el) => {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 };
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new MouseEvent("mouseup", opts));
+    el.dispatchEvent(new MouseEvent("click", opts));
+  };
 
-  sendBtn.click();
+  csLog("btn trouvé — tag:", btn.tagName, "aria:", btn.getAttribute("aria-label") ?? btn.textContent.trim().slice(0, 40));
+  csLog("btn inDOM:", document.body.contains(btn));
+
+  // Snapshot avant clic: distinguer boutons "Envoyer" préexistants vs ceux du modal
+  const normalizeText = (el) => (el.textContent ?? "").replace(/[\s\u00a0]+/g, " ").trim().toLowerCase();
+  const normalizeAttr = (el, attr) => (el.getAttribute(attr) ?? "").replace(/[\s\u00a0]+/g, " ").toLowerCase();
+  const MODAL_SEL = "button, [role='button'], .artdeco-button, [type='button']";
+
+  const preEnvoyer = Array.from(document.querySelectorAll("button"))
+    .filter(b => normalizeText(b) === "envoyer")
+    .map(b => ({ d: b.disabled, w: Math.round(b.getBoundingClientRect().width) }));
+  csLog("Envoyer btns avant clic:", JSON.stringify(preEnvoyer));
+
+  clickEl(btn);
+
+  const sendBtn = await new Promise((resolve) => {
+    const find = () => {
+      const sansNote = Array.from(document.querySelectorAll(MODAL_SEL)).find((b) => {
+        if (b.disabled) return false;
+        const t = normalizeText(b);
+        const a = normalizeAttr(b, "aria-label");
+        if (t.includes("sans") || t.includes("without") || a.includes("sans") || a.includes("without")) return true;
+        // LinkedIn a renommé "Envoyer sans note" → "Envoyer" — vérifier qu'on est dans un dialog
+        // LinkedIn n'utilise pas role="dialog" sur son modal — juste vérifier le texte exact
+        // Le bouton "Envoyer" du message composer est disabled quand aucun message n'est tapé
+        if (t === "envoyer" || t === "send") return true;
+        return false;
+      });
+      if (sansNote) return sansNote;
+      if (connectNote?.trim()) {
+        return Array.from(document.querySelectorAll(MODAL_SEL)).find((b) => {
+          if (b.disabled) return false;
+          const t = normalizeText(b);
+          return t.includes("ajouter") || t.includes("add a note");
+        }) ?? null;
+      }
+      return null;
+    };
+
+    const found = find();
+    if (found) { csLog("sendBtn immédiat:", normalizeText(found)); return resolve(found); }
+
+    // Polling 100ms (réduit pour ne pas rater la brève fenêtre du modal)
+    const poll = setInterval(() => {
+      const f = find();
+      if (f) { clearInterval(poll); obs.disconnect(); clearTimeout(timer); csLog("sendBtn par polling:", normalizeText(f)); resolve(f); }
+    }, 300);
+
+    const obs = new MutationObserver(() => {
+      const f = find();
+      if (f) { clearInterval(poll); obs.disconnect(); clearTimeout(timer); csLog("sendBtn via obs:", normalizeText(f)); resolve(f); }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+
+    // Snapshot 500ms: vérifier état des boutons Envoyer (disabled? visible?)
+    setTimeout(() => {
+      const snap = Array.from(document.querySelectorAll("button"))
+        .filter(b => normalizeText(b) === "envoyer")
+        .map(b => ({ d: b.disabled, w: Math.round(b.getBoundingClientRect().width), cls: b.className.slice(0, 22) }));
+      csLog("Envoyer btns à 500ms:", JSON.stringify(snap));
+    }, 500);
+
+    const timer = setTimeout(() => {
+      clearInterval(poll);
+      obs.disconnect();
+      const allBtns = Array.from(document.querySelectorAll("button, [role='button']"))
+        .filter(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
+        .slice(0, 25)
+        .map((b) => ({ tag: b.tagName, t: b.textContent.trim().slice(0, 30), a: b.getAttribute("aria-label") }));
+      csLog("sendBtn timeout — visible btns:", JSON.stringify(allBtns));
+      // Cherche "sans note" ou "without note" n'importe où dans le DOM (modal ouvert ?)
+      const sansEls = Array.from(document.querySelectorAll("*"))
+        .filter(el => {
+          if (!["BUTTON","A","DIV","SPAN","P","LI"].includes(el.tagName)) return false;
+          const t = (el.textContent ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+          return t.includes("sans note") || t.includes("without note") || t === "envoyer" || t === "send now";
+        })
+        .slice(0, 8)
+        .map(el => ({ tag: el.tagName, role: el.getAttribute("role"), class: (el.className ?? "").slice(0, 30), t: el.textContent.trim().slice(0, 40) }));
+      csLog("sendBtn timeout — 'sans note' dans DOM:", JSON.stringify(sansEls));
+      resolve(null);
+    }, 4000);
+  });
+
+  if (!sendBtn) return { ok: false, reason: "modal_timeout" };
+
+  if (connectNote?.trim() && normalizeText(sendBtn).includes("ajouter")) {
+    // Cas avec note : cliquer "Ajouter une note", remplir, puis envoyer
+    sendBtn.click();
+    await new Promise((r) => setTimeout(r, 600));
+    const textarea = await waitForElement("textarea", 2000);
+    if (textarea) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      setter?.call(textarea, connectNote.slice(0, 300));
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    const finalSend = await new Promise((resolve) => {
+      const find = () => Array.from(document.querySelectorAll("button")).find((b) => {
+        if (b.disabled) return false;
+        const t = normalizeText(b);
+        return t === "envoyer" || t === "send";
+      }) ?? null;
+      const f = find(); if (f) return resolve(f);
+      const obs = new MutationObserver(() => { const ff = find(); if (ff) { obs.disconnect(); clearTimeout(timer); resolve(ff); } });
+      obs.observe(document.body, { childList: true, subtree: true });
+      const timer = setTimeout(() => { obs.disconnect(); resolve(null); }, 3000);
+    });
+    if (!finalSend) return { ok: false, reason: "send_button_not_found" };
+    finalSend.click();
+  } else {
+    // Cas sans note (ou déjà sur "Envoyer sans note") : clic direct
+    sendBtn.click();
+  }
+
   await new Promise((r) => setTimeout(r, 500));
   return { ok: true };
 }
 
 /**
- * Envoie une demande de connexion LinkedIn avec une note personnalisée.
- * Stratégie 1 : clic DOM sur la page du profil (requête générée par LinkedIn lui-même).
- * Stratégie 2 : Voyager API direct (fallback — mode queue hors page profil).
+ * Envoie une demande de connexion via Voyager API (memberRelationships — endpoint actif 2025).
+ * Le clic DOM (isTrusted bloqué) n'est plus tenté ici — c'est la responsabilité de l'appelant.
  */
-async function sendConnectionRequest(username, connectNote, csrf) {
-  // DOM click si on est sur la page du profil cible
-  if (window.location.pathname.includes(`/in/${username}`)) {
-    const domResult = await sendConnectionRequestDOM(connectNote);
-    if (domResult.ok) return { ok: true };
-    console.debug("[SKALLE] DOM click échoué:", domResult.reason, "→ fallback Voyager");
-  }
-
-  // Fallback : Voyager API direct
+async function sendConnectionRequest(username, connectNote, csrf, _skipDom = false, entityUrn = null) {
+  const profileUrn = entityUrn ?? `urn:li:fsd_profile:${username}`;
   const headers = { ...voyagerHeaders(csrf), "content-type": "application/json" };
+  csLog("memberRelationships: profileUrn=", profileUrn);
 
-  const { res, abortCode } = await voyagerFetch("/voyager/api/growth/normInvitations", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      invitee: {
-        "com.linkedin.voyager.growth.invitation.InviteeProfile": { profileId: username },
-      },
-      trackingId: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12)))),
-      message: (connectNote ?? "").slice(0, 300),
-    }),
-  });
-
-  if (abortCode) return { ok: false, abortCode };
-  if (res?.ok) return { ok: true };
-
-  // Fallback format plus récent
-  const { res: res2, abortCode: ab2 } = await voyagerFetch(
-    "/voyager/api/voyagerRelationships/dash/invitations?action=verifyQuotaAndCreateV2",
+  const { res, abortCode } = await voyagerFetch(
+    "/voyager/api/relationships/dash/memberRelationships?action=verifyQuotaAndCreate",
     {
       method: "POST",
       headers,
       body: JSON.stringify({
-        inviteeProfileUrn: `urn:li:fsd_profile:${username}`,
+        inviteeProfileUrn: profileUrn,
         customMessage: (connectNote ?? "").slice(0, 300),
       }),
     }
   );
-
-  if (ab2) return { ok: false, abortCode: ab2 };
-  return { ok: res2?.ok ?? false, status: res2?.status };
+  csLog("memberRelationships:", res?.status, abortCode ?? "");
+  if (abortCode) return { ok: false, abortCode };
+  return { ok: res?.ok ?? false, status: res?.status };
 }
 
 /**
@@ -497,32 +765,37 @@ async function executeDecision(decision) {
     const username = usernameMatch[1];
 
     // ── Vérification DOM : s'assurer qu'on est sur le bon profil ──────────
-    // Le background.js navigue vers l'URL du prospect avant d'appeler SKALLE_EXECUTE,
-    // donc window.location.pathname doit matcher /in/${username}.
     if (window.location.pathname.includes(`/in/${username}`)) {
       const domName = document.querySelector("h1")?.textContent?.trim() ?? "";
-      const expectedName = (data.prospectName as string) ?? "";
-      if (!profileNameMatches(expectedName, domName)) {
+      const expectedName = (data.prospectName ?? "") + "";
+      if (expectedName && !profileNameMatches(expectedName, domName)) {
         console.warn(`[SKALLE] profile_mismatch: attendu "${expectedName}", trouvé "${domName}" — action annulée`);
         return { ok: false, error: `profile_mismatch: attendu "${expectedName}", trouvé "${domName}"` };
       }
     }
 
-    // Résoudre le profil (URN + distance)
+    // ── Stratégie 1 : Voyager API (memberRelationships — confirmé 2025) ────────────
+    // Le clic DOM (isTrusted bloqué par LinkedIn depuis le content script) n'est plus
+    // la voie principale. L'API est identique à ce que LinkedIn appelle nativement.
     const profile = await resolveLinkedInProfile(username, csrf);
-    if (!profile) return { ok: false, error: "profile_not_found" };
 
-    if (profile.distance === "DISTANCE_1") {
+    if (profile?.distance === "DISTANCE_1") {
       // Déjà connecté → envoyer le message post-connexion
       const message = data.postConnectionMessage ?? data.connectNote ?? "";
       if (!message) return { ok: false, error: "no_message" };
       const result = await sendLinkedInMessage(profile.entityUrn, message, csrf);
       return { ...result, action: "message_sent", username };
-    } else {
-      // Pas encore connecté → envoyer la demande de connexion
-      const result = await sendConnectionRequest(username, data.connectNote, csrf);
-      return { ...result, action: "connection_request", username };
     }
+
+    const apiResult = await sendConnectionRequest(username, data.connectNote, csrf, true, profile?.entityUrn ?? null);
+    if (apiResult.ok || apiResult.abortCode) {
+      return { ...apiResult, action: "connection_request", username };
+    }
+
+    // ── Stratégie 2 : DOM click (fallback si API 5xx ou erreur réseau) ──────────
+    console.warn("[SKALLE] API status:", apiResult.status, "→ fallback DOM");
+    const domResult = await sendConnectionRequestDOM(data.connectNote);
+    return { ...domResult, action: "connection_request", username, apiStatus: apiResult.status };
   }
 
   return { ok: false, error: `action_type_non_supportée: ${decision.actionType}` };
@@ -732,7 +1005,7 @@ async function handleProcessAndConnect(profile, workspaceId) {
   if (!result) return { ok: false, error: "backend_error", username };
 
   // connectNote peut être null si sendWithoutNote est activé dans les settings
-  const connResult = await sendConnectionRequest(username, result.connectNote ?? null, csrf);
+  const connResult = await sendConnectionRequest(username, result.connectNote ?? null, csrf, true, profileData.entityUrn ?? null);
 
   return {
     ...connResult,
@@ -1152,13 +1425,22 @@ async function sendWarmLeadsToBackend(type, leads, token) {
 
 // ── Listeners (tous les types de messages) ────────────────────────────────────
 
-// Vérification préventive : si le contexte est invalide on n'enregistre pas.
-// Le background détecte le timeout (15s) et gère l'absence de réponse.
+// ── Listeners (tous les types de messages) ────────────────────────────────────
+
+console.log("[SKALLE] Content script init — runtime.id:", chrome.runtime?.id ?? "ABSENT", window.location.href);
 if (!chrome.runtime?.id) {
-  console.debug("[SKALLE] Contexte extension invalide au chargement — listeners non enregistrés");
-}
+  console.warn("[SKALLE] Contexte extension invalide — listener non enregistré");
+} else {
+  window._skalleListenerRegistered = true;
+  console.log("[SKALLE] Listener enregistré");
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Vérifie que le content script est prêt (utilisé par background.js après navigation)
+  if (msg.type === "SKALLE_PING") {
+    sendResponse({ ok: true, url: window.location.href, v: "2.0.6" });
+    return true;
+  }
+
   // Exécute une décision CSO pré-approuvée (mode manuel/queue)
   if (msg.type === "SKALLE_EXECUTE") {
     executeDecision(msg.decision)
@@ -1258,3 +1540,4 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   return false;
 });
+} // end else (_skalleListenerRegistered guard)
