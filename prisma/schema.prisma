@@ -316,6 +316,8 @@ model Prospect {
   intentScore         Int?
   lastScoredAt        DateTime?
   emailStatus         String?
+  hubspotContactId    String?
+  hubspotSyncedAt     DateTime?
   enrichments         LeadEnrichment[]
   sequences           OutreachSequence[]
   workspace           Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -338,6 +340,7 @@ model Prospect {
   @@index([platform])
   @@index([source])
   @@index([intentScore])
+  @@index([hubspotContactId])
   @@index([lastScoredAt])
 }
 

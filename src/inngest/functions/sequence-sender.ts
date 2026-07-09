@@ -7,6 +7,7 @@ import {
 import { decryptIfNeeded } from "@/lib/encryption";
 import { generateUnsubscribeToken } from "@/lib/unsubscribe-token";
 import { getResumeDate } from "@/lib/prospection/ooo-detector";
+import { logEmailEventToHubSpot } from "@/lib/crm/hubspot-sync";
 
 function injectTrackingExtras(html: string, stepId: string, prospectId: string): string {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
@@ -445,6 +446,25 @@ export const trackEmailEvent = inngest.createFunction(
         }
       }
     });
+
+    // Log activité email dans HubSpot (silencieux si non connecté)
+    if (eventType === "opened" || eventType === "replied" || eventType === "sent") {
+      await step.run("log-hubspot-activity", async () => {
+        const s = await prisma.sequenceStep.findUnique({
+          where: { id: stepId },
+          include: { sequence: { select: { prospectId: true, workspaceId: true } } },
+        });
+        if (!s) return;
+        await logEmailEventToHubSpot({
+          prospectId: s.sequence.prospectId,
+          workspaceId: s.sequence.workspaceId,
+          subject: s.subject ?? "",
+          body: s.content,
+          eventType: eventType === "opened" ? "OPENED" : eventType === "replied" ? "REPLIED" : "SENT",
+          timestamp: new Date(),
+        }).catch(() => {});
+      });
+    }
 
     // Sur reply : skip tous les steps suivants et mettre a jour le prospect
     if (eventType === "replied") {

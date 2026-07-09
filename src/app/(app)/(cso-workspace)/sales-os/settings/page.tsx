@@ -25,6 +25,7 @@ import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
 import { ChromeExtensionCard } from "@/components/modules/cso/chrome-extension-card";
 import { BrandVoiceCard } from "@/components/modules/cso/brand-voice-card";
 import { ApolloSettingsCard } from "@/components/modules/cso/apollo-settings-card";
+import { HubSpotCard } from "@/components/modules/cso/hubspot-card";
 
 const PLAN_LABELS: Record<string, string> = {
   FREE: "Gratuit",
@@ -200,6 +201,9 @@ export default async function SalesSettingsPage() {
           initial={(workspace.brandVoice ?? {}) as Record<string, unknown>}
         />
       )}
+
+      {/* HubSpot CRM — Sync bidirectionnelle */}
+      {workspace && <HubSpotCard />}
 
       {/* Apollo — Découverte de prospects */}
       {workspace && (

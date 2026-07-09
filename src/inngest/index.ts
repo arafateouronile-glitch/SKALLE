@@ -51,6 +51,8 @@ import {
   serverSideWarmLeadsCron,
   serverSideWarmLeadsManual,
 } from "./functions/linkedin-engagement-poller";
+import { runVideoAdPipeline, videoAdPipelineFailure } from "./functions/video-ads-pipeline";
+import { hubspotSyncFunction } from "./functions/hubspot-sync";
 
 // Export all Inngest functions
 export const functions = [
@@ -122,4 +124,9 @@ export const functions = [
   // CSO Warm Leads — server-side viewers + followers (sans extension ouverte)
   serverSideWarmLeadsCron,
   serverSideWarmLeadsManual,
+  // Video Ads UGC — Pipeline Kling AI (image2video + lip-sync)
+  runVideoAdPipeline,
+  videoAdPipelineFailure,
+  // CRM — Sync bidirectionnelle HubSpot (toutes les 30min)
+  hubspotSyncFunction,
 ];
