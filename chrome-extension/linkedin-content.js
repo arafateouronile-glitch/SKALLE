@@ -787,6 +787,10 @@ async function executeDecision(decision) {
       return { ...result, action: "message_sent", username };
     }
 
+    // Dwell time : simuler un temps de lecture humain avant l'appel API (3-8s).
+    // Réduit le signal "navigate → API immédiate" détectable par LinkedIn.
+    await new Promise(r => setTimeout(r, 3000 + Math.random() * 5000));
+
     const apiResult = await sendConnectionRequest(username, data.connectNote, csrf, true, profile?.entityUrn ?? null);
     if (apiResult.ok || apiResult.abortCode) {
       return { ...apiResult, action: "connection_request", username };
@@ -1437,7 +1441,7 @@ if (!chrome.runtime?.id) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Vérifie que le content script est prêt (utilisé par background.js après navigation)
   if (msg.type === "SKALLE_PING") {
-    sendResponse({ ok: true, url: window.location.href, v: "2.0.6" });
+    sendResponse({ ok: true, url: window.location.href, v: "2.0.7" });
     return true;
   }
 
