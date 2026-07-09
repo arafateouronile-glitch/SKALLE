@@ -306,6 +306,7 @@ model Prospect {
   aiSummary           String?
   handle              String?
   lastInteractionAt   DateTime?
+  meetingBookedAt     DateTime?
   platform            String?
   score               Int                   @default(0)
   sentiment           String                @default("NEUTRAL")

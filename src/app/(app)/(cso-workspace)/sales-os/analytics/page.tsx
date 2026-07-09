@@ -49,6 +49,7 @@ import {
   BarChart2,
   Trophy,
   FlaskConical,
+  CalendarCheck,
 } from "lucide-react";
 import {
   getPipelineAnalytics,
@@ -65,6 +66,7 @@ import {
   type SequenceAnalyticsResult,
   type AbTestResult,
 } from "@/actions/sequence-analytics";
+import { getMeetingAnalytics, type MeetingAnalyticsResult } from "@/actions/meeting-analytics";
 import { getUserWorkspace } from "@/actions/leads";
 import { cn } from "@/lib/utils";
 
@@ -779,6 +781,310 @@ function SequencesAnalyticsTab({ workspaceId }: { workspaceId: string }) {
   );
 }
 
+// ─── Meetings Tab ─────────────────────────────────────────────────────────────
+
+const MEETING_FUNNEL_COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f59e0b"];
+const MEETING_PIE_COLORS = ["#0ea5e9", "#6366f1", "#f59e0b", "#22c55e", "#ec4899"];
+
+function MeetingsAnalyticsTab({ workspaceId }: { workspaceId: string }) {
+  const [data, setData] = useState<MeetingAnalyticsResult | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await getMeetingAnalytics(workspaceId);
+      setData(res);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [workspaceId]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
+      </div>
+    );
+  }
+
+  if (!data || data.totalMeetings === 0) {
+    return (
+      <Card className="bg-white/80 border-gray-200/60">
+        <CardContent className="py-16 text-center">
+          <CalendarCheck className="h-10 w-10 mx-auto mb-3 text-gray-300" />
+          <p className="text-gray-500 text-sm">Aucun meeting booké pour l&apos;instant.</p>
+          <p className="text-xs text-gray-400 mt-2">
+            Marquez vos prospects comme &ldquo;Meeting booké&rdquo; depuis la vue Prospects ou Pipeline.
+          </p>
+          <Link href="/sales-os/prospects" className="inline-flex items-center gap-1 mt-4 text-sm text-emerald-500 hover:underline">
+            Voir les prospects <ArrowRight className="h-3 w-3" />
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const maxFunnel = data.funnel[0]?.count ?? 1;
+  const trendMax = Math.max(...data.weeklyTrend.map((w) => w.meetings), 1);
+
+  return (
+    <div className="space-y-6">
+      {/* KPI row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          label="Meetings bookés"
+          value={data.totalMeetings}
+          icon={CalendarCheck}
+          accent="green"
+        />
+        <KpiCard
+          label="Taux de conversion"
+          value={data.conversionRate !== null ? `${data.conversionRate}%` : "—"}
+          sub={`${data.convertedFromMeeting} client(s) signés`}
+          icon={Percent}
+          accent="purple"
+        />
+        <KpiCard
+          label="Délai moyen 1er contact → RDV"
+          value={data.avgDaysToMeeting !== null ? `${data.avgDaysToMeeting}j` : "—"}
+          icon={Clock}
+          accent="blue"
+        />
+        <KpiCard
+          label="Revenus closés"
+          value={data.totalRevenueClosed > 0 ? formatEur(data.totalRevenueClosed) : "—"}
+          sub={data.avgDaysToClose !== null ? `Cycle de vente moyen : ${data.avgDaysToClose}j` : undefined}
+          icon={Wallet}
+          accent="amber"
+        />
+      </div>
+
+      {/* Trend + Funnel */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Weekly trend */}
+        <Card className="col-span-2 bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Activity className="h-4 w-4 text-emerald-500" />
+              Meetings bookés — 12 dernières semaines
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={data.weeklyTrend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <defs>
+                  <linearGradient id="meetGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="convGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="week" tick={{ fontSize: 10 }} tickFormatter={(v: string) => v.slice(5)} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} domain={[0, trendMax + 1]} />
+                <Tooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                  formatter={(v: unknown, name: unknown) => [v as number, (name as string) === "meetings" ? "Meetings" : "Convertis"]}
+                />
+                <Area type="monotone" dataKey="meetings" stroke="#22c55e" fill="url(#meetGrad)" strokeWidth={2} name="meetings" dot={false} />
+                <Area type="monotone" dataKey="converted" stroke="#f59e0b" fill="url(#convGrad)" strokeWidth={2} name="converted" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div className="flex gap-4 justify-end mt-2">
+              <span className="flex items-center gap-1 text-xs text-gray-500"><span className="w-3 h-0.5 bg-emerald-500 inline-block rounded" />Meetings</span>
+              <span className="flex items-center gap-1 text-xs text-gray-500"><span className="w-3 h-0.5 bg-amber-400 inline-block rounded" />Convertis</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Source donut */}
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Target className="h-4 w-4 text-sky-500" />
+              Source des meetings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.bySource.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-10">Aucune donnée</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={data.bySource}
+                    dataKey="meetings"
+                    nameKey="label"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={65}
+                    innerRadius={35}
+                    paddingAngle={3}
+                  >
+                    {data.bySource.map((_, i) => (
+                      <Cell key={i} fill={MEETING_PIE_COLORS[i % MEETING_PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                    formatter={(v: unknown, name: unknown) => [v as number, name as string]}
+                  />
+                  <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Funnel + Channel */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Conversion funnel */}
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-violet-500" />
+              Funnel de conversion
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {data.funnel.map((stage, i) => {
+                const pctBar = Math.round((stage.count / maxFunnel) * 100);
+                return (
+                  <div key={stage.stage}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-gray-600">{stage.label}</span>
+                      <span className="font-semibold text-gray-900 tabular-nums">{stage.count}</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-gray-100">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${pctBar}%`,
+                          backgroundColor: MEETING_FUNNEL_COLORS[i % MEETING_FUNNEL_COLORS.length],
+                        }}
+                      />
+                    </div>
+                    {i < data.funnel.length - 1 && data.funnel[i].count > 0 && (
+                      <p className="text-[10px] text-gray-400 mt-0.5 text-right">
+                        → {Math.round((data.funnel[i + 1].count / data.funnel[i].count) * 100)}% passent à l&apos;étape suivante
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Channel breakdown */}
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Mail className="h-4 w-4 text-indigo-500" />
+              Canal ayant déclenché le meeting
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.byChannel.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-10">Aucune donnée de canal</p>
+            ) : (
+              <div className="space-y-3">
+                {data.byChannel.sort((a, b) => b.meetings - a.meetings).map((c) => {
+                  const maxCh = Math.max(...data.byChannel.map((x) => x.meetings));
+                  const pctBar = Math.round((c.meetings / maxCh) * 100);
+                  const color =
+                    c.channel === "EMAIL" ? "#6366f1" :
+                    c.channel === "LINKEDIN" ? "#0ea5e9" :
+                    c.channel === "SMS" ? "#f59e0b" : "#22c55e";
+                  const label =
+                    c.channel === "EMAIL" ? "Email" :
+                    c.channel === "LINKEDIN" ? "LinkedIn" :
+                    c.channel === "SMS" ? "SMS" : c.channel;
+                  return (
+                    <div key={c.channel}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-gray-600">{label}</span>
+                        <span className="font-semibold text-gray-900 tabular-nums">{c.meetings}</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-gray-100">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${pctBar}%`, backgroundColor: color }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent meetings table */}
+      <Card className="bg-white/80 border-gray-200/60">
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-amber-500" />
+            Meetings récents
+          </CardTitle>
+          <CardDescription className="text-xs text-gray-400">Les 15 derniers prospects avec un meeting booké</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60">
+                  <th className="text-left px-4 py-2.5 text-gray-500 font-medium">Prospect</th>
+                  <th className="text-left px-4 py-2.5 text-gray-500 font-medium">Entreprise</th>
+                  <th className="text-left px-4 py-2.5 text-gray-500 font-medium">Statut</th>
+                  <th className="text-left px-4 py-2.5 text-gray-500 font-medium">Meeting booké le</th>
+                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium">Valeur</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recentMeetings.map((m) => (
+                  <tr key={m.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-2.5">
+                      <Link href={`/sales-os/prospects/${m.id}`} className="font-medium text-gray-900 hover:text-indigo-600 transition-colors">
+                        {m.name}
+                      </Link>
+                      {m.jobTitle && <p className="text-gray-400">{m.jobTitle}</p>}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600">{m.company}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                        m.status === "CONVERTED"
+                          ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                          : "bg-sky-50 text-sky-600 border border-sky-200"
+                      )}>
+                        {m.status === "CONVERTED" ? "Converti" : "Meeting booké"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500">{formatDate(m.meetingBookedAt)}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-gray-900">
+                      {m.value ? formatEur(m.value) : <span className="text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Pipeline Tab (existant) ──────────────────────────────────────────────────
 
 const FUNNEL_COLORS_PIPELINE = ["#6366f1", "#4f46e5", "#4338ca", "#22c55e"];
@@ -1050,6 +1356,13 @@ export default function AnalyticsPage() {
               <TrendingUp className="h-4 w-4 mr-2" />
               Pipeline Revenue
             </TabsTrigger>
+            <TabsTrigger
+              value="meetings"
+              className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white"
+            >
+              <CalendarCheck className="h-4 w-4 mr-2" />
+              Meetings
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="sequences">
@@ -1062,6 +1375,10 @@ export default function AnalyticsPage() {
 
           <TabsContent value="pipeline">
             <PipelineAnalyticsTab workspaceId={workspaceId} />
+          </TabsContent>
+
+          <TabsContent value="meetings">
+            <MeetingsAnalyticsTab workspaceId={workspaceId} />
           </TabsContent>
         </Tabs>
       </div>

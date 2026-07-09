@@ -35,6 +35,10 @@ export async function PATCH(
     data: {
       status: status as "NEW" | "CONTACTED" | "REPLIED" | "CONVERTED" | "REJECTED" | "RESEARCHED" | "MESSAGES_GENERATED" | "RESPONDED" | "MEETING_BOOKED" | "LOST" | "UNSUBSCRIBED",
       lastInteractionAt: new Date(),
+      // Timestamp the first time a prospect reaches MEETING_BOOKED
+      ...(status === "MEETING_BOOKED" && prospect.status !== "MEETING_BOOKED" && prospect.status !== "CONVERTED"
+        ? { meetingBookedAt: new Date() }
+        : {}),
     },
     select: {
       id: true,
