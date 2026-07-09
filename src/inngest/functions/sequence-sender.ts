@@ -6,6 +6,7 @@ import {
 } from "@/lib/email/smtp-transport";
 import { decryptIfNeeded } from "@/lib/encryption";
 import { generateUnsubscribeToken } from "@/lib/unsubscribe-token";
+import { getResumeDate } from "@/lib/prospection/ooo-detector";
 
 function injectTrackingExtras(html: string, stepId: string, prospectId: string): string {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
@@ -454,6 +455,74 @@ export const trackEmailEvent = inngest.createFunction(
         });
 
         if (!currentStep) return;
+
+        const isOOO = metadata?.isOOO === true;
+
+        if (isOOO) {
+          // OOO : ne pas skipper les étapes suivantes, les replanifier après le retour
+          const oooReturnDate = metadata?.oooReturnDate
+            ? new Date(metadata.oooReturnDate as string)
+            : null;
+          const resumeDate = getResumeDate({
+            isOOO: true,
+            confidence: (metadata?.oooConfidence as "high" | "medium" | "low") ?? "medium",
+            returnDate: oooReturnDate,
+            returnDateRaw: (metadata?.oooReturnDateRaw as string) ?? null,
+          });
+
+          // Replanifier tous les steps PENDING suivants à la date de reprise
+          const pendingSteps = await prisma.sequenceStep.findMany({
+            where: {
+              sequenceId: currentStep.sequenceId,
+              stepNumber: { gt: currentStep.stepNumber },
+              status: "PENDING",
+            },
+            orderBy: { stepNumber: "asc" },
+          });
+
+          for (let i = 0; i < pendingSteps.length; i++) {
+            const newScheduledAt = new Date(resumeDate);
+            newScheduledAt.setDate(newScheduledAt.getDate() + i * 2); // 2 jours d'écart entre steps
+            await prisma.sequenceStep.update({
+              where: { id: pendingSteps[i].id },
+              data: {
+                scheduledAt: newScheduledAt,
+                metadata: {
+                  ...((pendingSteps[i].metadata as Record<string, unknown>) ?? {}),
+                  rescheduledForOOO: true,
+                  oooResumeDate: resumeDate.toISOString(),
+                },
+              },
+            });
+          }
+
+          // Marquer le step courant comme OOO dans son metadata
+          await prisma.sequenceStep.update({
+            where: { id: stepId },
+            data: {
+              metadata: {
+                ...((currentStep.metadata as Record<string, unknown>) ?? {}),
+                isOOO: true,
+                oooReturnDate: oooReturnDate?.toISOString() ?? null,
+                oooReturnDateRaw: metadata?.oooReturnDateRaw ?? null,
+                oooConfidence: metadata?.oooConfidence ?? "medium",
+              },
+            },
+          });
+
+          // Mettre à jour le prospect avec info OOO (sans changer son statut)
+          await prisma.prospect.update({
+            where: { id: currentStep.sequence.prospectId },
+            data: {
+              notes: [
+                currentStep.sequence.prospect.notes,
+                `[OOO détecté ${new Date().toLocaleDateString("fr-FR")}${oooReturnDate ? ` — retour prévu le ${oooReturnDate.toLocaleDateString("fr-FR")}` : ""}]`,
+              ].filter(Boolean).join("\n"),
+            },
+          });
+
+          return; // Ne pas continuer vers le SKIP normal
+        }
 
         // Marquer tous les PENDING steps suivants comme SKIPPED
         await prisma.sequenceStep.updateMany({

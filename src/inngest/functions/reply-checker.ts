@@ -2,6 +2,7 @@ import { inngest } from "../client";
 import { prisma } from "@/lib/prisma";
 import { checkImapForReplies } from "@/lib/email/imap-checker";
 import { decryptIfNeeded } from "@/lib/encryption";
+import { detectOOO } from "@/lib/prospection/ooo-detector";
 
 /**
  * Reply Checker - Detection automatique des reponses via IMAP
@@ -127,6 +128,9 @@ export const checkRepliesForAllWorkspaces = inngest.createFunction(
           });
         });
 
+        // Détecter si c'est un message OOO avant d'émettre l'event
+        const oooResult = detectOOO(reply.subject ?? "", reply.snippet ?? "");
+
         // Emettre l'event email/event pour declencher trackEmailEvent
         await step.run(`emit-replied-${reply.messageId.substring(0, 20)}`, async () => {
           await inngest.send({
@@ -138,6 +142,10 @@ export const checkRepliesForAllWorkspaces = inngest.createFunction(
                 fromEmail: reply.fromEmail,
                 subject: reply.subject,
                 detectedVia: "imap",
+                isOOO: oooResult.isOOO,
+                oooConfidence: oooResult.isOOO ? oooResult.confidence : undefined,
+                oooReturnDate: oooResult.returnDate?.toISOString() ?? null,
+                oooReturnDateRaw: oooResult.returnDateRaw ?? null,
               },
             },
           });

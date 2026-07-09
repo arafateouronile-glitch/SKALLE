@@ -30,6 +30,7 @@ import {
   Copy,
   Search,
   FlaskConical,
+  Plane,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSequences, deleteSequence, getSequenceDetail, cloneSequence, createAbVariant } from "@/actions/sequences";
@@ -412,6 +413,13 @@ export default function SequencesPage() {
                           Variante {seq.abVariant}
                         </span>
                       )}
+                      {seq.steps.some((s) => (s.metadata as { isOOO?: boolean } | null)?.isOOO) && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0 rounded-full border shrink-0"
+                          style={{ background: "rgba(14,165,233,0.15)", borderColor: "rgba(14,165,233,0.4)", color: "#38bdf8" }}>
+                          <Plane className="h-2.5 w-2.5" />
+                          OOO
+                        </span>
+                      )}
                     </div>
 
                     {/* Prospect */}
@@ -425,8 +433,9 @@ export default function SequencesPage() {
                     <div className="flex items-center gap-1 flex-wrap">
                       {seq.steps.map((step, i) => {
                         const Icon = CHANNEL_ICONS[step.channel];
-                        const meta = step.metadata as { smartBranch?: boolean; waitingFor?: string } | null;
+                        const meta = step.metadata as { smartBranch?: boolean; waitingFor?: string; isOOO?: boolean; rescheduledForOOO?: boolean } | null;
                         const isBranch = meta?.smartBranch && i > 0;
+                        const isOOOStep = meta?.isOOO || meta?.rescheduledForOOO;
                         return (
                           <div key={step.id} className="flex items-center gap-1">
                             {isBranch && (
@@ -437,6 +446,9 @@ export default function SequencesPage() {
                             <div
                               className={cn(
                                 "flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium",
+                                isOOOStep
+                                  ? "border-dashed"
+                                  : "",
                                 step.status === "REPLIED"
                                   ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
                                   : step.status === "OPENED" || step.status === "CLICKED"
@@ -447,6 +459,8 @@ export default function SequencesPage() {
                                   ? "bg-red-500/10 border-red-500/20 text-red-400"
                                   : step.status === "SKIPPED"
                                   ? "bg-slate-500/05 border-white/[0.04] text-slate-600 line-through"
+                                  : isOOOStep
+                                  ? "bg-sky-500/10 border-sky-500/30 text-sky-400"
                                   : "bg-white/[0.04] border-white/[0.08] text-slate-500"
                               )}
                             >
