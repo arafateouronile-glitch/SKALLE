@@ -24,6 +24,8 @@ import {
   Kanban,
   Heart,
   GitBranch,
+  Globe,
+  ShieldCheck,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -41,8 +43,9 @@ const CMO_NAV = [
   { id: "dashboard", name: "Dashboard", href: "/marketing-os",         icon: LayoutDashboard, desc: "" },
   { id: "cmo-agent", name: "Agent CMO", href: "/marketing-os/cmo-agent", icon: Bot,             desc: "Objectifs & auto" },
   { id: "studio",    name: "Studio",    href: "/marketing-os/studio",   icon: Sparkles,        desc: "Tout créer" },
-  { id: "persona",   name: "Persona",   href: "/marketing-os/persona",  icon: Users,           desc: "ICP client cible" },
-  { id: "spy",       name: "Spy",       href: "/marketing-os/spy",      icon: Search,          desc: "Veille concurrence" },
+  { id: "persona",     name: "Persona",     href: "/marketing-os/persona",      icon: Users,  desc: "ICP client cible" },
+  { id: "brand-voice", name: "Brand Voice", href: "/marketing-os/brand-voice",  icon: Globe,  desc: "Ton & voix de marque" },
+  { id: "spy",         name: "Spy",         href: "/marketing-os/spy",          icon: Search, desc: "Veille concurrence" },
   { id: "ads",       name: "Ads",       href: "/marketing-os/ads",      icon: Zap,             desc: "" },
   { id: "insights",  name: "Insights",  href: "/marketing-os/insights", icon: TrendingUp,      desc: "" },
 ] as const;
@@ -58,6 +61,7 @@ const CSO_NAV = [
   { id: "outreach",          name: "Outreach",    href: "/sales-os/outreach",          icon: Mail,            desc: "Messages & relances" },
   { id: "personas",          name: "Personas",    href: "/sales-os/personas",          icon: Users,           desc: "Profils ICP" },
   { id: "analytics",         name: "Analytics",   href: "/sales-os/analytics",         icon: TrendingUp,      desc: "Métriques & pipeline" },
+  { id: "deliverability",    name: "Délivrabilité", href: "/sales-os/deliverability",  icon: ShieldCheck,     desc: "SPF · DKIM · DMARC" },
 ] as const;
 
 const PLAN_LABELS: Record<string, string> = {
