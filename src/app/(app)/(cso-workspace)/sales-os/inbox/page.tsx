@@ -14,14 +14,31 @@ export default async function InboxPage() {
   });
   if (!workspace) redirect("/login");
 
-  const [prospects, linkedInReplies] = await Promise.all([
+  const [prospects, linkedInReplies, emailReplies] = await Promise.all([
     prisma.prospect.findMany({
       where: {
         workspaceId: workspace.id,
-        status: { in: ["RESPONDED", "REPLIED", "MEETING_BOOKED", "CONTACTED"] },
+        status: {
+          in: ["RESPONDED", "REPLIED", "MEETING_BOOKED", "CONTACTED", "NEW", "RESEARCHED"],
+        },
+        OR: [
+          { status: { in: ["RESPONDED", "REPLIED", "MEETING_BOOKED"] } },
+          {
+            sequences: {
+              some: {
+                steps: {
+                  some: {
+                    status: { in: ["OPENED", "REPLIED", "SENT", "DELIVERED"] },
+                  },
+                },
+              },
+            },
+          },
+          { linkedInReplies: { some: {} } },
+        ],
       },
       orderBy: { updatedAt: "desc" },
-      take: 50,
+      take: 100,
       select: {
         id: true,
         name: true,
@@ -33,26 +50,48 @@ export default async function InboxPage() {
         score: true,
         updatedAt: true,
         enrichmentData: true,
+        hubspotContactId: true,
         sequences: {
           where: { isActive: true },
-          take: 1,
+          take: 3,
           select: {
+            id: true,
             steps: {
-              where: { status: { in: ["SENT", "DELIVERED", "OPENED", "REPLIED"] } },
+              where: {
+                status: { in: ["SENT", "DELIVERED", "OPENED", "REPLIED"] },
+              },
               orderBy: { sentAt: "asc" },
               select: {
-                id: true, channel: true, subject: true, content: true,
-                status: true, sentAt: true, openedAt: true,
+                id: true,
+                channel: true,
+                subject: true,
+                content: true,
+                status: true,
+                sentAt: true,
+                openedAt: true,
+                repliedAt: true,
+                metadata: true,
+                replies: {
+                  orderBy: { receivedAt: "asc" },
+                  select: {
+                    id: true,
+                    fromEmail: true,
+                    subject: true,
+                    snippet: true,
+                    receivedAt: true,
+                  },
+                },
               },
             },
           },
         },
       },
     }),
+
     prisma.linkedInReply.findMany({
       where: { workspaceId: workspace.id },
       orderBy: { receivedAt: "desc" },
-      take: 200,
+      take: 300,
       select: {
         id: true,
         prospectId: true,
@@ -60,29 +99,77 @@ export default async function InboxPage() {
         messageText: true,
         receivedAt: true,
         isRead: true,
+        linkedInUrl: true,
+      },
+    }),
+
+    // Email replies via ReplyDetection (linked through SequenceStep)
+    prisma.replyDetection.findMany({
+      where: {
+        sequenceStep: {
+          sequence: { workspaceId: workspace.id },
+        },
+      },
+      orderBy: { receivedAt: "desc" },
+      take: 300,
+      select: {
+        id: true,
+        fromEmail: true,
+        subject: true,
+        snippet: true,
+        receivedAt: true,
+        messageId: true,
+        sequenceStep: {
+          select: {
+            id: true,
+            metadata: true,
+            sequence: {
+              select: { prospectId: true },
+            },
+          },
+        },
       },
     }),
   ]);
 
-  // Index des réponses LinkedIn par prospectId
-  const repliesByProspect = linkedInReplies.reduce<
-    Record<string, typeof linkedInReplies>
-  >((acc, r) => {
+  // Index by prospectId
+  const liRepliesByProspect = linkedInReplies.reduce<Record<string, typeof linkedInReplies>>((acc, r) => {
     if (!r.prospectId) return acc;
     (acc[r.prospectId] ??= []).push(r);
     return acc;
   }, {});
 
-  const unreadCount = linkedInReplies.filter((r) => !r.isRead).length;
+  const emailRepliesByProspect = emailReplies.reduce<Record<string, typeof emailReplies>>((acc, r) => {
+    const pid = r.sequenceStep?.sequence?.prospectId;
+    if (!pid) return acc;
+    (acc[pid] ??= []).push(r);
+    return acc;
+  }, {});
+
+  const unreadLiCount = linkedInReplies.filter((r) => !r.isRead).length;
+  // Email replies are always "unread" since ReplyDetection has no isRead field
+  const unreadEmailCount = Object.keys(emailRepliesByProspect).length;
+  const unreadCount = unreadLiCount + unreadEmailCount;
 
   const conversations = prospects
     .map((p) => {
       const ed = (p.enrichmentData ?? {}) as Record<string, unknown>;
       const li = (ed.linkedIn ?? {}) as Record<string, unknown>;
       const replyPreview = (ed.replyPreview as string) ?? null;
-      const sentSteps = p.sequences[0]?.steps ?? [];
-      const liReplies = repliesByProspect[p.id] ?? [];
-      if (!replyPreview && sentSteps.length === 0 && liReplies.length === 0) return null;
+      const liReplies = liRepliesByProspect[p.id] ?? [];
+      const emailRepls = emailRepliesByProspect[p.id] ?? [];
+
+      const sentSteps = p.sequences.flatMap((s) => s.steps);
+
+      // Only include prospects with at least some activity
+      const hasActivity =
+        sentSteps.length > 0 ||
+        liReplies.length > 0 ||
+        emailRepls.length > 0 ||
+        replyPreview != null;
+
+      if (!hasActivity) return null;
+
       return {
         id: p.id,
         name: p.name,
@@ -98,6 +185,7 @@ export default async function InboxPage() {
         replyPreview,
         respondedAt: (ed.respondedAt as string) ?? null,
         pendingMessage: (ed.pendingMessage as string) ?? null,
+        hubspotContactId: p.hubspotContactId ?? null,
         sentSteps: sentSteps.map((s) => ({
           id: s.id,
           channel: s.channel as string,
@@ -106,6 +194,15 @@ export default async function InboxPage() {
           status: s.status as string,
           sentAt: s.sentAt?.toISOString() ?? null,
           openedAt: s.openedAt?.toISOString() ?? null,
+          repliedAt: s.repliedAt?.toISOString() ?? null,
+          isOOO: (s.metadata as { isOOO?: boolean } | null)?.isOOO ?? false,
+          emailReplies: s.replies.map((r) => ({
+            id: r.id,
+            fromEmail: r.fromEmail,
+            subject: r.subject,
+            snippet: r.snippet,
+            receivedAt: r.receivedAt.toISOString(),
+          })),
         })),
         linkedInReplies: liReplies.map((r) => ({
           id: r.id,
@@ -113,6 +210,15 @@ export default async function InboxPage() {
           messageText: r.messageText,
           receivedAt: r.receivedAt.toISOString(),
           isRead: r.isRead,
+          linkedInUrl: r.linkedInUrl,
+        })),
+        emailReplies: emailRepls.map((r) => ({
+          id: r.id,
+          fromEmail: r.fromEmail,
+          subject: r.subject,
+          snippet: r.snippet,
+          receivedAt: r.receivedAt.toISOString(),
+          isOOO: (r.sequenceStep?.metadata as { isOOO?: boolean } | null)?.isOOO ?? false,
         })),
       };
     })
