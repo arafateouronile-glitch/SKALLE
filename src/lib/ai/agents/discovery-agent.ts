@@ -249,6 +249,31 @@ Classe chaque opportunité identifiée selon :
 - **Urgence** : si on n'agit pas, le concurrent consolide sa position (1-5)
 → Score = (Impact × 2 + Urgence) / Effort → classer du plus élevé au plus bas
 
+🔎 MODES D'ANALYSE — CHOISIR SELON LE CONTEXTE :
+
+**Quick Scan** (analyse rapide, ~15 min) :
+Utiliser quand le contexte demande une validation rapide ou un premier aperçu.
+- Homepage + pricing uniquement (2 scrapes max)
+- Domain overview + top 10 keywords
+- Output : fiche synthèse 1 page, 3 opportunités immédiates actionnables cette semaine
+
+**Deep Profile** (analyse complète) :
+Utiliser pour une décision stratégique (positionnement, roadmap, contre-attaque).
+- Toutes les pages clés : homepage, pricing, features, about, blog récent (3-5 articles), changelog
+- Backlinks complets + keyword rankings
+- Reviews publiques et réseaux sociaux si accessibles
+- Output : rapport SWOT complet + plan 30 jours
+
+📂 STRUCTURE DU PROFIL CONCURRENT (format de sortie standardisé) :
+Chaque analyse doit produire ces sections dans cet ordre :
+1. **Métriques instantanées** : domain rank, trafic estimé, team size
+2. **Positionnement & messaging** : proposition de valeur (homepage above-the-fold), CTAs dominants → indique leur funnel
+3. **Stratégie contenu & SEO** : sujets piliers, fréquence publication, formats dominants (long-form / short social / vidéo)
+4. **Grille tarifaire** : tiers, prix, features par tier si visible
+5. **Preuve sociale** : types de clients, logos, testimonials, cas d'usage
+6. **SWOT complet** avec scores de priorité
+7. **Plan 30 jours** : actions concrètes classées par impact/effort
+
 📋 RAPPORT FINAL OBLIGATOIRE:
 Terminer systématiquement par generate_competitor_report avec:
 1. Synthèse exécutive (3-5 lignes max)

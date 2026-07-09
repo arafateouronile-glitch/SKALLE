@@ -1,23 +1,22 @@
 /**
- * 🍌 Nano Banana Image Service
+ * Image Generation Service
  *
- * Nano Banana = wrapper autour de Google Gemini 2.5 Flash Image (Imagen 3).
- * Avantage clé vs DALL-E 3 : rendu de texte dans l'image chirurgical (text_fidelity),
- * idéal pour les infographies SEO qui contiennent des mots-clés lisibles.
+ * Utilise OpenAI gpt-image-1 (même modèle que generate-avatar).
+ * Le résultat base64 est uploadé vers Supabase (bucket video-ads)
+ * pour fournir une URL publique permanente — nécessaire pour Bannerbear
+ * et tout contexte qui stocke l'URL en base de données.
  *
- * Pricing : ~0,02 $/image (>50% moins cher que DALL-E 3 à 0,04 $)
- * Quota : 1 000 req/jour sur le tier payant
- *
- * Prérequis .env.local :
- *   NANO_BANANA_API_KEY=your_key_here
- *
- * Docs : https://www.nano-banana.ai/
+ * Prérequis .env :
+ *   OPENAI_API_KEY     — génération d'image
+ *   SUPABASE_URL       — upload stockage
+ *   SUPABASE_SERVICE_ROLE_KEY
  */
 
 import { useCredits } from "@/lib/credits";
+import { uploadToStorage } from "@/lib/supabase-storage";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 📋 TYPES
+// TYPES (conservés pour compatibilité avec les imports existants)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type NanaBananaAspectRatio = "16:9" | "1:1" | "4:3" | "9:16";
@@ -33,134 +32,121 @@ export interface NanaBananaOptions {
   aspectRatio?: NanaBananaAspectRatio;
   styleReference?: NanaBananaStyleReference;
   negativePrompt?: string;
-  textFidelity?: number; // 0.0 – 1.0 — 1.0 = priorité maximale au rendu des glyphes
+  textFidelity?: number;
   renderMode?: "standard" | "high_definition";
 }
 
-interface NanaBananaResponse {
-  url: string;
-  width: number;
-  height: number;
-  model: string;
-  prompt_used: string;
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+type OpenAIImageSize = "1024x1024" | "1536x1024" | "1024x1536";
+
+function mapAspectRatioToSize(ratio: NanaBananaAspectRatio = "16:9"): OpenAIImageSize {
+  if (ratio === "9:16") return "1024x1536";
+  if (ratio === "1:1") return "1024x1024";
+  return "1536x1024"; // 16:9 et 4:3 → paysage
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔧 APPEL API BRUT (sans gestion de crédits)
+// APPEL API INTERNE
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function callNanaBananaAPI(
+async function generateImageInternal(
   prompt: string,
   options: NanaBananaOptions = {}
 ): Promise<string | null> {
-  const apiKey = process.env.NANO_BANANA_API_KEY;
-
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    console.warn("[NanoBanana] NANO_BANANA_API_KEY manquant — image non générée.");
+    console.warn("[ImageGen] OPENAI_API_KEY manquant — image non générée.");
     return null;
   }
 
-  const {
-    aspectRatio = "16:9",
-    styleReference = "business_minimalist",
-    negativePrompt = "texte flou, lettres déformées, couleurs criardes, filigrane, watermark, low quality, blurry",
-    textFidelity = 1.0,
-    renderMode = "high_definition",
-  } = options;
+  const size = mapAspectRatioToSize(options.aspectRatio);
 
-  const payload = {
-    model: "nano-banana-v1",
-    prompt,
-    aspect_ratio: aspectRatio,
-    parameters: {
-      text_fidelity: textFidelity,
-      style_reference: styleReference,
-      negative_prompt: negativePrompt,
-      render_mode: renderMode,
-    },
-    response_format: "url",
-  };
+  const fullPrompt = options.negativePrompt
+    ? `${prompt}. Avoid: ${options.negativePrompt}`
+    : prompt;
 
   try {
-    const response = await fetch("https://api.nano-banana.ai/v1/generate", {
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
-        "X-Model-Version": "nano-banana-v1",
       },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60_000), // timeout 60s (génération HD peut être lente)
+      body: JSON.stringify({
+        model: "gpt-image-1",
+        prompt: fullPrompt,
+        n: 1,
+        size,
+        quality: "high",
+      }),
+      signal: AbortSignal.timeout(90_000),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(
-        `[NanoBanana] API error ${response.status}: ${errorText.slice(0, 200)}`
-      );
+      console.error(`[ImageGen] API error ${response.status}: ${errorText.slice(0, 200)}`);
       return null;
     }
 
-    const data: NanaBananaResponse = await response.json();
-    return data.url ?? null;
+    const data = (await response.json()) as { data?: { b64_json?: string }[] };
+    const b64 = data.data?.[0]?.b64_json;
+    if (!b64) return null;
+
+    // Upload vers Supabase → URL publique permanente
+    const buffer = Buffer.from(b64, "base64");
+    const storagePath = `generated-images/${crypto.randomUUID()}.png`;
+    return await uploadToStorage(buffer, storagePath, "image/png");
   } catch (error) {
-    console.error("[NanoBanana] Génération échouée:", error);
+    console.error("[ImageGen] Génération échouée:", error);
     return null;
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🍌 FONCTION PRINCIPALE — avec déduction de crédits
+// FONCTION PRINCIPALE — avec déduction de crédits
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Génère une image avec Nano Banana et déduit les crédits Skalle.
- *
- * @param prompt     Description de l'image (peut contenir du texte lisible souhaité)
- * @param userId     ID de l'utilisateur Skalle (pour déduction crédits)
- * @param workspaceId  ID du workspace (pour audit trail)
- * @param options    Paramètres Nano Banana optionnels
- * @returns          URL de l'image générée, ou null si échec
- */
 export async function generateNanoBananaImage(
   prompt: string,
   userId: string,
   workspaceId: string,
   options: NanaBananaOptions = {}
 ): Promise<{ url: string | null; creditsUsed: number }> {
-  // 1. Vérifier et déduire les crédits AVANT la génération
+  void workspaceId; // conservé pour compatibilité signature
+
   const creditResult = await useCredits(userId, "image_generation_seo");
   if (!creditResult.success) {
-    console.warn(
-      `[NanoBanana] Crédits insuffisants pour ${userId}: ${creditResult.error}`
-    );
+    console.warn(`[ImageGen] Crédits insuffisants pour ${userId}: ${creditResult.error}`);
     return { url: null, creditsUsed: 0 };
   }
 
-  // 2. Générer l'image
-  const url = await callNanaBananaAPI(prompt, options);
-
+  const url = await generateImageInternal(prompt, options);
   return { url, creditsUsed: creditResult.success ? 5 : 0 };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🎨 HELPER — Prompt optimisé pour les articles SEO
+// VERSION SANS CRÉDITS (Inngest / contextes sans session)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Construit un prompt Nano Banana optimisé pour les illustrations d'articles SEO.
- * text_fidelity: 1.0 garantit que les mots-clés insérés dans l'image restent lisibles.
- *
- * Exemple d'usage :
- *   buildSEOArticleImagePrompt("netlinking", "## Stratégie de backlinks")
- *   → "Professional editorial illustration for an SEO article about netlinking..."
- */
+export async function generateNanoBananaImageRaw(
+  prompt: string,
+  options: NanaBananaOptions = {}
+): Promise<string | null> {
+  return generateImageInternal(prompt, options);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER — Prompt optimisé pour les articles SEO
+// ═══════════════════════════════════════════════════════════════════════════
+
 export function buildSEOArticleImagePrompt(
   keyword: string,
   sectionTitle: string,
   rawPrompt?: string
 ): { prompt: string; options: NanaBananaOptions } {
-  // Si l'IA a déjà fourni un prompt détaillé, on l'enrichit
   const baseDescription =
     rawPrompt ||
     `Professional editorial illustration for an SEO article about "${sectionTitle}"`;
@@ -178,26 +164,10 @@ export function buildSEOArticleImagePrompt(
     options: {
       aspectRatio: "16:9",
       styleReference: "editorial_photography",
-      textFidelity: 1.0, // Arme secrète : rendu de texte chirurgical pour les infographies
+      textFidelity: 1.0,
       renderMode: "high_definition",
       negativePrompt:
         "blurry text, distorted letters, garish colors, watermark, low resolution, stock photo clichés",
     },
   };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔄 VERSION SANS CRÉDITS (pour tests / Inngest / contextes sans session)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Version allégée sans déduction de crédits.
- * À utiliser dans les Inngest functions ou les contextes sans session utilisateur.
- * Les crédits doivent être gérés par l'appelant.
- */
-export async function generateNanoBananaImageRaw(
-  prompt: string,
-  options: NanaBananaOptions = {}
-): Promise<string | null> {
-  return callNanaBananaAPI(prompt, options);
 }

@@ -11,27 +11,118 @@ import { prisma } from "@/lib/prisma";
 
 // ─── Fetch + nettoyage HTML ───────────────────────────────────────────────────
 
-async function fetchWebsiteText(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; SKALLE-Research/1.0)",
-      Accept: "text/html,application/xhtml+xml",
-    },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`Fetch échoué : HTTP ${res.status} sur ${url}`);
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Cache-Control": "no-cache",
+};
 
-  const html = await res.text();
-  const text = html
+function htmlToText(html: string): string {
+  // Extract meta tags first — reliable even on SPAs
+  const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? "";
+  const metaDesc =
+    html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']{10,})["']/i)?.[1]?.trim() ??
+    html.match(/<meta[^>]+content=["']([^"']{10,})["'][^>]+name=["']description["']/i)?.[1]?.trim() ??
+    "";
+  const ogDesc =
+    html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']{10,})["']/i)?.[1]?.trim() ??
+    html.match(/<meta[^>]+content=["']([^"']{10,})["'][^>]+property=["']og:description["']/i)?.[1]?.trim() ??
+    "";
+
+  const body = html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<svg[^>]*>[\s\S]*?<\/svg>/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 8_000); // Claude analyse les 8000 premiers chars
+    .trim();
 
-  if (text.length < 100) throw new Error("Contenu insuffisant récupéré sur le site");
-  return text;
+  return [title, metaDesc, ogDesc, body].filter(Boolean).join(" | ").slice(0, 8_000);
+}
+
+async function fetchPage(pageUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(pageUrl, {
+      headers: BROWSER_HEADERS,
+      signal: AbortSignal.timeout(12_000),
+      redirect: "follow",
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const text = htmlToText(html);
+    return text.length > 80 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+async function serperFallback(domain: string): Promise<string | null> {
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: `site:${domain}`, num: 6, gl: "fr" }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      organic?: { title?: string; snippet?: string }[];
+      knowledgeGraph?: { description?: string; title?: string };
+    };
+    const parts: string[] = [];
+    if (data.knowledgeGraph?.title) parts.push(data.knowledgeGraph.title);
+    if (data.knowledgeGraph?.description) parts.push(data.knowledgeGraph.description);
+    for (const r of data.organic ?? []) {
+      if (r.title) parts.push(r.title);
+      if (r.snippet) parts.push(r.snippet);
+    }
+    const text = parts.join(" | ");
+    return text.length > 80 ? text.slice(0, 6_000) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWebsiteText(url: string): Promise<string> {
+  const base = url.replace(/\/$/, "");
+
+  // Homepage + secondary pages in parallel
+  const [homeText, aboutText, featuresText, pricingText] = await Promise.all([
+    fetchPage(base).then((t) => t ?? fetchPage(base + "/")),
+    fetchPage(base + "/about"),
+    fetchPage(base + "/features"),
+    fetchPage(base + "/pricing"),
+  ]);
+
+  const parts = [homeText, aboutText, featuresText, pricingText].filter(
+    (t): t is string => !!t
+  );
+
+  if (parts.length > 0) {
+    const combined = parts.join("\n\n").slice(0, 8_000);
+    if (combined.length >= 80) return combined;
+  }
+
+  // Fallback: Google snippets via Serper (handles JS-rendered sites)
+  try {
+    const domain = new URL(url).hostname;
+    const serperText = await serperFallback(domain);
+    if (serperText) return serperText;
+  } catch {
+    // URL parsing failed — skip
+  }
+
+  throw new Error(
+    "Impossible de récupérer le contenu du site. " +
+      "Le site est peut-être une SPA sans rendu serveur (React/Next.js côté client). " +
+      "Essayez l'URL d'une page statique comme /about ou /pricing."
+  );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────

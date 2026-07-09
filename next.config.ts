@@ -16,9 +16,26 @@ const nextConfig: NextConfig = {
   // Stripe (et autres paquets Node CJS) doit être résolu côté serveur sans bundling Turbopack
   serverExternalPackages: ["stripe"],
 
+  images: {
+    remotePatterns: [
+      // Supabase Storage — avatars, persons, video-ads assets
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/**",
+      },
+      // Supabase signed URLs
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/sign/**",
+      },
+    ],
+  },
+
   experimental: {
     serverActions: {
-      bodySizeLimit: "10mb",
+      bodySizeLimit: "250mb",
     },
   },
 

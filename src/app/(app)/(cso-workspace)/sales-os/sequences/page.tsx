@@ -37,6 +37,7 @@ import { getSequences, deleteSequence, getSequenceDetail, cloneSequence, createA
 import { getProspects } from "@/actions/prospects";
 import { getUserWorkspace } from "@/actions/leads";
 import { SequenceBuilder } from "@/components/sequences/sequence-builder";
+import { SequenceSuggestionsPanel } from "@/components/modules/cso/sequence-suggestions-panel";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -346,6 +347,9 @@ export default function SequencesPage() {
           );
         })}
       </div>
+
+      {/* AI Suggestions Panel */}
+      <SequenceSuggestionsPanel />
 
       {/* Sequences list */}
       {loading ? (

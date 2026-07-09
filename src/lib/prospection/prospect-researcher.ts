@@ -150,8 +150,9 @@ export async function researchProspect(
   if (hasSerper && companyName) {
     try {
       // Funding / news
+      const year = new Date().getFullYear();
       const newsResults = await searchGoogle(
-        `"${companyName}" levée fonds financement recrutement 2024 2025`,
+        `"${companyName}" levée fonds financement recrutement ${year - 1} ${year}`,
         5
       );
       serperUsed = true;
@@ -204,7 +205,12 @@ export async function researchProspect(
   }
 
   // ── 2. LinkedIn profile via existing tool ─────────────────────────────────
-  if (prospect.linkedInUrl && !prospect.linkedInUrl.includes("linkedin.com/company/")) {
+  // Skip empty strings, company pages, and fake LinkedIn search result URLs (legacy data)
+  if (
+    prospect.linkedInUrl &&
+    !prospect.linkedInUrl.includes("linkedin.com/company/") &&
+    !prospect.linkedInUrl.includes("/search/results/")
+  ) {
     try {
       const raw = await linkedinProfileTool.func({
         linkedinUrl: prospect.linkedInUrl,

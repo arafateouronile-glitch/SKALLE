@@ -357,6 +357,25 @@ function getContentGuidelines(type: string, length: string): string {
 // 🔗 LINKEDIN PROFILE TOOL - Extraction de profil LinkedIn via web search
 // ═══════════════════════════════════════════════════════════════════════════
 
+function normalizeNameForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[-_]/g, " ")   // Jean-Baptiste → Jean Baptiste
+    .replace(/[^a-z ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Returns true if the extracted name shares at least one word (≥3 chars) with the expected name.
+// Handles "Jean Dupont" vs "Jean-Marie Dupont" or slight accent differences.
+function namesOverlap(extracted: string, expected: string): boolean {
+  const a = normalizeNameForMatch(extracted).split(/\s+/).filter((w) => w.length >= 3);
+  const b = normalizeNameForMatch(expected).split(/\s+/).filter((w) => w.length >= 3);
+  return a.some((w) => b.includes(w));
+}
+
 export const linkedinProfileTool = new DynamicStructuredTool({
   name: "get_linkedin_profile",
   description: "Récupère les informations publiques d'un profil LinkedIn (nom, poste, entreprise, activité récente) via Google. Stratégie 1: scraping direct du profil public. Stratégie 2: recherche Google pour extraire le snippet LinkedIn.",
@@ -366,45 +385,63 @@ export const linkedinProfileTool = new DynamicStructuredTool({
     company: z.string().optional().describe("Entreprise actuelle (optionnel, améliore la recherche)"),
   }),
   func: async ({ linkedinUrl, fullName, company }) => {
-    const usernameMatch = linkedinUrl.match(/linkedin\.com\/in\/([^/]+)/);
+    const usernameMatch = linkedinUrl.match(/linkedin\.com\/in\/([^/?]+)/);
     const username = usernameMatch ? usernameMatch[1] : null;
 
-    // Stratégie 1 : scraping direct du profil public LinkedIn
-    try {
-      const response = await fetch(linkedinUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
+    // Reject fake search URLs early — they are not real profile URLs
+    if (linkedinUrl.includes("/search/results/")) {
+      return JSON.stringify({
+        source: "invalid_url",
+        url: linkedinUrl,
+        username: null,
+        error: "URL de recherche LinkedIn détectée — pas un profil réel. Recherche par nom+entreprise utilisée.",
+        name: fullName ?? null,
       });
+    }
 
-      if (response.ok) {
-        const html = await response.text();
-        const $ = cheerio.load(html);
+    // Stratégie 1 : scraping direct du profil public LinkedIn
+    if (username) {
+      try {
+        const response = await fetch(linkedinUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+        });
 
-        // LinkedIn public profile expose ces balises meta
-        const name = $('meta[property="og:title"]').attr("content")
-          ?? $("title").text().replace(" | LinkedIn", "").trim();
-        const description = $('meta[property="og:description"]').attr("content")
-          ?? $('meta[name="description"]').attr("content")
-          ?? "";
-        const image = $('meta[property="og:image"]').attr("content") ?? null;
+        if (response.ok) {
+          const html = await response.text();
+          const $ = cheerio.load(html);
 
-        if (name && name !== "LinkedIn") {
-          return JSON.stringify({
-            source: "direct_scrape",
-            url: linkedinUrl,
-            username,
-            name,
-            headline: description.split(" | ")[0] ?? description,
-            rawDescription: description.slice(0, 500),
-            hasPhoto: !!image,
-          });
+          // LinkedIn public profile expose ces balises meta
+          const name = $('meta[property="og:title"]').attr("content")
+            ?? $("title").text().replace(" | LinkedIn", "").trim();
+          const description = $('meta[property="og:description"]').attr("content")
+            ?? $('meta[name="description"]').attr("content")
+            ?? "";
+          const image = $('meta[property="og:image"]').attr("content") ?? null;
+
+          if (name && name !== "LinkedIn") {
+            // Validate: scraped name must match expected name
+            if (fullName && !namesOverlap(name, fullName)) {
+              // Scraped a wrong profile — fall through to Serper
+            } else {
+              return JSON.stringify({
+                source: "direct_scrape",
+                url: linkedinUrl,
+                username,
+                name,
+                headline: description.split(" | ")[0] ?? description,
+                rawDescription: description.slice(0, 500),
+                hasPhoto: !!image,
+              });
+            }
+          }
         }
+      } catch {
+        // LinkedIn peut bloquer — on passe à la stratégie 2
       }
-    } catch {
-      // LinkedIn peut bloquer — on passe à la stratégie 2
     }
 
     // Stratégie 2 : recherche Google via Serper pour extraire le snippet LinkedIn
@@ -418,11 +455,13 @@ export const linkedinProfileTool = new DynamicStructuredTool({
     }
 
     try {
-      const query = fullName && company
-        ? `"${fullName}" "${company}" site:linkedin.com/in`
-        : username
+      // Prefer searching by exact username slug when we have one, as it's unambiguous.
+      // Fall back to name+company search.
+      const query = username
         ? `site:linkedin.com/in/${username}`
-        : `${fullName ?? ""} ${company ?? ""} LinkedIn`;
+        : fullName && company
+        ? `"${fullName}" "${company}" site:linkedin.com/in`
+        : `${fullName ?? ""} ${company ?? ""} site:linkedin.com/in`;
 
       const response = await fetch("https://google.serper.dev/search", {
         method: "POST",
@@ -430,48 +469,82 @@ export const linkedinProfileTool = new DynamicStructuredTool({
           "X-API-KEY": process.env.SERPER_API_KEY,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ q: query, num: 3 }),
+        body: JSON.stringify({ q: query, num: 5 }),
       });
 
       const data = await response.json();
-      const topResult = data.organic?.[0];
+      const organic: Array<{ title: string; link: string; snippet: string }> = data.organic ?? [];
 
-      if (topResult) {
-        // Google expose souvent : "Nom | Poste chez Entreprise | LinkedIn"
-        const titleParts = (topResult.title as string ?? "").replace(" | LinkedIn", "").split(" | ");
-        const extractedName = titleParts[0]?.trim() ?? "";
-        const headline = titleParts[1]?.trim() ?? topResult.snippet?.split(".")[0] ?? "";
+      // Prefer a result whose URL contains the exact username slug AND whose
+      // extracted name matches — slugs like /in/jean-dupont are not globally unique.
+      const byUsername = username
+        ? organic.find((r) => {
+            if (!r.link?.includes(`/in/${username}`)) return false;
+            if (!fullName) return true; // no name to validate against — accept slug match
+            const titleParts = (r.title ?? "").replace(" | LinkedIn", "").split(" | ");
+            const extracted = titleParts[0]?.trim() ?? "";
+            return !extracted || namesOverlap(extracted, fullName);
+          })
+        : null;
 
-        // Chercher les posts récents dans les autres résultats
-        const recentActivity = data.organic
-          ?.slice(0, 3)
-          .filter((r: { link: string }) => r.link?.includes("linkedin.com"))
-          .map((r: { title: string; snippet: string }) => r.snippet?.slice(0, 150))
-          .filter(Boolean)
-          .join(" | ");
+      // Among name-based results, pick the first one whose extracted name matches
+      const byNameMatch = !byUsername && fullName
+        ? organic.find((r) => {
+            const titleParts = (r.title ?? "").replace(" | LinkedIn", "").split(" | ");
+            const extracted = titleParts[0]?.trim() ?? "";
+            return namesOverlap(extracted, fullName);
+          })
+        : null;
 
+      const topResult = byUsername ?? byNameMatch ?? (username ? null : organic[0]);
+
+      if (!topResult) {
         return JSON.stringify({
-          source: "google_search",
+          source: "not_found",
           url: linkedinUrl,
           username,
-          name: extractedName || fullName || username,
-          headline,
-          snippet: topResult.snippet?.slice(0, 300),
-          recentActivity: recentActivity || null,
-          searchQuery: query,
+          name: fullName ?? username,
+          note: "Profil non trouvé publiquement. Personnalise le message avec les infos disponibles (nom, entreprise, titre).",
         });
       }
+
+      // Google expose souvent : "Nom | Poste chez Entreprise | LinkedIn"
+      const titleParts = (topResult.title ?? "").replace(" | LinkedIn", "").split(" | ");
+      const extractedName = titleParts[0]?.trim() ?? "";
+      const headline = titleParts[1]?.trim() ?? topResult.snippet?.split(".")[0] ?? "";
+
+      // Final guard: if name doesn't overlap at all, refuse rather than inject wrong data
+      if (fullName && extractedName && !namesOverlap(extractedName, fullName)) {
+        return JSON.stringify({
+          source: "name_mismatch",
+          url: linkedinUrl,
+          username,
+          name: fullName,
+          note: `Profil trouvé (${extractedName}) ne correspond pas au nom attendu (${fullName}). Données ignorées.`,
+        });
+      }
+
+      // Chercher les posts récents dans les autres résultats
+      const recentActivity = organic
+        .slice(0, 3)
+        .filter((r) => r.link?.includes("linkedin.com"))
+        .map((r) => r.snippet?.slice(0, 150))
+        .filter(Boolean)
+        .join(" | ");
+
+      return JSON.stringify({
+        source: "google_search",
+        url: topResult.link ?? linkedinUrl,
+        username,
+        name: extractedName || fullName || username,
+        headline,
+        snippet: topResult.snippet?.slice(0, 300),
+        recentActivity: recentActivity || null,
+        searchQuery: query,
+      });
     } catch (error) {
       return JSON.stringify({ source: "error", url: linkedinUrl, username, error: String(error) });
     }
-
-    return JSON.stringify({
-      source: "not_found",
-      url: linkedinUrl,
-      username,
-      name: fullName ?? username,
-      note: "Profil non trouvé publiquement. Personnalise le message avec les infos disponibles (nom, entreprise, titre).",
-    });
   },
 });
 

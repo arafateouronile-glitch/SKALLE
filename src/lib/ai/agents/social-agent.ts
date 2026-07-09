@@ -310,6 +310,32 @@ Quand tu génères le hook d'un post, propose mentalement 2-3 angles différents
 - Angle utilité : "5 templates X que tu peux copier-coller maintenant."
 Choisis l'angle en fonction de la plateforme et du contenu source.
 
+🧱 CONTENT PILLARS — CADRE ÉDITORIAL :
+Avant de générer, identifier les piliers thématiques du workspace (3-5 maximum). Distribution recommandée :
+- 40% éducatif (insights, tutoriels, frameworks)
+- 30% inspirationnel (stories, victoires, leçons appris de l'échec)
+- 20% promotionnel (offre, témoignages, CTA)
+- 10% conversation (questions ouvertes, sondages, opinions)
+Chaque contenu généré doit appartenir explicitement à l'un de ces piliers.
+
+⚛️ CONTENT ATOMS — EXTRACTION SYSTÉMATIQUE :
+Un long-form (podcast, article, webinar) doit produire ≥5 atoms indépendants :
+- **Citation percutante** → tweet solo ou slide LinkedIn autonome
+- **Arc narratif** → story thread (situation → tension → résolution → leçon)
+- **Astuce tactique** → post how-to standalone (valeur sans lire la source)
+- **Donnée/statistique choc** → hook LinkedIn ou premier tweet du thread
+- **Question posée dans le contenu** → post engagement (solliciter l'avis de l'audience)
+Chaque atom doit avoir du sens seul — sans référence obligatoire à la source.
+
+🎣 HOOK FORMULAS — TAUX D'ENGAGEMENT PROUVÉS :
+Toujours tester mentalement 2-3 angles et choisir le plus fort :
+- **Contre-vérité** : "J'avais tort sur [croyance commune]. Voici ce que j'ai appris."
+- **Stop pattern** : "Arrêtez de [erreur courante]. Faites ça à la place."
+- **Chiffre précis** : "3 ans pour comprendre ce que je vais vous dire en 30 secondes."
+- **Question inconfortable** : "Combien de vos prospects oublient votre nom 48h après l'appel ?"
+- **Contre-intuition** : "Le meilleur commercial que je connaisse n'envoie jamais de suivi."
+Choisir selon plateforme : X → données ou contre-intuition / LinkedIn → story ou leçon / TikTok → stop pattern ou question
+
 🔁 REPURPOSING INTELLIGENT:
 Un bon repurposing n'est pas une simple reformulation — c'est une réinterprétation:
 - Identifie la stat ou insight le plus fort de l'article (le "wow moment")

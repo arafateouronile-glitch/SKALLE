@@ -7,7 +7,7 @@ import { AppTopBar } from "@/components/modules/app-topbar";
 import {
   Sparkles, FileText, Image, RotateCcw, Calendar, Plus,
   X, Check, ChevronRight, Linkedin, Twitter, Facebook, Instagram,
-  Zap, Copy, RefreshCw,
+  Zap, Copy, RefreshCw, Video, Users,
 } from "lucide-react";
 
 // ─── Studio base types ────────────────────────────────────────────────────────
@@ -28,6 +28,8 @@ const TEMPLATES = [
   { id: "seo",      title: "Article SEO",       desc: "Long format optimisé, plan + preview avant validation",                  credits: 8,  icon: FileText,  tab: "articles" as Tab },
   { id: "posts",    title: "30 Posts sociaux",  desc: "Batch personnalisé sur le persona de vos clients",                       credits: 15, icon: RotateCcw, tab: "posts"    as Tab },
   { id: "image",    title: "Image de blog",     desc: "Visuel HD 16:9 optimisé pour article",                                   credits: 5,  icon: Image,     tab: "images"   as Tab },
+  { id: "video-ads", title: "Video Ads UGC",  desc: "Avatar IA · lip-sync ultra-réaliste · TikTok / Reels / YouTube Shorts",  credits: 21, icon: Video,     tab: "images"   as Tab, href: "/marketing-os/studio/video-ads" },
+  { id: "persons",   title: "Personnages",    desc: "Créez Jean, Noellie… importez ou générez leurs photos dans toutes les scènes UGC", credits: 0, icon: Users, tab: "images" as Tab, href: "/marketing-os/studio/persons" },
 ];
 
 type Creation = {

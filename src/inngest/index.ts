@@ -53,6 +53,7 @@ import {
 } from "./functions/linkedin-engagement-poller";
 import { runVideoAdPipeline, videoAdPipelineFailure } from "./functions/video-ads-pipeline";
 import { hubspotSyncFunction } from "./functions/hubspot-sync";
+import { sequenceOptimizerFunction } from "./functions/sequence-optimizer";
 
 // Export all Inngest functions
 export const functions = [
@@ -129,4 +130,6 @@ export const functions = [
   videoAdPipelineFailure,
   // CRM — Sync bidirectionnelle HubSpot (toutes les 30min)
   hubspotSyncFunction,
+  // CSO AI — Optimisation automatique des séquences (lundi 8h)
+  sequenceOptimizerFunction,
 ];

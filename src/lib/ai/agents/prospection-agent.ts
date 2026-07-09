@@ -207,6 +207,32 @@ const PROSPECTION_AGENT_PROMPT = `Tu es le meilleur expert en prospection Linked
 2. **GÉNÉRATION** → passe le JSON de research à \`generate_prospection_sequence\`
 3. **SAUVEGARDE** → si un prospectId est fourni, appelle \`save_prospect_messages\`
 
+🎯 CADRE ICP — AVANT TOUTE SÉQUENCE :
+Évaluer chaque prospect selon ces 4 dimensions avant de générer les messages :
+- **Firmographique** : taille entreprise, secteur, géographie, stade de maturité (PME / scale-up / ETI)
+- **Signaux d'achat** : levée de fonds récente, recrutement commercial, nouveau poste du contact, actualité entreprise
+- **Profil décideur** : titre exact, périmètre de responsabilité, douleur prioritaire identifiable
+- **Disqualifieurs** : hors secteur cible, trop petite structure, concurrent direct, déjà client
+
+⚡ SCORING HOT / WARM / COLD :
+- 🔥 **HOT** : ICP fort + signal d'achat clair + décideur joignable + contact vérifié → priorité absolue, séquence agressive
+- 🟡 **WARM** : ICP correct + signal faible OU décideur difficile → séquence patiente, angle relationnel
+- ❄️ **COLD** : ICP partiel, aucun signal → valeur éducative uniquement, pas de pitch
+- 🚫 **SKIP** : hors ICP ou contact non-vérifiable → ne pas générer
+
+📧 PRINCIPES COLD EMAIL (peer-to-peer, jamais sales pitch) :
+- **Objet** : 2-4 mots minuscules sans ponctuation — ressemble à un email entre collègues ("question rapide", "votre lancement")
+- **Ton** : "collègue intelligent qui a remarqué quelque chose de pertinent" — pas un commercial
+- Zéro jargon : pas de "synergie", "leverage", "disruptif", "game-changer"
+- Chaque phrase doit justifier sa présence — brutalité éditoriale
+- Un seul CTA à friction minimale : tester l'intérêt, pas closer un meeting au premier contact
+
+📬 STRATÉGIE DE SUIVI (3-5 touches) — angle distinct à chaque fois :
+- Touch 2 : preuve sociale ciblée (client similaire, secteur identique)
+- Touch 3 : angle différent (timing, trigger récent détecté, question ouverte)
+- Touch 4 : "break-up" avec valeur (ressource utile + porte de sortie propre)
+- Jamais répéter "juste pour relancer" ou "je voulais vérifier si vous avez eu le temps"
+
 🔑 RÈGLES ABSOLUES :
 - Message LinkedIn connexion : MAX 280 chars, zéro pitch, zéro lien
 - Email : le prénom ou l'entreprise dans les 4 premiers mots
@@ -386,17 +412,29 @@ export async function runBulkProspectionAgent(
           prospect.name
         );
 
-        const dbProspect = await prisma.prospect.create({
-          data: {
-            name: prospect.name,
-            company: prospect.company,
-            jobTitle: prospect.jobTitle || "",
-            linkedInUrl: prospect.linkedInUrl || "",
-            notes: prospect.notes,
-            status: "NEW",
+        // Dedup: if a prospect with same name+company already exists, reuse it
+        let dbProspect = await prisma.prospect.findFirst({
+          where: {
             workspaceId,
+            name: { equals: prospect.name, mode: "insensitive" },
+            company: { equals: prospect.company, mode: "insensitive" },
           },
+          select: { id: true },
         });
+        if (!dbProspect) {
+          dbProspect = await prisma.prospect.create({
+            data: {
+              name: prospect.name,
+              company: prospect.company,
+              jobTitle: prospect.jobTitle || "",
+              linkedInUrl: prospect.linkedInUrl || "",
+              notes: prospect.notes,
+              status: "NEW",
+              workspaceId,
+            },
+            select: { id: true },
+          });
+        }
 
         return runProspectionAgent({
           prospectId: dbProspect.id,

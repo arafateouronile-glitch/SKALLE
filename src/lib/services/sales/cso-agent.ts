@@ -560,42 +560,64 @@ Génère les décisions. Les messages seront personnalisés séparément.
 
 // ─── Step 3: Store decisions ──────────────────────────────────────────────────
 
+// Cooldown par type d'action — évite de re-proposer trop vite après PENDING ou REJECTED
+const DEDUP_WINDOWS_MS: Record<CsoActionType, number> = {
+  CSO_LAUNCH_LINKEDIN: 7 * 24 * 60 * 60 * 1_000,  // 7j : si déjà tenté, attendre
+  CSO_LAUNCH_EMAIL:    7 * 24 * 60 * 60 * 1_000,  // 7j
+  CSO_FOLLOWUP:        3 * 24 * 60 * 60 * 1_000,  // 3j : relance tolérée plus vite
+  CSO_STALE_REJECT:   14 * 24 * 60 * 60 * 1_000,  // 14j : pas la peine de re-signaler
+};
+
 export async function storeCsoDecisions(
   workspaceId: string,
   drafts: CsoDecisionDraft[]
 ): Promise<number> {
   if (!drafts.length) return 0;
 
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1_000);
+  const now = Date.now();
 
-  // Skip duplicates: same prospectId + same actionType already PENDING in the last 24h
-  // Also skip prospects rejected for the same action type in the last 24h (short cooldown)
+  // Fetch existing PENDING + recently REJECTED decisions, letting each action type
+  // use its own cooldown window for filtering.
+  const longestWindow = Math.max(...Object.values(DEDUP_WINDOWS_MS));
+  const windowStart = new Date(now - longestWindow);
+
   const [existing, recentRejected] = await Promise.all([
     prisma.agentDecision.findMany({
       where: {
         workspaceId,
         status: "PENDING",
-        createdAt: { gte: oneDayAgo },
+        createdAt: { gte: windowStart },
         actionType: { in: drafts.map((d) => d.actionType) },
       },
-      select: { actionType: true, actionData: true },
+      select: { actionType: true, actionData: true, createdAt: true },
     }),
     prisma.agentDecision.findMany({
       where: {
         workspaceId,
         status: "REJECTED",
-        updatedAt: { gte: oneDayAgo },
+        updatedAt: { gte: windowStart },
+        actionType: { in: drafts.map((d) => d.actionType) },
       },
-      select: { actionType: true, actionData: true },
+      select: { actionType: true, actionData: true, updatedAt: true },
     }),
   ]);
 
-  const blockedKeys = new Set(
-    [...existing, ...recentRejected].map((e) => {
+  // Build a set of "type:prospectId" keys that are still within their cooldown window
+  const blockedKeys = new Set<string>();
+  for (const e of existing) {
+    const window = DEDUP_WINDOWS_MS[e.actionType as CsoActionType] ?? DEDUP_WINDOWS_MS.CSO_LAUNCH_LINKEDIN;
+    if (now - e.createdAt.getTime() < window) {
       const data = e.actionData as Record<string, unknown> | null;
-      return `${e.actionType}:${data?.prospectId ?? ""}`;
-    })
-  );
+      blockedKeys.add(`${e.actionType}:${data?.prospectId ?? ""}`);
+    }
+  }
+  for (const e of recentRejected) {
+    const window = DEDUP_WINDOWS_MS[e.actionType as CsoActionType] ?? DEDUP_WINDOWS_MS.CSO_LAUNCH_LINKEDIN;
+    if (now - e.updatedAt.getTime() < window) {
+      const data = e.actionData as Record<string, unknown> | null;
+      blockedKeys.add(`${e.actionType}:${data?.prospectId ?? ""}`);
+    }
+  }
 
   const fresh = drafts.filter(
     (d) => !blockedKeys.has(`${d.actionType}:${d.prospectId}`)

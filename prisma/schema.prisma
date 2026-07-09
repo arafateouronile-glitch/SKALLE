@@ -120,6 +120,7 @@ model Workspace {
   videoAdJobs               VideoAdJob[]
   avatarAssets              AvatarAsset[]
   persons                   Person[]
+  sequenceSuggestions       SequenceSuggestion[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -380,9 +381,10 @@ model OutreachSequence {
   campaignId  String?
   abTestId    String?        // shared UUID linking A and B variants
   abVariant   String?        // "A" or "B"
-  campaign    EmailCampaign? @relation(fields: [campaignId], references: [id])
-  prospect    Prospect       @relation(fields: [prospectId], references: [id], onDelete: Cascade)
-  steps       SequenceStep[]
+  campaign     EmailCampaign?       @relation(fields: [campaignId], references: [id])
+  prospect     Prospect             @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  steps        SequenceStep[]
+  suggestions  SequenceSuggestion[]
 
   @@index([prospectId])
   @@index([workspaceId])
@@ -416,6 +418,26 @@ model SequenceStep {
 
   @@index([sequenceId])
   @@index([status])
+}
+
+model SequenceSuggestion {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  sequenceId      String
+  stepId          String?
+  type            String           // SUBJECT_REWRITE | DELAY_CHANGE | CONTENT_REWRITE | DEACTIVATE | CHANNEL_SWITCH
+  reason          String
+  currentValue    Json
+  suggestedValue  Json
+  estimatedImpact String
+  status          String           @default("PENDING") // PENDING | APPROVED | REJECTED | APPLIED
+  createdAt       DateTime         @default(now())
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sequence        OutreachSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([sequenceId])
 }
 
 model LeadEnrichment {

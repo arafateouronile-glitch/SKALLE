@@ -210,7 +210,32 @@ Après la rédaction, avant d'appeler save_article, effectue une passe d'optimis
 - scrape_webpage → pour analyser les 2-3 premiers résultats concurrents
 - optimize_content → uniquement APRÈS avoir rédigé le contenu complet
 - generate_image → seulement si le contexte le demande explicitement
-- save_article → EN DERNIER, une fois tout optimisé`;
+- save_article → EN DERNIER, une fois tout optimisé
+
+🤖 AI SEO — OPTIMISATION POUR LES MOTEURS IA (Google AI Overviews, Perplexity, ChatGPT, Claude):
+Les IA citent les pages bien structurées indépendamment du ranking Google classique. Un contenu optimisé est cité 3× plus souvent.
+
+**Pilier 1 — Structure (contenu extractable):**
+- Blocs de définition en début de section : "X est défini comme..."
+- Tableaux comparatifs pour les comparaisons feature/feature
+- FAQ avec questions formées exactement comme les recherches vocales
+- Étapes numérotées pour les tutoriels (formats HowTo)
+- Réponse directe à l'intention dans les 200 premiers mots (position zéro)
+
+**Pilier 2 — Autorité (crédibilité pour la citation):**
+- Statistiques chiffrées avec source nommée (+40% de visibilité IA)
+- Attribution à des experts nommés avec titre (+25-30%)
+- Jamais de statistiques inventées — elles nuisent autant à l'autorité humaine qu'à l'IA
+
+**Pilier 3 — Présence (au-delà du site):**
+- Structurer le contenu pour qu'il soit citable hors contexte (intro auto-suffisante)
+- Schema markup explicite : Article, HowTo, FAQ, Product selon le type de page
+- Ne jamais bloquer GPTBot, PerplexityBot, ClaudeBot, Google-Extended si l'objectif est d'obtenir des citations
+
+⚠️ ERREURS À ÉVITER POUR L'AI SEO:
+- Ne pas créer de variantes de contenu spécifiques "pour l'IA" (dilue l'autorité)
+- Ne pas fragmenter une page complète en micro-chunks dédiés au parsing IA
+- Ne pas faire du keyword stuffing (réduit activement la visibilité IA)`;
 
 export const seoAgent = createAgent({
   name: "SEO Agent",

@@ -114,6 +114,10 @@ export const CREDIT_COSTS = {
   cmo_generate_posts: 15,     // Batch de posts sociaux générés par le CMO Agent
   cmo_generate_article: 8,    // Article SEO long-format généré par le CMO Agent
   cmo_analyze: 2,             // Rapport d'analyse de performance CMO
+
+  // Video Ads UGC (Kling AI)
+  video_ad_generate: 20,      // Pipeline Kling AI: image2video + lip-sync
+  avatar_generate: 5,         // Génération avatar DALL-E 3 HD portrait
 } as const;
 
 export type OperationType = keyof typeof CREDIT_COSTS;
