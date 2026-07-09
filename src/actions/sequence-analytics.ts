@@ -217,3 +217,82 @@ export async function getSequenceStepAnalytics(
     return { success: false, error: String(error) };
   }
 }
+
+// ─── A/B Test Results ─────────────────────────────────────────────────────────
+
+export interface AbTestResult {
+  abTestId: string;
+  sequenceName: string;
+  a: { sequences: number; sent: number; opened: number; replied: number; openRate: number; replyRate: number };
+  b: { sequences: number; sent: number; opened: number; replied: number; openRate: number; replyRate: number };
+  winner: "A" | "B" | "tie" | "pending";
+}
+
+export async function getAllAbTests(
+  workspaceId: string
+): Promise<{ success: boolean; data?: AbTestResult[]; error?: string }> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return { success: false, error: "Non autorisé" };
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { id: workspaceId, userId: session.user.id },
+      select: { id: true },
+    });
+    if (!workspace) return { success: false, error: "Workspace non trouvé" };
+
+    const sequences = await prisma.outreachSequence.findMany({
+      where: { workspaceId, abTestId: { not: null } },
+      select: {
+        id: true, name: true, abTestId: true, abVariant: true,
+        steps: { select: { status: true, openedAt: true, repliedAt: true } },
+      },
+    });
+
+    const SENT_STATUSES = new Set(["SENT", "DELIVERED", "OPENED", "CLICKED", "REPLIED"]);
+
+    // Group by abTestId
+    const byTest = new Map<string, typeof sequences>();
+    for (const seq of sequences) {
+      if (!seq.abTestId) continue;
+      if (!byTest.has(seq.abTestId)) byTest.set(seq.abTestId, []);
+      byTest.get(seq.abTestId)!.push(seq);
+    }
+
+    function variantStats(seqs: typeof sequences, variant: string) {
+      const filtered = seqs.filter((s) => s.abVariant === variant);
+      let sent = 0, opened = 0, replied = 0;
+      for (const seq of filtered) {
+        for (const step of seq.steps) {
+          if (SENT_STATUSES.has(step.status)) sent++;
+          if (step.openedAt) opened++;
+          if (step.repliedAt) replied++;
+        }
+      }
+      return {
+        sequences: filtered.length,
+        sent, opened, replied,
+        openRate: sent > 0 ? Math.round((opened / sent) * 100) : 0,
+        replyRate: sent > 0 ? Math.round((replied / sent) * 100) : 0,
+      };
+    }
+
+    const results: AbTestResult[] = [];
+    for (const [abTestId, seqs] of byTest.entries()) {
+      const a = variantStats(seqs, "A");
+      const b = variantStats(seqs, "B");
+      let winner: AbTestResult["winner"] = "pending";
+      if (a.sent >= 5 && b.sent >= 5) {
+        if (a.replyRate > b.replyRate + 2) winner = "A";
+        else if (b.replyRate > a.replyRate + 2) winner = "B";
+        else winner = "tie";
+      }
+      const aSeq = seqs.find((s) => s.abVariant === "A");
+      results.push({ abTestId, sequenceName: (aSeq?.name ?? "Test").replace(" — Variante A", "").replace(" — Variante B", ""), a, b, winner });
+    }
+
+    return { success: true, data: results };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}

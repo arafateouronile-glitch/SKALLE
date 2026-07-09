@@ -44,6 +44,8 @@ type SortDir = "asc" | "desc";
 interface SeqTemplate {
   id: string;
   name: string;
+  abTestId: string | null;
+  abVariant: string | null;
   prospect: { name: string; company: string };
   steps: { channel: string; status: string }[];
 }
@@ -200,7 +202,36 @@ export default function ProspectsPage() {
     if (!pickedSeqId || selected.size === 0) return;
     setLaunching(true);
     try {
-      const res = await cloneSequence(pickedSeqId, Array.from(selected));
+      const picked = templates.find((t) => t.id === pickedSeqId);
+      const ids = Array.from(selected);
+
+      // A/B split: if the picked sequence is part of an A/B test, find variant B and split 50/50
+      if (picked?.abTestId) {
+        const variantB = templates.find(
+          (t) => t.abTestId === picked.abTestId && t.id !== pickedSeqId
+        );
+        if (variantB) {
+          const half = Math.ceil(ids.length / 2);
+          const aIds = ids.slice(0, half);
+          const bIds = ids.slice(half);
+          const [resA, resB] = await Promise.all([
+            cloneSequence(pickedSeqId, aIds),
+            cloneSequence(variantB.id, bIds),
+          ]);
+          const totalCreated = resA.created + resB.created;
+          if (totalCreated > 0) {
+            toast.success(`A/B test lancé — ${resA.created} × variante A, ${resB.created} × variante B`);
+            setSeqModalOpen(false);
+            setSelected(new Set());
+          } else {
+            toast.error([...resA.errors, ...resB.errors][0] ?? "Erreur");
+          }
+          return;
+        }
+      }
+
+      // Normal launch (no A/B)
+      const res = await cloneSequence(pickedSeqId, ids);
       if (res.created > 0) {
         toast.success(`${res.created} séquence${res.created > 1 ? "s" : ""} créée${res.created > 1 ? "s" : ""} — cliquez Lancer dans la page Séquences`);
         setSeqModalOpen(false);
@@ -506,6 +537,9 @@ export default function ProspectsPage() {
                         {seq.steps.length} étape{seq.steps.length > 1 ? "s" : ""}
                         {emailCount > 0 && <span className="text-violet-400">{emailCount}×✉</span>}
                         {liCount > 0 && <span className="text-blue-400">{liCount}×in</span>}
+                        {seq.abTestId && seq.abVariant === "A" && (
+                          <span className="text-amber-400 font-bold">A/B</span>
+                        )}
                       </div>
                     </button>
                   );
@@ -517,7 +551,15 @@ export default function ProspectsPage() {
             <div className="flex items-center justify-between px-5 py-4 border-t border-white/[0.08] bg-white/[0.02]">
               <p className="text-[11px] text-slate-500">
                 {pickedSeqId
-                  ? `Créera ${selected.size} séquence${selected.size > 1 ? "s" : ""} (état "Prête" → à lancer)`
+                  ? (() => {
+                      const t = templates.find((x) => x.id === pickedSeqId);
+                      const hasAB = t?.abTestId && templates.some((x) => x.abTestId === t.abTestId && x.id !== pickedSeqId);
+                      if (hasAB) {
+                        const half = Math.ceil(selected.size / 2);
+                        return `Split A/B auto : ~${half} × Var.A + ~${selected.size - half} × Var.B`;
+                      }
+                      return `Créera ${selected.size} séquence${selected.size > 1 ? "s" : ""} (état "Prête" → à lancer)`;
+                    })()
                   : "Sélectionnez une séquence ci-dessus"}
               </p>
               <button

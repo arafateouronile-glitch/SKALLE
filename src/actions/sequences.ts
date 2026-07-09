@@ -473,6 +473,158 @@ export async function getSequenceDetail(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 🧪 A/B TEST — Créer la variante B d'une séquence
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function createAbVariant(sourceSequenceId: string): Promise<{
+  success: boolean;
+  abTestId?: string;
+  variantBId?: string;
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth();
+    const workspace = await prisma.workspace.findFirst({
+      where: { userId: session.user!.id! },
+      select: { id: true },
+    });
+    if (!workspace) return { success: false, error: "Workspace non trouvé" };
+
+    const source = await prisma.outreachSequence.findFirst({
+      where: { id: sourceSequenceId, workspaceId: workspace.id },
+      include: {
+        steps: {
+          orderBy: { stepNumber: "asc" },
+          select: {
+            stepNumber: true, channel: true, subject: true, content: true,
+            delayDays: true, scheduledAt: true, metadata: true,
+          },
+        },
+      },
+    });
+    if (!source) return { success: false, error: "Séquence introuvable" };
+    if (source.abTestId) return { success: false, error: "Cette séquence a déjà une variante B" };
+
+    const abTestId = crypto.randomUUID();
+    const FAR_FUTURE = new Date("2099-01-01T00:00:00.000Z");
+
+    // Tag the source as variant A
+    await prisma.outreachSequence.update({
+      where: { id: sourceSequenceId },
+      data: { abTestId, abVariant: "A" },
+    });
+
+    // Create variant B — same prospect, name + " — Variante B"
+    const variantB = await prisma.outreachSequence.create({
+      data: {
+        name: `${source.name} — Variante B`,
+        isActive: false,
+        prospectId: source.prospectId,
+        workspaceId: workspace.id,
+        abTestId,
+        abVariant: "B",
+        steps: {
+          create: source.steps.map((step) => {
+            const meta = (step.metadata ?? {}) as Record<string, unknown>;
+            const isBranch = meta.smartBranch === true && step.stepNumber > 1;
+            return {
+              stepNumber: step.stepNumber,
+              channel: step.channel,
+              subject: step.subject ? `${step.subject} [B]` : undefined,
+              content: step.content,
+              delayDays: step.delayDays,
+              status: "PENDING",
+              ...(isBranch && {
+                scheduledAt: FAR_FUTURE,
+                metadata: { smartBranch: true, waitingFor: meta.waitingFor as string },
+              }),
+            };
+          }),
+        },
+      },
+      select: { id: true },
+    });
+
+    return { success: true, abTestId, variantBId: variantB.id };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 📊 A/B TEST RESULTS — Comparer variante A vs B
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AbVariantStats {
+  variant: string;
+  sequences: number;
+  sent: number;
+  opened: number;
+  replied: number;
+  openRate: number;
+  replyRate: number;
+}
+
+export async function getAbTestResults(abTestId: string): Promise<{
+  success: boolean;
+  data?: { a: AbVariantStats; b: AbVariantStats; winner: "A" | "B" | "tie" | "pending" };
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth();
+    const workspace = await prisma.workspace.findFirst({
+      where: { userId: session.user!.id! },
+      select: { id: true },
+    });
+    if (!workspace) return { success: false, error: "Workspace non trouvé" };
+
+    const sequences = await prisma.outreachSequence.findMany({
+      where: { abTestId, workspaceId: workspace.id },
+      include: {
+        steps: {
+          select: { status: true, sentAt: true, openedAt: true, repliedAt: true },
+        },
+      },
+    });
+
+    function calcStats(seqs: typeof sequences, variant: string): AbVariantStats {
+      const SENT_STATUSES = ["SENT", "DELIVERED", "OPENED", "CLICKED", "REPLIED"];
+      let sent = 0, opened = 0, replied = 0;
+      for (const seq of seqs) {
+        for (const step of seq.steps) {
+          if (SENT_STATUSES.includes(step.status)) sent++;
+          if (step.openedAt) opened++;
+          if (step.repliedAt) replied++;
+        }
+      }
+      return {
+        variant,
+        sequences: seqs.length,
+        sent, opened, replied,
+        openRate:  sent > 0 ? Math.round((opened  / sent) * 100) : 0,
+        replyRate: sent > 0 ? Math.round((replied / sent) * 100) : 0,
+      };
+    }
+
+    const aSeqs = sequences.filter((s) => s.abVariant === "A");
+    const bSeqs = sequences.filter((s) => s.abVariant === "B");
+    const a = calcStats(aSeqs, "A");
+    const b = calcStats(bSeqs, "B");
+
+    let winner: "A" | "B" | "tie" | "pending" = "pending";
+    if (a.sent >= 10 && b.sent >= 10) {
+      if (a.replyRate > b.replyRate + 2) winner = "A";
+      else if (b.replyRate > a.replyRate + 2) winner = "B";
+      else winner = "tie";
+    }
+
+    return { success: true, data: { a, b, winner } };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 📤 SEND STEP - Envoyer une étape de séquence
 // ═══════════════════════════════════════════════════════════════════════════
 

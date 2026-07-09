@@ -48,6 +48,7 @@ import {
   Mail,
   BarChart2,
   Trophy,
+  FlaskConical,
 } from "lucide-react";
 import {
   getPipelineAnalytics,
@@ -60,7 +61,9 @@ import {
 } from "@/actions/linkedin-analytics";
 import {
   getSequenceStepAnalytics,
+  getAllAbTests,
   type SequenceAnalyticsResult,
+  type AbTestResult,
 } from "@/actions/sequence-analytics";
 import { getUserWorkspace } from "@/actions/leads";
 import { cn } from "@/lib/utils";
@@ -480,13 +483,18 @@ function pct(n: number): string {
 
 function SequencesAnalyticsTab({ workspaceId }: { workspaceId: string }) {
   const [data, setData] = useState<SequenceAnalyticsResult | null>(null);
+  const [abTests, setAbTests] = useState<AbTestResult[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await getSequenceStepAnalytics(workspaceId);
+      const [res, abRes] = await Promise.all([
+        getSequenceStepAnalytics(workspaceId),
+        getAllAbTests(workspaceId),
+      ]);
       if (res.success && res.data) setData(res.data);
+      if (abRes.success && abRes.data) setAbTests(abRes.data);
     } finally {
       setLoading(false);
     }
@@ -684,6 +692,89 @@ function SequencesAnalyticsTab({ workspaceId }: { workspaceId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* A/B Test Results */}
+      {abTests.length > 0 && (
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <FlaskConical className="h-4 w-4 text-amber-500" />
+              Tests A/B en cours
+            </CardTitle>
+            <CardDescription className="text-xs text-gray-400">
+              Comparaison variante A vs B — gagnant déclaré après 5 envois par variante
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-5">
+              {abTests.map((test) => {
+                const aWins = test.winner === "A";
+                const bWins = test.winner === "B";
+                const isTie = test.winner === "tie";
+                const isPending = test.winner === "pending";
+                return (
+                  <div key={test.abTestId} className="rounded-lg border border-gray-100 bg-gray-50/50 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[13px] font-semibold text-gray-800 truncate">{test.sequenceName}</p>
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                        aWins && "bg-violet-100 text-violet-700",
+                        bWins && "bg-orange-100 text-orange-700",
+                        isTie && "bg-gray-100 text-gray-500",
+                        isPending && "bg-gray-100 text-gray-400",
+                      )}>
+                        {aWins ? "🏆 Variante A gagne" : bWins ? "🏆 Variante B gagne" : isTie ? "Égalité" : "En cours…"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: "Variante A", stats: test.a, wins: aWins, color: "#6366f1" },
+                        { label: "Variante B", stats: test.b, wins: bWins, color: "#f97316" },
+                      ].map(({ label, stats, wins, color }) => (
+                        <div key={label} className={cn(
+                          "rounded-lg border p-3 space-y-2 transition-all",
+                          wins ? "border-current/20 ring-1" : "border-gray-100"
+                        )} style={{ borderColor: wins ? color : undefined }}>
+                          <p className="text-[11px] font-bold" style={{ color }}>{label}</p>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-gray-500">Envois</span>
+                              <span className="font-medium text-gray-700">{stats.sent}</span>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-gray-500">Taux d&apos;ouverture</span>
+                              <span className={cn("font-medium", stats.openRate >= 40 ? "text-emerald-600" : stats.openRate >= 20 ? "text-amber-600" : "text-gray-500")}>
+                                {stats.openRate}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-gray-500">Taux de réponse</span>
+                              <span className={cn("font-bold text-[13px]", stats.replyRate >= 20 ? "text-emerald-600" : stats.replyRate >= 8 ? "text-amber-600" : "text-gray-500")}>
+                                {stats.replyRate}%
+                              </span>
+                            </div>
+                          </div>
+                          {/* Reply rate bar */}
+                          <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(stats.replyRate, 100)}%`, backgroundColor: color }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {isPending && (
+                      <p className="text-[10px] text-gray-400 text-center">
+                        {Math.min(test.a.sent, test.b.sent)} / 5 envois minimum atteints par variante
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

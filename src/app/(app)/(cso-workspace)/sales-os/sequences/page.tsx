@@ -29,9 +29,10 @@ import {
   X,
   Copy,
   Search,
+  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getSequences, deleteSequence, getSequenceDetail, cloneSequence } from "@/actions/sequences";
+import { getSequences, deleteSequence, getSequenceDetail, cloneSequence, createAbVariant } from "@/actions/sequences";
 import { getProspects } from "@/actions/prospects";
 import { getUserWorkspace } from "@/actions/leads";
 import { SequenceBuilder } from "@/components/sequences/sequence-builder";
@@ -83,6 +84,8 @@ interface Sequence {
   name: string;
   isActive: boolean;
   createdAt: string;
+  abTestId: string | null;
+  abVariant: string | null;
   prospect: { id: string; name: string; email: string | null; company: string };
   steps: SequenceStep[];
 }
@@ -141,6 +144,9 @@ export default function SequencesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [detailSeq, setDetailSeq] = useState<SequenceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // A/B test state
+  const [creatingAbId, setCreatingAbId] = useState<string | null>(null);
 
   // Clone modal state
   const [cloneSourceId, setCloneSourceId] = useState<string | null>(null);
@@ -222,6 +228,23 @@ export default function SequencesPage() {
     setDetailLoading(false);
     if (res.success && res.data) setDetailSeq(res.data as SequenceDetail);
     else toast.error("Impossible de charger le détail");
+  }
+
+  async function handleCreateAbVariant(seqId: string) {
+    setCreatingAbId(seqId);
+    try {
+      const res = await createAbVariant(seqId);
+      if (res.success) {
+        toast.success("Variante B créée — modifiez son contenu puis lancez les deux en parallèle");
+        await loadData();
+      } else {
+        toast.error(res.error ?? "Erreur lors de la création de la variante B");
+      }
+    } catch {
+      toast.error("Erreur réseau");
+    } finally {
+      setCreatingAbId(null);
+    }
   }
 
   async function openClone(seq: Sequence) {
@@ -359,7 +382,7 @@ export default function SequencesPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     {/* Name + status */}
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-[13px] font-semibold text-white truncate">
                         {seq.name}
                       </span>
@@ -378,6 +401,17 @@ export default function SequencesPage() {
                         {status === "paused" && "En pause"}
                         {status === "not_started" && "Prête"}
                       </Badge>
+                      {seq.abVariant && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0 rounded-full border shrink-0"
+                          style={{
+                            background: seq.abVariant === "A" ? "rgba(139,92,246,0.15)" : "rgba(251,146,60,0.15)",
+                            borderColor: seq.abVariant === "A" ? "rgba(139,92,246,0.4)" : "rgba(251,146,60,0.4)",
+                            color: seq.abVariant === "A" ? "rgb(167,139,250)" : "rgb(251,146,60)",
+                          }}>
+                          <FlaskConical className="h-2.5 w-2.5" />
+                          Variante {seq.abVariant}
+                        </span>
+                      )}
                     </div>
 
                     {/* Prospect */}
@@ -482,7 +516,7 @@ export default function SequencesPage() {
                       ) : null}
                     </div>
 
-                    {/* Detail + clone + delete */}
+                    {/* Detail + clone + A/B + delete */}
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => openDetail(seq.id)}
@@ -498,6 +532,20 @@ export default function SequencesPage() {
                       >
                         <Copy className="h-3.5 w-3.5" />
                       </button>
+                      {!seq.abTestId && (
+                        <button
+                          onClick={() => handleCreateAbVariant(seq.id)}
+                          disabled={creatingAbId === seq.id}
+                          className="p-1.5 rounded text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all disabled:opacity-40"
+                          title="Créer variante B (A/B test)"
+                        >
+                          {creatingAbId === seq.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <FlaskConical className="h-3.5 w-3.5" />}
+                        </button>
+                      )}
+                      {/* Placeholder to keep spacing */}
+                      {seq.abTestId && <div className="w-[28px]" />}
                       {deleteConfirmId === seq.id ? (
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-red-400">Supprimer ?</span>

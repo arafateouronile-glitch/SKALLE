@@ -117,6 +117,9 @@ model Workspace {
   cmoObjectives             CMOObjective[]
   cmoProposals              CMOProposal[]
   personas                  Persona[]
+  videoAdJobs               VideoAdJob[]
+  avatarAssets              AvatarAsset[]
+  persons                   Person[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -372,6 +375,8 @@ model OutreachSequence {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   campaignId  String?
+  abTestId    String?        // shared UUID linking A and B variants
+  abVariant   String?        // "A" or "B"
   campaign    EmailCampaign? @relation(fields: [campaignId], references: [id])
   prospect    Prospect       @relation(fields: [prospectId], references: [id], onDelete: Cascade)
   steps       SequenceStep[]
@@ -379,6 +384,7 @@ model OutreachSequence {
   @@index([prospectId])
   @@index([workspaceId])
   @@index([campaignId])
+  @@index([abTestId])
 }
 
 model SequenceStep {
@@ -1053,6 +1059,36 @@ model Persona {
   @@index([status])
 }
 
+// ── Persons (personnages IA réutilisables) ────────────────────────────────────
+
+model Person {
+  id          String        @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?       // Appearance description (used as generation reference)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  photos      PersonPhoto[]
+
+  @@index([workspaceId])
+}
+
+model PersonPhoto {
+  id              String   @id @default(cuid())
+  personId        String
+  formatId        String?  // UGC format id — null for base/manual photos
+  formatLabel     String?  // Human-readable label (e.g. "Café parisien")
+  photoUrl        String
+  storagePath     String
+  isBase          Boolean  @default(false)
+  generatedWithAI Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  person          Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId])
+}
+
 enum EnrichmentStatus {
   PENDING
   PROCESSING
@@ -1467,4 +1503,70 @@ model CMOProposal {
   @@index([status])
   @@index([objectiveId])
   @@index([createdAt])
+}
+
+enum VideoAdStatus {
+  PENDING
+  UPLOADING
+  TRANSCRIBING
+  ANIMATING
+  LIP_SYNCING
+  COMPOSITING
+  CAPTIONING
+  EXPORTING
+  DONE
+  FAILED
+}
+
+enum VideoAdModel {
+  KLING
+  SORA
+  VEO
+  SEEDANCE
+}
+
+model VideoAdJob {
+  id                     String        @id @default(cuid())
+  workspaceId            String
+  status                 VideoAdStatus @default(PENDING)
+  errorMessage           String?
+  audioStoragePath       String?
+  avatarStoragePath      String?
+  script                 String        @default("")
+  animationPrompt        String        @default("")
+  voiceName              String        @default("nova")
+  videoModel             VideoAdModel  @default(KLING)
+  ugcStyle               String        @default("ugc_produit")
+  movementType           String        @default("statique")
+  storyboardPlans        Json?
+  klingImage2VideoTaskId String?
+  klingLipSyncTaskId     String?
+  klingVideoUrl               String?
+  finalVideoUrl               String?
+  screenRecordingStoragePath  String?
+  baseVideoStoragePath        String?
+  compositeVideoUrl           String?
+  captionedVideoUrl           String?
+  squareVideoUrl              String?
+  landscapeVideoUrl           String?
+  thumbnailUrl                String?
+  creditsUsed            Int           @default(0)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  workspace              Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AvatarAsset {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  name         String    @default("")
+  storagePath  String
+  createdAt    DateTime  @default(now())
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
