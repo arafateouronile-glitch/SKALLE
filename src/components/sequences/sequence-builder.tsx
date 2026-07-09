@@ -36,11 +36,22 @@ import {
   GitMerge,
   Users,
   GitBranch,
+  BookOpen,
+  X,
+  ChevronRight,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSequence, type SequenceStepInput } from "@/actions/sequences";
 import { getProspects } from "@/actions/prospects";
 import { toast } from "sonner";
+import {
+  SEQUENCE_TEMPLATES,
+  CATEGORY_LABELS,
+  CATEGORY_COLORS,
+  type SequenceTemplate,
+  type TemplateCategory,
+} from "@/lib/sequence-templates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -140,6 +151,11 @@ export function SequenceBuilder({
   const [loadingProspects, setLoadingProspects] = useState(false);
   const [prospects, setProspects] = useState<Prospect[]>([]);
 
+  // Template picker
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [templateCategory, setTemplateCategory] = useState<TemplateCategory | "all">("all");
+  const [previewTemplate, setPreviewTemplate] = useState<SequenceTemplate | null>(null);
+
   // Step 1
   const [name, setName] = useState("");
   const [selectedProspectId, setSelectedProspectId] = useState("");
@@ -167,6 +183,26 @@ export function SequenceBuilder({
     setSteps([
       { stepNumber: 1, channel: "EMAIL", subject: "", content: "", delayDays: 0, triggerCondition: "ALWAYS" },
     ]);
+    setShowTemplatePicker(false);
+    setPreviewTemplate(null);
+    setTemplateCategory("all");
+  }
+
+  function loadTemplate(template: SequenceTemplate) {
+    setSteps(
+      template.steps.map((s) => ({
+        stepNumber: s.stepNumber,
+        channel: s.channel,
+        subject: s.subject ?? "",
+        content: s.content,
+        delayDays: s.delayDays,
+        triggerCondition: s.triggerCondition,
+      }))
+    );
+    if (!name.trim()) setName(template.name);
+    setShowTemplatePicker(false);
+    setPreviewTemplate(null);
+    toast.success(`Template "${template.name}" chargé — personnalisez le contenu`);
   }
 
   function handleClose() {
@@ -397,9 +433,154 @@ export function SequenceBuilder({
         {/* ── Step 2: Steps editor ── */}
         {currentStep === 1 && (
           <div className="space-y-4">
-            <p className="text-[12px] text-slate-400">
-              Ajoutez les étapes de votre séquence. Chaque étape peut utiliser un canal différent.
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-[12px] text-slate-400">
+                Ajoutez les étapes de votre séquence. Chaque étape peut utiliser un canal différent.
+              </p>
+              <button
+                onClick={() => { setShowTemplatePicker(true); setPreviewTemplate(null); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[11px] font-semibold border transition-all hover:brightness-110 shrink-0"
+                style={{ background: "rgba(139,92,246,0.1)", borderColor: "rgba(139,92,246,0.3)", color: "#a78bfa" }}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                Templates
+              </button>
+            </div>
+
+            {/* Template picker overlay */}
+            {showTemplatePicker && (
+              <div className="rounded-xl border border-violet-500/20 bg-[#0c0e1a] overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                  <p className="text-[13px] font-semibold text-white flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-violet-400" />
+                    Choisir un template
+                  </p>
+                  <button onClick={() => { setShowTemplatePicker(false); setPreviewTemplate(null); }}
+                    className="p-1 rounded text-slate-500 hover:text-white transition-all">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Category tabs */}
+                <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/[0.06] overflow-x-auto">
+                  {(["all", ...Object.keys(CATEGORY_LABELS)] as (TemplateCategory | "all")[]).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setTemplateCategory(cat)}
+                      className="px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all"
+                      style={
+                        templateCategory === cat
+                          ? { background: "rgba(139,92,246,0.2)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.3)" }
+                          : { background: "transparent", color: "#64748b", border: "1px solid transparent" }
+                      }
+                    >
+                      {cat === "all" ? "Tous" : CATEGORY_LABELS[cat as TemplateCategory]}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex" style={{ maxHeight: 340 }}>
+                  {/* Template list */}
+                  <div className="w-1/2 overflow-y-auto border-r border-white/[0.06]">
+                    {SEQUENCE_TEMPLATES
+                      .filter((t) => templateCategory === "all" || t.category === templateCategory)
+                      .map((t) => {
+                        const cat = CATEGORY_COLORS[t.category];
+                        const isSelected = previewTemplate?.id === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => setPreviewTemplate(t)}
+                            className="w-full text-left px-4 py-3 border-b border-white/[0.04] last:border-0 transition-all"
+                            style={{ background: isSelected ? "rgba(139,92,246,0.08)" : undefined }}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[12px] font-semibold text-white truncate pr-2">{t.name}</span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                                style={{ background: cat.bg, color: cat.fg }}>
+                                {CATEGORY_LABELS[t.category]}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate">{t.description}</p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[10px] text-slate-600">{t.steps.length} étapes</span>
+                              <span className="text-[10px] text-emerald-500 flex items-center gap-0.5">
+                                <TrendingUp className="h-2.5 w-2.5" />{t.avgReplyRate}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+
+                  {/* Preview panel */}
+                  <div className="w-1/2 overflow-y-auto">
+                    {previewTemplate ? (
+                      <div className="p-4 space-y-3">
+                        <div>
+                          <p className="text-[12px] font-semibold text-white">{previewTemplate.name}</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">{previewTemplate.description}</p>
+                          <p className="text-[10px] text-slate-600 mt-1">Cible : {previewTemplate.useCase}</p>
+                        </div>
+                        <div className="space-y-2">
+                          {previewTemplate.steps.map((step, i) => {
+                            const Icon = step.channel === "EMAIL" ? Mail : Linkedin;
+                            const color = step.channel === "EMAIL" ? "#818cf8" : "#38bdf8";
+                            return (
+                              <div key={i} className="flex items-start gap-2">
+                                <div className="flex flex-col items-center">
+                                  <div className="h-5 w-5 rounded flex items-center justify-center shrink-0"
+                                    style={{ background: `${color}20` }}>
+                                    <Icon className="h-3 w-3" style={{ color }} />
+                                  </div>
+                                  {i < previewTemplate.steps.length - 1 && (
+                                    <div className="w-px h-4 bg-white/[0.06] my-0.5" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0 pb-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-medium" style={{ color }}>
+                                      Étape {step.stepNumber}
+                                    </span>
+                                    {step.delayDays > 0 && (
+                                      <span className="text-[9px] text-slate-600">+{step.delayDays}j</span>
+                                    )}
+                                    {step.triggerCondition !== "ALWAYS" && (
+                                      <span className="text-[9px] text-violet-500">
+                                        {step.triggerCondition === "IF_NO_REPLY" ? "si pas de réponse" : "si ouvert"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {step.subject && (
+                                    <p className="text-[10px] text-slate-400 truncate italic">"{step.subject}"</p>
+                                  )}
+                                  <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
+                                    {step.content.substring(0, 100)}…
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={() => loadTemplate(previewTemplate)}
+                          className="w-full flex items-center justify-center gap-2 py-2 rounded-[8px] text-[12px] font-semibold transition-all hover:brightness-110"
+                          style={{ background: "rgba(139,92,246,0.8)", color: "white" }}
+                        >
+                          <ChevronRight className="h-3.5 w-3.5" />
+                          Utiliser ce template
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full py-10 text-slate-600 text-[12px]">
+                        ← Sélectionnez un template
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3">
               {steps.map((step, index) => {
