@@ -125,9 +125,10 @@ export const sendSequenceStep = inngest.createFunction(
       if (!seq.isActive) throw new Error("Séquence mise en pause");
 
       const currentStep = seq.steps[0];
-      if (!currentStep || currentStep.status !== "PENDING") {
-        throw new Error("Étape déjà envoyée ou annulée");
-      }
+      if (!currentStep) throw new Error("Étape introuvable");
+      // SKIPPED = cancelled by a reply or branch condition — not an error, don't retry
+      if (currentStep.status === "SKIPPED") return null;
+      if (currentStep.status !== "PENDING") throw new Error("Étape déjà envoyée");
 
       const workspace = await prisma.workspace.findUnique({
         where: { id: seq.workspaceId },
@@ -136,6 +137,8 @@ export const sendSequenceStep = inngest.createFunction(
 
       return { seq, currentStep, workspace };
     });
+
+    if (!context) return { success: true, skipped: true };
 
     const currentStep = context.currentStep;
     const prospect = context.seq.prospect;

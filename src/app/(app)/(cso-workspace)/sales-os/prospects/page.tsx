@@ -6,13 +6,15 @@ import { AppTopBar } from "@/components/modules/app-topbar";
 import {
   Search, ExternalLink, Flame, Zap, Snowflake,
   Linkedin, Instagram, Facebook, ArrowUpDown,
-  Kanban, Loader2,
+  Kanban, Loader2, GitMerge, Play, X, CheckSquare,
 } from "lucide-react";
 import { getUserWorkspace } from "@/actions/leads";
 import {
   getScoredProspectsForDashboard,
   type ScoredProspectForDashboard,
 } from "@/actions/cso-sales";
+import { getSequences, cloneSequence } from "@/actions/sequences";
+import { toast } from "sonner";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -39,6 +41,13 @@ const PLATFORM_ICONS: Record<string, React.ElementType> = {
 type SortKey = "score" | "name" | "company" | "lastInteractionAt" | "status";
 type SortDir = "asc" | "desc";
 
+interface SeqTemplate {
+  id: string;
+  name: string;
+  prospect: { name: string; company: string };
+  steps: { channel: string; status: string }[];
+}
+
 function TempIcon({ temp }: { temp: string }) {
   if (temp === "HOT")  return <Flame     className="h-3.5 w-3.5" style={{ color: "var(--danger-fg)"  }} />;
   if (temp === "WARM") return <Zap       className="h-3.5 w-3.5" style={{ color: "var(--amber-fg)"  }} />;
@@ -61,6 +70,33 @@ function relDate(d: Date | null) {
   return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
 
+// ─── Checkbox ─────────────────────────────────────────────────────────────────
+
+function Checkbox({ checked, onChange, indeterminate }: {
+  checked: boolean;
+  onChange: () => void;
+  indeterminate?: boolean;
+}) {
+  return (
+    <button
+      onClick={onChange}
+      className="h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-all"
+      style={{
+        background: checked ? "var(--violet-fg)" : "transparent",
+        borderColor: checked ? "var(--violet-fg)" : "var(--line)",
+      }}
+    >
+      {indeterminate ? (
+        <span style={{ width: 8, height: 2, background: "white", display: "block", borderRadius: 1 }} />
+      ) : checked ? (
+        <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+          <path d="M1 3l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : null}
+    </button>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProspectsPage() {
@@ -72,6 +108,14 @@ export default function ProspectsPage() {
   const [sortKey, setSortKey]     = useState<SortKey>("score");
   const [sortDir, setSortDir]     = useState<SortDir>("desc");
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+
+  // Bulk state
+  const [selected, setSelected]       = useState<Set<string>>(new Set());
+  const [seqModalOpen, setSeqModalOpen] = useState(false);
+  const [templates, setTemplates]     = useState<SeqTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [pickedSeqId, setPickedSeqId] = useState<string | null>(null);
+  const [launching, setLaunching]     = useState(false);
 
   useEffect(() => {
     getUserWorkspace().then(async (r) => {
@@ -115,6 +159,64 @@ export default function ProspectsPage() {
           : (vb as number) - (va as number);
       });
   }, [prospects, search, filterStatus, filterTemp, sortKey, sortDir]);
+
+  // ── Selection helpers ──────────────────────────────────────────────────────
+
+  const allFilteredIds = filtered.map((p) => p.id);
+  const allSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selected.has(id));
+  const someSelected = allFilteredIds.some((id) => selected.has(id)) && !allSelected;
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelected) allFilteredIds.forEach((id) => next.delete(id));
+      else allFilteredIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  // ── Bulk launch ────────────────────────────────────────────────────────────
+
+  async function openSeqModal() {
+    if (!workspaceId) return;
+    setSeqModalOpen(true);
+    setPickedSeqId(null);
+    setTemplatesLoading(true);
+    const res = await getSequences(workspaceId);
+    if (res.success && res.data) setTemplates(res.data as SeqTemplate[]);
+    setTemplatesLoading(false);
+  }
+
+  async function handleBulkLaunch() {
+    if (!pickedSeqId || selected.size === 0) return;
+    setLaunching(true);
+    try {
+      const res = await cloneSequence(pickedSeqId, Array.from(selected));
+      if (res.created > 0) {
+        toast.success(`${res.created} séquence${res.created > 1 ? "s" : ""} créée${res.created > 1 ? "s" : ""} — cliquez Lancer dans la page Séquences`);
+        setSeqModalOpen(false);
+        setSelected(new Set());
+      }
+      if (res.errors.length > 0 && res.created === 0) {
+        toast.error(res.errors[0]);
+      } else if (res.errors.length > 0) {
+        toast.warning(`${res.errors.length} erreur(s) — certains prospects déjà ciblés`);
+      }
+    } catch {
+      toast.error("Erreur lors du lancement");
+    } finally {
+      setLaunching(false);
+    }
+  }
 
   function SortBtn({ k, label }: { k: SortKey; label: string }) {
     const active = sortKey === k;
@@ -196,8 +298,11 @@ export default function ProspectsPage() {
           style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}>
 
           {/* Header */}
-          <div className="grid grid-cols-[2fr_1.5fr_1fr_80px_90px_90px_44px] gap-4 px-5 py-3 text-[11px]"
+          <div className="grid grid-cols-[28px_2fr_1.5fr_1fr_80px_90px_90px_44px] gap-4 px-5 py-3 text-[11px]"
             style={{ borderBottom: "1px solid var(--line)", background: "var(--bg-2)" }}>
+            <div className="flex items-center">
+              <Checkbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} />
+            </div>
             <SortBtn k="name"               label="Prospect" />
             <SortBtn k="company"            label="Entreprise" />
             <SortBtn k="status"             label="Statut" />
@@ -241,13 +346,20 @@ export default function ProspectsPage() {
             const st   = STATUS_LABELS[p.status] ?? { label: p.status, bg: "var(--bg-2)", fg: "var(--fg-mute)" };
             const sc   = scoreStyle(p.score);
             const PlatIcon = p.platform ? PLATFORM_ICONS[p.platform] : null;
+            const isSelected = selected.has(p.id);
 
             return (
               <div key={p.id}
-                className="grid grid-cols-[2fr_1.5fr_1fr_80px_90px_90px_44px] gap-4 px-5 py-3.5 items-center transition-colors hover:brightness-[0.98]"
+                className="grid grid-cols-[28px_2fr_1.5fr_1fr_80px_90px_90px_44px] gap-4 px-5 py-3.5 items-center transition-colors hover:brightness-[0.98]"
                 style={{
                   borderBottom: i < filtered.length - 1 ? "1px solid var(--line)" : "none",
+                  background: isSelected ? "var(--violet-soft)" : undefined,
                 }}>
+
+                {/* Checkbox */}
+                <div className="flex items-center">
+                  <Checkbox checked={isSelected} onChange={() => toggleOne(p.id)} />
+                </div>
 
                 {/* Name */}
                 <div className="min-w-0">
@@ -305,6 +417,124 @@ export default function ProspectsPage() {
         </div>
 
       </div>
+
+      {/* ── Floating bulk action bar ──────────────────────────────────────────── */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl"
+          style={{ background: "#1a1d2e", border: "1px solid rgba(139,92,246,0.3)" }}>
+          <CheckSquare className="h-4 w-4" style={{ color: "var(--violet-fg)" }} />
+          <span className="text-[13px] font-semibold text-white">
+            {selected.size} prospect{selected.size > 1 ? "s" : ""} sélectionné{selected.size > 1 ? "s" : ""}
+          </span>
+          <div className="w-px h-5 bg-white/10" />
+          <button
+            onClick={openSeqModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-semibold transition-all hover:brightness-110"
+            style={{ background: "var(--violet-fg)", color: "white" }}
+          >
+            <GitMerge className="h-3.5 w-3.5" />
+            Lancer une séquence
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="p-1.5 rounded text-slate-500 hover:text-white transition-all"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Sequence template picker modal ───────────────────────────────────── */}
+      {seqModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSeqModalOpen(false)} />
+          <div className="relative w-full max-w-lg bg-[#0f1117] border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08]">
+              <div>
+                <h2 className="text-[14px] font-bold text-white flex items-center gap-2">
+                  <GitMerge className="h-4 w-4 text-violet-400" />
+                  Choisir une séquence template
+                </h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Sera copiée pour les {selected.size} prospect{selected.size > 1 ? "s" : ""} sélectionné{selected.size > 1 ? "s" : ""}
+                </p>
+              </div>
+              <button onClick={() => setSeqModalOpen(false)} className="p-1.5 rounded text-slate-500 hover:text-white hover:bg-white/[0.06] transition-all">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Sequence list */}
+            <div className="max-h-80 overflow-y-auto">
+              {templatesLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="py-12 text-center">
+                  <p className="text-[13px] text-slate-400">Aucune séquence disponible</p>
+                  <p className="text-[11px] text-slate-600 mt-1">Créez d&apos;abord une séquence dans l&apos;onglet Séquences.</p>
+                  <Link href="/sales-os/sequences" className="inline-block mt-3 text-[11px] text-violet-400 hover:underline" onClick={() => setSeqModalOpen(false)}>
+                    Aller aux séquences →
+                  </Link>
+                </div>
+              ) : (
+                templates.map((seq) => {
+                  const picked = pickedSeqId === seq.id;
+                  const emailCount = seq.steps.filter((s) => s.channel === "EMAIL").length;
+                  const liCount = seq.steps.filter((s) => s.channel === "LINKEDIN").length;
+                  return (
+                    <button
+                      key={seq.id}
+                      onClick={() => setPickedSeqId(picked ? null : seq.id)}
+                      className="w-full flex items-center gap-3 px-5 py-3.5 text-left transition-all border-b border-white/[0.04] last:border-0"
+                      style={{ background: picked ? "rgba(139,92,246,0.1)" : undefined }}
+                    >
+                      <div className="h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all"
+                        style={{ borderColor: picked ? "rgb(139,92,246)" : "rgba(255,255,255,0.15)" }}>
+                        {picked && <div className="h-2 w-2 rounded-full bg-violet-500" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-semibold text-white truncate">{seq.name}</p>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          Template de {seq.prospect.name} · {seq.prospect.company}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500 shrink-0">
+                        {seq.steps.length} étape{seq.steps.length > 1 ? "s" : ""}
+                        {emailCount > 0 && <span className="text-violet-400">{emailCount}×✉</span>}
+                        {liCount > 0 && <span className="text-blue-400">{liCount}×in</span>}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-5 py-4 border-t border-white/[0.08] bg-white/[0.02]">
+              <p className="text-[11px] text-slate-500">
+                {pickedSeqId
+                  ? `Créera ${selected.size} séquence${selected.size > 1 ? "s" : ""} (état "Prête" → à lancer)`
+                  : "Sélectionnez une séquence ci-dessus"}
+              </p>
+              <button
+                onClick={handleBulkLaunch}
+                disabled={!pickedSeqId || launching}
+                className="flex items-center gap-2 px-4 py-2 rounded-[9px] text-[12px] font-semibold transition-all disabled:opacity-40 hover:brightness-110"
+                style={{ background: "var(--violet-fg)", color: "white" }}
+              >
+                {launching
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Play className="h-3.5 w-3.5" />}
+                Créer les séquences
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -890,9 +890,9 @@ export async function bulkSaveApolloLeadsAction(
 
     for (const lead of leads) {
       try {
-        const linkedInUrl =
-          lead.linkedInUrl ??
-          `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${lead.name} ${lead.company}`)}`;
+        // Never store LinkedIn search result URLs — they are not real profile URLs
+        // and cause the wrong profile to be scraped when researching the prospect.
+        const linkedInUrl = lead.linkedInUrl ?? "";
 
         const baseData = {
           name: lead.name,
@@ -932,14 +932,28 @@ export async function bulkSaveApolloLeadsAction(
             select: { id: true, name: true },
           });
         } else {
-          prospect = await prisma.prospect.create({
-            data: { ...baseData, status: "NEW" },
+          // Dedup by name+company when no email is available
+          const existing = await prisma.prospect.findFirst({
+            where: {
+              workspaceId,
+              name: { equals: lead.name, mode: "insensitive" },
+              company: { equals: lead.company, mode: "insensitive" },
+            },
             select: { id: true, name: true },
           });
-          await inngest.send({
-            name: "prospect/created",
-            data: { prospectId: prospect.id, workspaceId, userId: session.user!.id! },
-          });
+
+          if (existing) {
+            prospect = existing;
+          } else {
+            prospect = await prisma.prospect.create({
+              data: { ...baseData, status: "NEW" },
+              select: { id: true, name: true },
+            });
+            await inngest.send({
+              name: "prospect/created",
+              data: { prospectId: prospect.id, workspaceId, userId: session.user!.id! },
+            });
+          }
         }
 
         saved.push({ id: prospect.id, name: prospect.name });

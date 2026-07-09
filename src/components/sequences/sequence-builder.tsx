@@ -35,6 +35,7 @@ import {
   Loader2,
   GitMerge,
   Users,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSequence, type SequenceStepInput } from "@/actions/sequences";
@@ -42,6 +43,14 @@ import { getProspects } from "@/actions/prospects";
 import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type TriggerCondition = "ALWAYS" | "IF_NO_REPLY" | "IF_OPENED_NO_REPLY";
+
+const TRIGGER_CONDITION_LABELS: Record<TriggerCondition, string> = {
+  ALWAYS: "Toujours",
+  IF_NO_REPLY: "Si pas de réponse",
+  IF_OPENED_NO_REPLY: "Si ouvert sans réponse",
+};
 
 type Channel = "EMAIL" | "LINKEDIN" | "PHONE" | "SMS";
 const CREATABLE_CHANNELS: Channel[] = ["EMAIL", "LINKEDIN"];
@@ -138,7 +147,7 @@ export function SequenceBuilder({
 
   // Step 2
   const [steps, setSteps] = useState<SequenceStepInput[]>([
-    { stepNumber: 1, channel: "EMAIL", subject: "", content: "", delayDays: 0 },
+    { stepNumber: 1, channel: "EMAIL", subject: "", content: "", delayDays: 0, triggerCondition: "ALWAYS" },
   ]);
 
   useEffect(() => {
@@ -156,7 +165,7 @@ export function SequenceBuilder({
     setSelectedProspectId("");
     setProspectSearch("");
     setSteps([
-      { stepNumber: 1, channel: "EMAIL", subject: "", content: "", delayDays: 0 },
+      { stepNumber: 1, channel: "EMAIL", subject: "", content: "", delayDays: 0, triggerCondition: "ALWAYS" },
     ]);
   }
 
@@ -176,6 +185,7 @@ export function SequenceBuilder({
         subject: "",
         content: "",
         delayDays: 3,
+        triggerCondition: "IF_NO_REPLY",
       },
     ]);
   }
@@ -230,7 +240,7 @@ export function SequenceBuilder({
       const result = await createSequence(workspaceId, selectedProspectId, {
         name: name.trim(),
         steps,
-        isActive: true,
+        isActive: false, // user must click "Lancer" to trigger Inngest
       });
       if (!result.success) throw new Error(result.error);
       toast.success("Séquence créée avec succès");
@@ -396,8 +406,31 @@ export function SequenceBuilder({
                 const cfg = CHANNEL_CONFIG[step.channel];
                 const Icon = cfg.icon;
                 return (
+                  <div key={index}>
+                  {/* Condition connector between steps */}
+                  {index > 0 && (
+                    <div className="flex items-center gap-2 py-1 px-1">
+                      <div className="flex-1 h-px bg-white/[0.06]" />
+                      <div className="flex items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-1">
+                        <GitBranch className="h-3 w-3 text-violet-400 shrink-0" />
+                        <select
+                          value={step.triggerCondition ?? "ALWAYS"}
+                          onChange={(e) =>
+                            updateStep(index, "triggerCondition", e.target.value as TriggerCondition)
+                          }
+                          className="bg-transparent text-[11px] text-violet-300 border-none outline-none cursor-pointer pr-1"
+                        >
+                          {(Object.keys(TRIGGER_CONDITION_LABELS) as TriggerCondition[]).map((k) => (
+                            <option key={k} value={k} className="bg-[#1a1d27] text-white">
+                              {TRIGGER_CONDITION_LABELS[k]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex-1 h-px bg-white/[0.06]" />
+                    </div>
+                  )}
                   <div
-                    key={index}
                     className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 space-y-3"
                   >
                     {/* Step header */}
@@ -523,6 +556,7 @@ export function SequenceBuilder({
                       />
                     </div>
                   </div>
+                  </div>
                 );
               })}
             </div>
@@ -631,7 +665,7 @@ export function SequenceBuilder({
 
                     {/* Content */}
                     <div className={cn("pb-4 flex-1", isLast && "pb-0")}>
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-[12px] font-semibold text-white">
                           Étape {step.stepNumber} — {cfg.label}
                         </span>
@@ -641,6 +675,15 @@ export function SequenceBuilder({
                         >
                           J+{dayN}
                         </Badge>
+                        {index > 0 && step.triggerCondition && step.triggerCondition !== "ALWAYS" && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 border-violet-500/30 bg-violet-500/10 text-violet-400 flex items-center gap-1"
+                          >
+                            <GitBranch className="h-2.5 w-2.5" />
+                            {TRIGGER_CONDITION_LABELS[step.triggerCondition]}
+                          </Badge>
+                        )}
                       </div>
                       {step.channel === "EMAIL" && step.subject && (
                         <p className="text-[11px] text-slate-400 mb-1">

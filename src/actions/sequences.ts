@@ -46,6 +46,8 @@ const sequenceStepSchema = z.object({
   subject: z.string().optional(),
   content: z.string().min(1),
   delayDays: z.number().min(0).default(3),
+  // Branching condition: send this step only if the previous step matches
+  triggerCondition: z.enum(["ALWAYS", "IF_NO_REPLY", "IF_OPENED_NO_REPLY"]).default("ALWAYS"),
 });
 
 const sequenceSchema = z.object({
@@ -93,6 +95,15 @@ export async function createSequence(
       return { success: false, error: "Données invalides" };
     }
 
+    // FAR_FUTURE sentinel: steps with a branching condition are held until
+    // smart-sequence-processor.ts evaluates the previous step's outcome.
+    const FAR_FUTURE = new Date("2099-01-01T00:00:00.000Z");
+
+    const CONDITION_TO_WAITING_FOR: Record<string, string> = {
+      IF_NO_REPLY: "NO_REPLY",
+      IF_OPENED_NO_REPLY: "EMAIL_OPENED_NO_REPLY",
+    };
+
     // Créer la séquence avec les étapes
     const sequence = await prisma.outreachSequence.create({
       data: {
@@ -101,14 +112,24 @@ export async function createSequence(
         prospectId,
         workspaceId,
         steps: {
-          create: parsed.data.steps.map((step) => ({
-            stepNumber: step.stepNumber,
-            channel: step.channel,
-            subject: step.subject,
-            content: step.content,
-            delayDays: step.delayDays,
-            status: "PENDING",
-          })),
+          create: parsed.data.steps.map((step) => {
+            const isBranching = step.stepNumber > 1 && step.triggerCondition !== "ALWAYS";
+            return {
+              stepNumber: step.stepNumber,
+              channel: step.channel,
+              subject: step.subject,
+              content: step.content,
+              delayDays: step.delayDays,
+              status: "PENDING",
+              ...(isBranching && {
+                scheduledAt: FAR_FUTURE,
+                metadata: {
+                  smartBranch: true,
+                  waitingFor: CONDITION_TO_WAITING_FOR[step.triggerCondition],
+                },
+              }),
+            };
+          }),
         },
       },
       include: { steps: true },
@@ -161,6 +182,7 @@ export async function getSequences(
             status: true,
             delayDays: true,
             sentAt: true,
+            metadata: true,
             // content exclu — trop lourd pour la sérialisation flight sur grands volumes
           },
         },
@@ -274,6 +296,178 @@ export async function pauseSequence(
     return { success: true };
   } catch (error) {
     console.error("Pause sequence error:", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 📋 CLONE SEQUENCE — dupliquer vers un ou plusieurs prospects
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function cloneSequence(
+  sourceSequenceId: string,
+  targetProspectIds: string[]
+): Promise<{ success: boolean; created: number; errors: string[] }> {
+  const errors: string[] = [];
+  let created = 0;
+
+  try {
+    const session = await requireAuth();
+    const workspace = await prisma.workspace.findFirst({
+      where: { userId: session.user!.id! },
+      select: { id: true },
+    });
+    if (!workspace) return { success: false, created: 0, errors: ["Workspace non trouvé"] };
+
+    // Load source sequence + steps (full content)
+    const source = await prisma.outreachSequence.findFirst({
+      where: { id: sourceSequenceId, workspaceId: workspace.id },
+      include: {
+        steps: {
+          orderBy: { stepNumber: "asc" },
+          select: {
+            stepNumber: true,
+            channel: true,
+            subject: true,
+            content: true,
+            delayDays: true,
+            scheduledAt: true,
+            metadata: true,
+          },
+        },
+      },
+    });
+    if (!source) return { success: false, created: 0, errors: ["Séquence source introuvable"] };
+
+    const FAR_FUTURE = new Date("2099-01-01T00:00:00.000Z");
+
+    for (const prospectId of targetProspectIds) {
+      try {
+        // Validate prospect belongs to this workspace
+        const prospect = await prisma.prospect.findFirst({
+          where: { id: prospectId, workspaceId: workspace.id },
+          select: { id: true, name: true },
+        });
+        if (!prospect) { errors.push(`Prospect ${prospectId} introuvable`); continue; }
+
+        // Check: no active sequence already exists for this prospect with same name
+        const existing = await prisma.outreachSequence.findFirst({
+          where: { prospectId, workspaceId: workspace.id, name: source.name },
+          select: { id: true },
+        });
+        if (existing) { errors.push(`Séquence "${source.name}" existe déjà pour ${prospect.name}`); continue; }
+
+        await prisma.outreachSequence.create({
+          data: {
+            name: source.name,
+            isActive: false,
+            prospectId,
+            workspaceId: workspace.id,
+            steps: {
+              create: source.steps.map((step) => {
+                const meta = (step.metadata ?? {}) as Record<string, unknown>;
+                const isBranch = meta.smartBranch === true && step.stepNumber > 1;
+                return {
+                  stepNumber: step.stepNumber,
+                  channel: step.channel,
+                  subject: step.subject,
+                  content: step.content,
+                  delayDays: step.delayDays,
+                  status: "PENDING",
+                  ...(isBranch && {
+                    scheduledAt: FAR_FUTURE,
+                    metadata: { smartBranch: true, waitingFor: meta.waitingFor as string },
+                  }),
+                };
+              }),
+            },
+          },
+        });
+        created++;
+      } catch (e) {
+        errors.push(String(e));
+      }
+    }
+
+    return { success: created > 0 || errors.length === 0, created, errors };
+  } catch (error) {
+    return { success: false, created, errors: [String(error)] };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🗑️ DELETE SEQUENCE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function deleteSequence(
+  sequenceId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await requireAuth();
+    const workspace = await prisma.workspace.findFirst({
+      where: { userId: session.user!.id! },
+      select: { id: true },
+    });
+    if (!workspace) return { success: false, error: "Workspace non trouvé" };
+
+    const sequence = await prisma.outreachSequence.findFirst({
+      where: { id: sequenceId, workspaceId: workspace.id },
+      select: { id: true },
+    });
+    if (!sequence) return { success: false, error: "Séquence non trouvée" };
+
+    await prisma.outreachSequence.delete({ where: { id: sequenceId } });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 📋 GET SEQUENCE DETAIL - Full step data for drill-down view
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function getSequenceDetail(
+  sequenceId: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const session = await requireAuth();
+    const workspace = await prisma.workspace.findFirst({
+      where: { userId: session.user!.id! },
+      select: { id: true },
+    });
+    if (!workspace) return { success: false, error: "Workspace non trouvé" };
+
+    const seq = await prisma.outreachSequence.findFirst({
+      where: { id: sequenceId, workspaceId: workspace.id },
+      include: {
+        prospect: {
+          select: { id: true, name: true, email: true, company: true, jobTitle: true, linkedInUrl: true },
+        },
+        steps: {
+          orderBy: { stepNumber: "asc" },
+          select: {
+            id: true,
+            stepNumber: true,
+            channel: true,
+            subject: true,
+            content: true,
+            status: true,
+            delayDays: true,
+            scheduledAt: true,
+            sentAt: true,
+            openedAt: true,
+            repliedAt: true,
+            metadata: true,
+            error: true,
+          },
+        },
+      },
+    });
+
+    if (!seq) return { success: false, error: "Séquence non trouvée" };
+    return { success: true, data: seq };
+  } catch (error) {
     return { success: false, error: String(error) };
   }
 }

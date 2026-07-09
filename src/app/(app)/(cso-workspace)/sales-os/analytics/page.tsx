@@ -44,6 +44,10 @@ import {
   Zap,
   Activity,
   AlertTriangle,
+  GitBranch,
+  Mail,
+  BarChart2,
+  Trophy,
 } from "lucide-react";
 import {
   getPipelineAnalytics,
@@ -54,6 +58,10 @@ import {
   getLinkedInAnalytics,
   type LinkedInAnalyticsData,
 } from "@/actions/linkedin-analytics";
+import {
+  getSequenceStepAnalytics,
+  type SequenceAnalyticsResult,
+} from "@/actions/sequence-analytics";
 import { getUserWorkspace } from "@/actions/leads";
 import { cn } from "@/lib/utils";
 
@@ -458,6 +466,228 @@ function LinkedInAnalyticsTab({ workspaceId }: { workspaceId: string }) {
   );
 }
 
+// ─── Sequences Tab ───────────────────────────────────────────────────────────
+
+const STEP_CHANNEL_COLORS: Record<string, string> = {
+  EMAIL: "#6366f1",
+  LINKEDIN: "#0ea5e9",
+  WHATSAPP: "#22c55e",
+};
+
+function pct(n: number): string {
+  return `${n}%`;
+}
+
+function SequencesAnalyticsTab({ workspaceId }: { workspaceId: string }) {
+  const [data, setData] = useState<SequenceAnalyticsResult | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await getSequenceStepAnalytics(workspaceId);
+      if (res.success && res.data) setData(res.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [workspaceId]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  if (!data || data.totalSequences === 0) {
+    return (
+      <Card className="bg-white/80 border-gray-200/60">
+        <CardContent className="py-16 text-center">
+          <GitBranch className="h-10 w-10 mx-auto mb-3 text-gray-300" />
+          <p className="text-gray-500 text-sm">Aucune séquence trouvée. Lancez vos premières séquences depuis la page Prospection.</p>
+          <Link href="/sales-os/prospection" className="inline-flex items-center gap-1 mt-4 text-sm text-indigo-500 hover:underline">
+            Aller à la Prospection <ArrowRight className="h-3 w-3" />
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Build funnel chart data: one row per step, bars = sent/opened/replied
+  const funnelData = data.stepFunnel.map((row) => ({
+    step: `Étape ${row.stepNumber}`,
+    Envoyés: row.sent,
+    Ouverts: row.opened,
+    Réponses: row.replied,
+    openRate: row.openRate,
+    replyRate: row.replyRate,
+    channel: row.channel,
+  }));
+
+  // Channel chart data
+  const channelData = data.byChannel.map((r) => ({
+    name: r.channel === "EMAIL" ? "Email" : r.channel === "LINKEDIN" ? "LinkedIn" : r.channel,
+    Envoyés: r.sent,
+    Réponses: r.replied,
+    "Taux réponse": r.replyRate,
+    _channel: r.channel,
+  }));
+
+  return (
+    <div className="space-y-6">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <KpiCard label="Séquences" value={data.totalSequences} sub={`${data.activeSequences} actives`} icon={GitBranch} accent="purple" />
+        <KpiCard label="Envois totaux" value={data.overallSent} sub="tous canaux confondus" icon={Send} accent="blue" />
+        <KpiCard
+          label="Taux de réponse global"
+          value={pct(data.overallReplyRate)}
+          sub={`${data.overallReplied} réponses`}
+          icon={Percent}
+          accent={data.overallReplyRate >= 20 ? "green" : data.overallReplyRate >= 8 ? "amber" : "gray"}
+        />
+        <KpiCard
+          label="Étape moyenne de réponse"
+          value={data.avgStepsToReply != null ? `Étape ${data.avgStepsToReply}` : "—"}
+          sub="sur quelle étape les prospects répondent"
+          icon={BarChart2}
+          accent="gray"
+        />
+      </div>
+
+      {/* Step funnel chart */}
+      {funnelData.length > 0 ? (
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-gray-700">Funnel par étape de séquence</CardTitle>
+            <CardDescription className="text-xs text-gray-400">
+              Envoyés → Ouverts → Réponses pour chaque étape (toutes séquences agrégées)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={funnelData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }} barCategoryGap="25%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="step" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12 }}
+                    formatter={(value, name, props) => {
+                      const v = value ?? 0;
+                      const payload = props?.payload as { openRate?: number; replyRate?: number } | undefined;
+                      if (name === "Réponses" && payload) return [`${v} (${payload.replyRate}% taux)`, name];
+                      if (name === "Ouverts" && payload) return [`${v} (${payload.openRate}% taux)`, name];
+                      return [v, name as string];
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="Envoyés" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Ouverts" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Réponses" fill="#22c55e" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Channel comparison + sequence ranking side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Channel comparison */}
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-gray-700">Comparaison par canal</CardTitle>
+            <CardDescription className="text-xs text-gray-400">Email vs LinkedIn — taux de réponse</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {channelData.length === 0 ? (
+              <p className="text-sm text-gray-400 py-6 text-center">Aucune donnée de canal.</p>
+            ) : (
+              <div className="space-y-4">
+                {channelData.map((row) => (
+                  <div key={row._channel} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5 font-medium text-gray-700">
+                        {row._channel === "EMAIL" ? (
+                          <Mail className="h-3.5 w-3.5 text-indigo-500" />
+                        ) : row._channel === "LINKEDIN" ? (
+                          <Linkedin className="h-3.5 w-3.5 text-sky-500" />
+                        ) : null}
+                        {row.name}
+                      </span>
+                      <span className="tabular-nums text-gray-500">
+                        {row.Réponses} / {row.Envoyés} envois
+                        <span className={cn("ml-2 font-semibold", row["Taux réponse"] >= 20 ? "text-emerald-600" : row["Taux réponse"] >= 8 ? "text-amber-600" : "text-gray-400")}>
+                          {row["Taux réponse"]}%
+                        </span>
+                      </span>
+                    </div>
+                    <div className="h-2.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(row["Taux réponse"], 100)}%`,
+                          backgroundColor: STEP_CHANNEL_COLORS[row._channel] ?? "#6366f1",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Sequence ranking */}
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-amber-500" />
+              Top séquences par taux de réponse
+            </CardTitle>
+            <CardDescription className="text-xs text-gray-400">Séquences avec au moins un envoi</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.sequenceRanking.length === 0 ? (
+              <p className="text-sm text-gray-400 py-6 text-center">Aucune séquence avec des envois.</p>
+            ) : (
+              <div className="space-y-2">
+                {data.sequenceRanking.slice(0, 8).map((seq, i) => (
+                  <div key={seq.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                    <span className={cn(
+                      "text-xs font-bold tabular-nums w-5 text-center",
+                      i === 0 ? "text-amber-500" : i === 1 ? "text-gray-400" : i === 2 ? "text-orange-400" : "text-gray-300"
+                    )}>
+                      #{i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">{seq.prospectName}</p>
+                      <p className="text-[11px] text-gray-400 truncate">{seq.prospectCompany} · {seq.totalSteps} étapes</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={cn(
+                        "text-sm font-bold tabular-nums",
+                        seq.replyRate >= 30 ? "text-emerald-600" : seq.replyRate >= 15 ? "text-amber-600" : "text-gray-500"
+                      )}>
+                        {seq.replyRate}%
+                      </p>
+                      <p className="text-[10px] text-gray-400">{seq.replied}/{seq.sent}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── Pipeline Tab (existant) ──────────────────────────────────────────────────
 
 const FUNNEL_COLORS_PIPELINE = ["#6366f1", "#4f46e5", "#4338ca", "#22c55e"];
@@ -693,7 +923,7 @@ export default function AnalyticsPage() {
                 Analytics Sales OS
               </h1>
               <p className="mt-1 text-gray-500 text-sm">
-                Pipeline revenue · LinkedIn outreach · Performance globale
+                Séquences · Pipeline revenue · LinkedIn outreach
               </p>
             </div>
             <Link href="/sales-os">
@@ -706,8 +936,15 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs defaultValue="linkedin">
+        <Tabs defaultValue="sequences">
           <TabsList className="bg-white/60 border border-gray-200 mb-8">
+            <TabsTrigger
+              value="sequences"
+              className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
+            >
+              <GitBranch className="h-4 w-4 mr-2" />
+              Séquences
+            </TabsTrigger>
             <TabsTrigger
               value="linkedin"
               className="data-[state=active]:bg-sky-600 data-[state=active]:text-white"
@@ -723,6 +960,10 @@ export default function AnalyticsPage() {
               Pipeline Revenue
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="sequences">
+            <SequencesAnalyticsTab workspaceId={workspaceId} />
+          </TabsContent>
 
           <TabsContent value="linkedin">
             <LinkedInAnalyticsTab workspaceId={workspaceId} />
