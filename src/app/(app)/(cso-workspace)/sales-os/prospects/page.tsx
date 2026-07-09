@@ -7,6 +7,7 @@ import {
   Search, ExternalLink, Flame, Zap, Snowflake,
   Linkedin, Instagram, Facebook, ArrowUpDown,
   Kanban, Loader2, GitMerge, Play, X, CheckSquare,
+  Sparkles, Mail, MailCheck, MailX,
 } from "lucide-react";
 import { getUserWorkspace } from "@/actions/leads";
 import {
@@ -119,6 +120,11 @@ export default function ProspectsPage() {
   const [pickedSeqId, setPickedSeqId] = useState<string | null>(null);
   const [launching, setLaunching]     = useState(false);
 
+  // Enrichment state
+  const [enrichingId, setEnrichingId] = useState<string | null>(null);
+  const [enrichingBatch, setEnrichingBatch] = useState(false);
+  const [enrichedEmails, setEnrichedEmails] = useState<Record<string, string | null>>({});
+
   useEffect(() => {
     getUserWorkspace().then(async (r) => {
       if (!r.workspaceId) return;
@@ -132,6 +138,54 @@ export default function ProspectsPage() {
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("desc"); }
+  }
+
+  async function enrichOne(prospectId: string) {
+    setEnrichingId(prospectId);
+    try {
+      const res = await fetch("/api/prospects/waterfall-enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId }),
+      });
+      const json = await res.json();
+      if (json.success && json.email) {
+        setEnrichedEmails((prev) => ({ ...prev, [prospectId]: json.email }));
+        setProspects((prev) => prev.map((p) => p.id === prospectId ? { ...p, email: json.email, emailVerified: json.emailVerified ?? false } : p));
+        toast.success(`Email trouvé via ${json.providerThatFound} : ${json.email}`);
+      } else {
+        toast.error(json.reason ?? "Aucun email trouvé");
+      }
+    } catch {
+      toast.error("Erreur d'enrichissement");
+    } finally {
+      setEnrichingId(null);
+    }
+  }
+
+  async function enrichBatch() {
+    if (!workspaceId) return;
+    setEnrichingBatch(true);
+    try {
+      const res = await fetch("/api/prospects/waterfall-enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch: true, limit: 20 }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`${json.enriched} prospects enrichis (${json.failed} échecs) — rechargement…`);
+        // Refresh list
+        const r = await getScoredProspectsForDashboard(workspaceId);
+        if (r.success && r.data) setProspects(r.data);
+      } else {
+        toast.error("Erreur batch enrichissement");
+      }
+    } catch {
+      toast.error("Erreur batch enrichissement");
+    } finally {
+      setEnrichingBatch(false);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -307,13 +361,22 @@ export default function ProspectsPage() {
             <option value="COLD">❄️ Cold</option>
           </select>
 
-          {/* Count + CRM link */}
+          {/* Count + batch enrich + CRM link */}
           <div className="ml-auto flex items-center gap-2">
             {!loading && (
               <span className="text-[12px]" style={{ color: "var(--fg-mute)" }}>
                 {filtered.length} prospect{filtered.length !== 1 ? "s" : ""}
               </span>
             )}
+            <button
+              onClick={enrichBatch}
+              disabled={enrichingBatch}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-[9px] text-[12px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
+              style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }}
+              title="Enrichir les 20 premiers prospects sans email (waterfall 5 providers)">
+              {enrichingBatch ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {enrichingBatch ? "Enrichissement…" : "Enrichir (×20)"}
+            </button>
             <Link
               href="/sales-os/crm"
               className="flex items-center gap-1.5 px-3 py-2 rounded-[9px] text-[12px] font-semibold transition-all hover:brightness-110"
@@ -329,7 +392,7 @@ export default function ProspectsPage() {
           style={{ background: "var(--bg-card)", border: "1px solid var(--line)", boxShadow: "var(--card-shadow)" }}>
 
           {/* Header */}
-          <div className="grid grid-cols-[28px_2fr_1.5fr_1fr_80px_90px_90px_44px] gap-4 px-5 py-3 text-[11px]"
+          <div className="grid grid-cols-[28px_2fr_1.5fr_1fr_80px_90px_90px_120px_44px] gap-4 px-5 py-3 text-[11px]"
             style={{ borderBottom: "1px solid var(--line)", background: "var(--bg-2)" }}>
             <div className="flex items-center">
               <Checkbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} />
@@ -340,6 +403,7 @@ export default function ProspectsPage() {
             <SortBtn k="score"              label="Score" />
             <span className="text-[11px] font-semibold" style={{ color: "var(--fg-mute)" }}>Temp.</span>
             <SortBtn k="lastInteractionAt"  label="Dernière act." />
+            <span className="text-[11px] font-semibold" style={{ color: "var(--fg-mute)" }}>Email</span>
             <span />
           </div>
 
@@ -381,7 +445,7 @@ export default function ProspectsPage() {
 
             return (
               <div key={p.id}
-                className="grid grid-cols-[28px_2fr_1.5fr_1fr_80px_90px_90px_44px] gap-4 px-5 py-3.5 items-center transition-colors hover:brightness-[0.98]"
+                className="grid grid-cols-[28px_2fr_1.5fr_1fr_80px_90px_90px_120px_44px] gap-4 px-5 py-3.5 items-center transition-colors hover:brightness-[0.98]"
                 style={{
                   borderBottom: i < filtered.length - 1 ? "1px solid var(--line)" : "none",
                   background: isSelected ? "var(--violet-soft)" : undefined,
@@ -432,6 +496,36 @@ export default function ProspectsPage() {
                 <span className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
                   {relDate(p.lastInteractionAt)}
                 </span>
+
+                {/* Email status + enrich button */}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {p.email && !p.email.includes("@discovery.skalle") ? (
+                    <>
+                      {p.emailVerified ? (
+                        <MailCheck className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--emerald-fg)" }} />
+                      ) : (
+                        <Mail className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--amber-fg)" }} />
+                      )}
+                      <span className="text-[10px] truncate" style={{ color: "var(--fg-mute)" }}>
+                        {p.email.split("@")[0]}@…
+                      </span>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => enrichOne(p.id)}
+                      disabled={enrichingId === p.id}
+                      className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded transition-all hover:brightness-110 disabled:opacity-50"
+                      style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }}
+                      title="Enrichir via waterfall (Serper → Apollo → Hunter → Clearbit)">
+                      {enrichingId === p.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <MailX className="h-3 w-3" />
+                      )}
+                      {enrichingId === p.id ? "…" : "Enrichir"}
+                    </button>
+                  )}
+                </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 justify-end">

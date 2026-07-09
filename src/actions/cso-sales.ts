@@ -255,6 +255,8 @@ export interface ScoredProspectForDashboard {
   company: string;
   jobTitle: string | null;
   linkedInUrl: string;
+  email: string | null;
+  emailVerified: boolean;
   platform: string | null;
   handle: string | null;
   score: number;
@@ -265,6 +267,7 @@ export interface ScoredProspectForDashboard {
   suggestedHook: string | null;
   notes: string | null;
   status: string;
+  enrichmentData: Record<string, unknown> | null;
 }
 
 /**
@@ -294,6 +297,8 @@ export async function getScoredProspectsForDashboard(
         company: true,
         jobTitle: true,
         linkedInUrl: true,
+        email: true,
+        emailVerified: true,
         platform: true,
         handle: true,
         score: true,
@@ -304,12 +309,13 @@ export async function getScoredProspectsForDashboard(
         suggestedHook: true,
         notes: true,
         status: true,
+        enrichmentData: true,
       },
     });
 
     return {
       success: true,
-      data: prospects as ScoredProspectForDashboard[],
+      data: prospects as unknown as ScoredProspectForDashboard[],
     };
   } catch (error) {
     console.error("getScoredProspectsForDashboard:", error);
