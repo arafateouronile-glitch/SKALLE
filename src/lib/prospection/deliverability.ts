@@ -18,6 +18,11 @@ import {
   getDomainReputation,
 } from "./deliverability-optimization";
 
+// Industry-standard thresholds for email health alerts
+// Google/Yahoo Sender Requirements 2024: bounce < 5%, spam < 0.1%
+const BOUNCE_RATE_ALERT_THRESHOLD = 5;   // % — above this triggers a warning
+const SPAM_RATE_ALERT_THRESHOLD  = 0.1;  // % — Google/Yahoo hard limit
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔍 CHECK SPF/DKIM/DMARC - Vérifier la configuration DNS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -281,12 +286,12 @@ export async function verifyDeliverability(
         `Warm-up en cours (${config.warmupProgress}%). Continuez le warm-up avant d'envoyer en masse.`
       );
     }
-    if (config.bounceRate > 5) {
+    if (config.bounceRate > BOUNCE_RATE_ALERT_THRESHOLD) {
       recommendations.push(
         `Taux de rebond élevé (${config.bounceRate}%). Vérifiez votre liste d'emails.`
       );
     }
-    if (config.spamRate > 1) {
+    if (config.spamRate > SPAM_RATE_ALERT_THRESHOLD) {
       recommendations.push(
         `Taux de spam élevé (${config.spamRate}%). Améliorez le contenu de vos emails.`
       );

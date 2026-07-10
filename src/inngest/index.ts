@@ -54,6 +54,7 @@ import {
 import { runVideoAdPipeline, videoAdPipelineFailure } from "./functions/video-ads-pipeline";
 import { hubspotSyncFunction } from "./functions/hubspot-sync";
 import { sequenceOptimizerFunction } from "./functions/sequence-optimizer";
+import { inngestFailureMonitor } from "./functions/failure-monitor";
 
 // Export all Inngest functions
 export const functions = [
@@ -132,4 +133,6 @@ export const functions = [
   hubspotSyncFunction,
   // CSO AI — Optimisation automatique des séquences (lundi 8h)
   sequenceOptimizerFunction,
+  // Monitoring — capture toutes les erreurs Inngest vers Sentry
+  inngestFailureMonitor,
 ];

@@ -20,6 +20,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -80,7 +83,7 @@
     "langchain": "^1.2.10",
     "lucide-react": "^0.562.0",
     "next": "^16.1.6",
-    "next-auth": "^5.0.0-beta.30",
+    "next-auth": "^5.0.0-beta.31",
     "next-themes": "^0.4.6",
     "nodemailer": "^7.0.13",
     "papaparse": "^5.5.3",
@@ -102,6 +105,7 @@
     "nodemailer": "^7.0.13"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",

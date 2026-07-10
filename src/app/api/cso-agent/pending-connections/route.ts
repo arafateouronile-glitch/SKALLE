@@ -4,6 +4,11 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+// LinkedIn sends no more than 20 connection requests/day to avoid account restriction.
+// Messages to 1st-degree connections are safer but still capped at 100/day.
+const DAILY_CONNECTION_LIMIT = 20;
+const DAILY_MESSAGE_LIMIT = 80;
+
 async function resolveWorkspaceIds(req: NextRequest): Promise<string[]> {
   const authHeader = req.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
@@ -28,6 +33,32 @@ export async function GET(req: NextRequest) {
   if (!workspaceIds.length) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
+
+  // Daily quota — count LinkedIn steps already sent today across all workspaces
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const [connectionsSentToday, messagesSentToday] = await Promise.all([
+    prisma.sequenceStep.count({
+      where: {
+        linkedInAction: "CONNECTION_REQUEST",
+        status: "SENT",
+        sentAt: { gte: todayStart },
+        sequence: { workspaceId: { in: workspaceIds } },
+      },
+    }),
+    prisma.sequenceStep.count({
+      where: {
+        linkedInAction: { in: ["POST_CONNECTION_MESSAGE", "FOLLOWUP_MESSAGE", "message"] },
+        status: "SENT",
+        sentAt: { gte: todayStart },
+        sequence: { workspaceId: { in: workspaceIds } },
+      },
+    }),
+  ]);
+
+  const remainingConnections = Math.max(0, DAILY_CONNECTION_LIMIT - connectionsSentToday);
+  const remainingMessages = Math.max(0, DAILY_MESSAGE_LIMIT - messagesSentToday);
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1_000);
 
@@ -114,10 +145,36 @@ export async function GET(req: NextRequest) {
 
   // Dédupliquer par prospectId (CSO agent prioritaire)
   const seen = new Set(agentResult.map((r) => r.prospectId));
-  const merged: PendingEntry[] = [
+  const allPending: PendingEntry[] = [
     ...agentResult,
     ...warmResult.filter((r) => !seen.has(r.prospectId)),
   ];
 
-  return NextResponse.json({ pending: merged });
+  // Apply daily quota — split by action type to respect per-type limits
+  const connections = allPending.filter((p) => p.pendingMessage === null);
+  const messages    = allPending.filter((p) => p.pendingMessage !== null);
+
+  const capped: PendingEntry[] = [
+    ...connections.slice(0, remainingConnections),
+    ...messages.slice(0, remainingMessages),
+  ];
+
+  const headers = {
+    "X-LinkedIn-Connections-Remaining": String(remainingConnections),
+    "X-LinkedIn-Messages-Remaining": String(remainingMessages),
+    "X-LinkedIn-Daily-Limit": String(DAILY_CONNECTION_LIMIT),
+  };
+
+  if (remainingConnections === 0 && remainingMessages === 0) {
+    return NextResponse.json(
+      {
+        pending: [],
+        rateLimited: true,
+        message: `Quota journalier LinkedIn atteint (${DAILY_CONNECTION_LIMIT} connexions/jour). Reprise demain.`,
+      },
+      { headers }
+    );
+  }
+
+  return NextResponse.json({ pending: capped, rateLimited: false }, { headers });
 }

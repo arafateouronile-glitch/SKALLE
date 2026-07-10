@@ -15,7 +15,11 @@ const loginSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    maxAge: 7 * 24 * 60 * 60,    // 7 days
+    updateAge: 24 * 60 * 60,      // refresh token daily
+  },
   debug: process.env.NODE_ENV === "development",
   trustHost: true,
   pages: {
@@ -80,10 +84,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger }) {
       if (user) {
         token.id = user.id;
+        // Embed tokenVersion at sign-in so we can detect revocation
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id as string },
+          select: { tokenVersion: true },
+        });
+        token.tokenVersion = dbUser?.tokenVersion ?? 1;
       }
+
+      // On token refresh: verify tokenVersion hasn't been incremented (revocation check)
+      if (trigger === "update" || (!user && token.id)) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { tokenVersion: true, suspendedAt: true },
+        });
+        // Token revoked (logout-all) or account suspended
+        if (!dbUser || dbUser.suspendedAt || dbUser.tokenVersion !== (token.tokenVersion as number)) {
+          return null as never;
+        }
+      }
+
       // Stocker le provider et access_token dans le JWT pour la connexion Meta
       if (account?.provider === "facebook" && account.access_token) {
         token.facebookAccessToken = account.access_token;

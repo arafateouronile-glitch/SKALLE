@@ -21,6 +21,7 @@ model User {
   stripeCustomerId String?
   suspendedAt      DateTime?
   isAdmin          Boolean   @default(false)
+  tokenVersion     Int       @default(1)
   accounts         Account[]
   sessions         Session[]
   workspaces       Workspace[]
