@@ -47,6 +47,7 @@ import {
 import { getUserWorkspace } from "@/actions/leads";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { MarkConvertedDialog } from "@/components/modules/cso/mark-converted-dialog";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -484,6 +485,7 @@ export default function CRMPage() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<ProspectStatusPipeline | null>(null);
   const [selectedProspect, setSelectedProspect] = useState<ProspectForCrm | null>(null);
+  const [pendingConversion, setPendingConversion] = useState<{ prospectId: string; name: string } | null>(null);
 
   const loadAll = useCallback(async (wsId: string, tab: CRMSourceFilter) => {
     setLoading(true);
@@ -516,24 +518,45 @@ export default function CRMPage() {
     if (workspaceId) loadAll(workspaceId, sourceTab);
   }, [workspaceId, sourceTab, loadAll]);
 
-  const onDrop = useCallback(
-    async (prospectId: string, newStatus: ProspectStatusPipeline) => {
+  const performStatusChange = useCallback(
+    async (prospectId: string, newStatus: ProspectStatusPipeline, value?: number) => {
       if (!workspaceId) return;
       setDraggedId(null);
       setDropTarget(null);
       setProspects((prev) =>
-        prev.map((p) => (p.id === prospectId ? { ...p, status: newStatus } : p))
+        prev.map((p) =>
+          p.id === prospectId ? { ...p, status: newStatus, ...(value !== undefined ? { value } : {}) } : p
+        )
       );
       if (selectedProspect?.id === prospectId) {
-        setSelectedProspect((p) => p ? { ...p, status: newStatus } : p);
+        setSelectedProspect((p) =>
+          p ? { ...p, status: newStatus, ...(value !== undefined ? { value } : {}) } : p
+        );
       }
-      const ok = await updateProspectStatusAction(prospectId, newStatus, workspaceId);
+      const ok = await updateProspectStatusAction(prospectId, newStatus, workspaceId, value);
       if (!ok.success) {
         toast.error(ok.error || "Erreur");
         loadAll(workspaceId, sourceTab);
       }
     },
     [workspaceId, sourceTab, loadAll, selectedProspect]
+  );
+
+  // Passer par CONVERTED demande toujours un montant de deal (ou un refus explicite) —
+  // le drop est intercepté avant tout appel réseau, performStatusChange ne se
+  // déclenche qu'à la confirmation du dialog.
+  const onDrop = useCallback(
+    async (prospectId: string, newStatus: ProspectStatusPipeline) => {
+      if (newStatus === "CONVERTED") {
+        setDraggedId(null);
+        setDropTarget(null);
+        const p = prospects.find((x) => x.id === prospectId);
+        setPendingConversion({ prospectId, name: p?.name ?? "ce prospect" });
+        return;
+      }
+      await performStatusChange(prospectId, newStatus);
+    },
+    [prospects, performStatusChange]
   );
 
   const byStatus = (status: ProspectStatusPipeline) =>
@@ -755,6 +778,17 @@ export default function CRMPage() {
           onStatusChange={onDrop}
         />
       )}
+
+      <MarkConvertedDialog
+        open={!!pendingConversion}
+        prospectName={pendingConversion?.name ?? ""}
+        onClose={() => setPendingConversion(null)}
+        onConfirm={async (value) => {
+          if (!pendingConversion) return;
+          await performStatusChange(pendingConversion.prospectId, "CONVERTED", value ?? undefined);
+          setPendingConversion(null);
+        }}
+      />
     </div>
   );
 }

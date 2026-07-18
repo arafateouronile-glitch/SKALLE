@@ -11,6 +11,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import {
   BarChart,
   Bar,
@@ -50,6 +51,8 @@ import {
   Trophy,
   FlaskConical,
   CalendarCheck,
+  DollarSign,
+  Bot,
 } from "lucide-react";
 import {
   getPipelineAnalytics,
@@ -67,6 +70,8 @@ import {
   type AbTestResult,
 } from "@/actions/sequence-analytics";
 import { getMeetingAnalytics, type MeetingAnalyticsResult } from "@/actions/meeting-analytics";
+import { getCsoRoiAction } from "@/actions/cso-roi";
+import type { CsoROIReport } from "@/lib/services/analytics/cso-roi-tracking";
 import { getUserWorkspace } from "@/actions/leads";
 import { cn } from "@/lib/utils";
 
@@ -1282,6 +1287,182 @@ function PipelineAnalyticsTab({ workspaceId }: { workspaceId: string }) {
   );
 }
 
+// ─── ROI IA ───────────────────────────────────────────────────────────────────
+
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  CSO_LAUNCH_LINKEDIN: "LinkedIn",
+  CSO_LAUNCH_EMAIL: "Email",
+  CSO_FOLLOWUP: "Relance",
+  CSO_STALE_REJECT: "Nettoyage pipeline",
+};
+
+function RoiAnalyticsTab({ workspaceId }: { workspaceId: string }) {
+  const [data, setData] = useState<CsoROIReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await getCsoRoiAction(workspaceId);
+        if (res.success && res.data) setData(res.data);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [workspaceId]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card className="bg-white/80 border-gray-200/60">
+        <CardContent className="py-12 text-center text-gray-500">
+          Aucune donnée. Convertissez des prospects avec un montant pour voir le pipeline généré par l&apos;IA.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { attributionByOrigin } = data;
+  const originRows = [
+    { key: "AI_AGENT", label: "Généré par l'Agent CSO", ...attributionByOrigin.AI_AGENT },
+    { key: "MANUAL", label: "Travaillé manuellement", ...attributionByOrigin.MANUAL },
+  ];
+
+  return (
+    <div className="space-y-8">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-emerald-50/80 border-emerald-200/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-emerald-700 flex items-center gap-2">
+              <Bot className="h-4 w-4 text-emerald-500" />
+              Pipeline généré par l&apos;IA
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">
+              {formatEur(attributionByOrigin.AI_AGENT.totalValue)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {attributionByOrigin.AI_AGENT.converted} deal{attributionByOrigin.AI_AGENT.converted > 1 ? "s" : ""} attribué{attributionByOrigin.AI_AGENT.converted > 1 ? "s" : ""} à l&apos;agent
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-gray-400" />
+              Pipeline total (90j)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">{formatEur(data.totalPipelineValue)}</p>
+            <p className="text-xs text-gray-500 mt-1">{data.totalConverted} deals closés</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+              <Percent className="h-4 w-4 text-gray-400" />
+              Taux de conversion
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">{data.conversionRate}%</p>
+            <p className="text-xs text-gray-500 mt-1">{data.totalProspects} prospects (90j)</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+              <Target className="h-4 w-4 text-gray-400" />
+              Deal value moyen
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">{formatEur(data.avgDealValue)}</p>
+            <p className="text-xs text-gray-500 mt-1">par prospect converti</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Pipeline : IA vs manuel */}
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-gray-900 text-base">Pipeline : IA vs. manuel</CardTitle>
+            <CardDescription>L&apos;agent génère-t-il vraiment de la valeur ?</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {originRows.every((r) => r.count === 0) ? (
+              <p className="text-sm text-gray-400 text-center py-6">Aucune donnée d&apos;attribution encore</p>
+            ) : (
+              <div className="space-y-3">
+                {originRows.map((row) => (
+                  <div key={row.key} className="flex items-center gap-3">
+                    <span className="text-xs font-medium text-gray-600 w-36 truncate">{row.label}</span>
+                    <div className="flex-1">
+                      <Progress
+                        value={data.totalPipelineValue > 0 ? Math.round((row.totalValue / data.totalPipelineValue) * 100) : 0}
+                        className="h-2"
+                      />
+                    </div>
+                    <div className="text-right w-28 shrink-0">
+                      <p className="text-xs font-semibold text-gray-900">{formatEur(row.totalValue)}</p>
+                      <p className="text-xs text-gray-400">{row.count} leads · {row.conversionRate}%</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pipeline par type d'action */}
+        <Card className="bg-white/80 border-gray-200/60">
+          <CardHeader>
+            <CardTitle className="text-gray-900 text-base flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-emerald-600" />
+              Pipeline par type d&apos;action
+            </CardTitle>
+            <CardDescription>Quelle action de l&apos;agent convertit le mieux ?</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.pipelineByActionType.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">Attribution non disponible</p>
+            ) : (
+              <div className="space-y-3">
+                {data.pipelineByActionType.slice(0, 5).map((row, i) => (
+                  <div key={row.actionType} className="flex items-center gap-3 p-2 rounded-lg bg-gray-50/60">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-700 text-xs font-bold flex items-center justify-center shrink-0">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-900 truncate">
+                        {ACTION_TYPE_LABELS[row.actionType] ?? row.actionType}
+                      </p>
+                      <p className="text-xs text-gray-400">{row.count} deal{row.count > 1 ? "s" : ""}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-700 shrink-0">{formatEur(row.pipeline)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
@@ -1357,6 +1538,13 @@ export default function AnalyticsPage() {
               <CalendarCheck className="h-4 w-4 mr-2" />
               Meetings
             </TabsTrigger>
+            <TabsTrigger
+              value="roi"
+              className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white"
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              ROI IA
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="sequences">
@@ -1373,6 +1561,10 @@ export default function AnalyticsPage() {
 
           <TabsContent value="meetings">
             <MeetingsAnalyticsTab workspaceId={workspaceId} />
+          </TabsContent>
+
+          <TabsContent value="roi">
+            <RoiAnalyticsTab workspaceId={workspaceId} />
           </TabsContent>
         </Tabs>
       </div>

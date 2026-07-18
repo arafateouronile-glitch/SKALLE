@@ -835,6 +835,17 @@ export async function executeCsoDecision(
       });
     }
 
+    // Attribution "premier contact IA" — ne s'écrit qu'une fois par prospect
+    // (CSO_FOLLOWUP peut légitimement s'exécuter plusieurs fois sur le même
+    // prospect, contrairement à attributeInboundToPost côté CMO). Best-effort :
+    // un échec ici ne doit jamais faire échouer l'action réelle.
+    if (decision.actionType !== "CSO_STALE_REJECT") {
+      await prisma.prospect.updateMany({
+        where: { id: data.prospectId, attributedDecisionId: null },
+        data: { attributedDecisionId: decisionId },
+      }).catch(() => null);
+    }
+
     await prisma.agentDecision.update({
       where: { id: decisionId },
       data: { status: "EXECUTED", executedAt: new Date() },

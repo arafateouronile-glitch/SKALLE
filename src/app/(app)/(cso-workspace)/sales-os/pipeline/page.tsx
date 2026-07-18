@@ -21,6 +21,7 @@ import type {
   PipelineProspect,
   PipelineColumn,
 } from "@/app/api/cso-agent/pipeline/route";
+import { MarkConvertedDialog } from "@/components/modules/cso/mark-converted-dialog";
 
 // ─── Column config ────────────────────────────────────────────────────────────
 
@@ -218,6 +219,7 @@ export default function PipelinePage() {
   const [dragOver, setDragOver]   = useState<PipelineColumn | null>(null);
   const dragProspect              = useRef<PipelineProspect | null>(null);
   const dragSource                = useRef<PipelineColumn | null>(null);
+  const [pendingConversion, setPendingConversion] = useState<{ p: PipelineProspect; src: PipelineColumn } | null>(null);
 
   // Enrichment state
   const [toEnrich,     setToEnrich]     = useState<number | null>(null);
@@ -291,14 +293,7 @@ export default function PipelinePage() {
     setDragOver(col);
   }
 
-  function handleDrop(e: React.DragEvent, targetCol: PipelineColumn) {
-    e.preventDefault();
-    setDragOver(null);
-
-    const p = dragProspect.current;
-    const src = dragSource.current;
-    if (!p || !src || src === targetCol) return;
-
+  function applyMove(p: PipelineProspect, src: PipelineColumn, targetCol: PipelineColumn, value?: number) {
     // Optimistic update
     setColumns((prev) => {
       const next = { ...prev };
@@ -316,7 +311,7 @@ export default function PipelinePage() {
     fetch(`/api/cso-agent/pipeline/${p.id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: targetCol }),
+      body: JSON.stringify({ status: targetCol, ...(value !== undefined ? { value } : {}) }),
     }).catch(() => {
       // Revert on error
       setColumns((prev) => {
@@ -331,6 +326,24 @@ export default function PipelinePage() {
         [targetCol]: Math.max(0, (prev[targetCol] ?? 0) - 1),
       }));
     });
+  }
+
+  // CONVERTED demande toujours un montant de deal (ou un refus explicite) — le
+  // déplacement optimiste et la persistance sont différés jusqu'à confirmation.
+  function handleDrop(e: React.DragEvent, targetCol: PipelineColumn) {
+    e.preventDefault();
+    setDragOver(null);
+
+    const p = dragProspect.current;
+    const src = dragSource.current;
+    if (!p || !src || src === targetCol) return;
+
+    if (targetCol === "CONVERTED") {
+      setPendingConversion({ p, src });
+      return;
+    }
+
+    applyMove(p, src, targetCol);
   }
 
   // ── Stats bar ───────────────────────────────────────────────────────────────
@@ -510,6 +523,17 @@ export default function PipelinePage() {
           onMouseUp={handleDragEnd}
         />
       )}
+
+      <MarkConvertedDialog
+        open={!!pendingConversion}
+        prospectName={pendingConversion?.p.name ?? ""}
+        onClose={() => setPendingConversion(null)}
+        onConfirm={async (value) => {
+          if (!pendingConversion) return;
+          applyMove(pendingConversion.p, pendingConversion.src, "CONVERTED", value ?? undefined);
+          setPendingConversion(null);
+        }}
+      />
     </>
   );
 }

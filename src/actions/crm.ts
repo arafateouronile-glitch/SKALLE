@@ -121,14 +121,15 @@ export async function getProspectsForCrm(
 export async function updateProspectStatusAction(
   prospectId: string,
   status: ProspectStatusPipeline,
-  workspaceId: string
+  workspaceId: string,
+  value?: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
     await prisma.prospect.updateMany({
       where: { id: prospectId, workspaceId },
-      data: { status },
+      data: { status, ...(value !== undefined ? { value } : {}) },
     });
     return { success: true };
   } catch (error) {

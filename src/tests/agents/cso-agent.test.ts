@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── Mocks des dépendances lourdes (LLM, budget, enrichissement) ──────────────
 // observePipeline() n'utilise que prisma, mais le module importe le reste au
@@ -94,12 +94,28 @@ vi.mock("@/lib/prisma", () => ({
           .sort((a, b) => b.score - a.score);
         return args.take ? filtered.slice(0, args.take) : filtered;
       }),
+      update: vi.fn(() => Promise.resolve({})),
+      updateMany: vi.fn(() => Promise.resolve({ count: 1 })),
     },
-    sequenceStep: { findMany: vi.fn(() => []) },
+    sequenceStep: {
+      findMany: vi.fn(() => []),
+      findFirst: vi.fn(() => Promise.resolve(null)),
+      create: vi.fn(() => Promise.resolve({})),
+      updateMany: vi.fn(() => Promise.resolve({ count: 0 })),
+    },
+    outreachSequence: {
+      create: vi.fn(() => Promise.resolve({ id: "seq-1" })),
+      findFirst: vi.fn(() => Promise.resolve(null)),
+    },
+    agentDecision: {
+      findFirst: vi.fn(() => Promise.resolve(null)),
+      update: vi.fn(() => Promise.resolve({})),
+    },
   },
 }));
 
-import { observePipeline } from "@/lib/services/sales/cso-agent";
+import { observePipeline, executeCsoDecision } from "@/lib/services/sales/cso-agent";
+import { prisma } from "@/lib/prisma";
 
 describe("observePipeline — filtre persona vs signal chaud (régression)", () => {
   const WORKSPACE_ID = "ws-1";
@@ -160,5 +176,50 @@ describe("observePipeline — filtre persona vs signal chaud (régression)", () 
     const ids = obs.highScoreNew.map((p) => p.id);
 
     expect(ids).not.toContain("p-stale-warm");
+  });
+});
+
+describe("executeCsoDecision — attribution du pipeline à l'Agent CSO", () => {
+  const WORKSPACE_ID = "ws-1";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ["CSO_LAUNCH_LINKEDIN"],
+    ["CSO_LAUNCH_EMAIL"],
+    ["CSO_FOLLOWUP"],
+  ])("pose attributedDecisionId (premier contact seulement) pour %s", async (actionType) => {
+    vi.mocked(prisma.agentDecision.findFirst).mockResolvedValueOnce({
+      id: "dec-1",
+      workspaceId: WORKSPACE_ID,
+      actionType,
+      actionData: { prospectId: "p-1", prospectName: "Jane Doe" },
+      status: "APPROVED",
+    } as never);
+
+    const result = await executeCsoDecision("dec-1", WORKSPACE_ID);
+
+    expect(result.ok).toBe(true);
+    expect(prisma.prospect.updateMany).toHaveBeenCalledWith({
+      where: { id: "p-1", attributedDecisionId: null },
+      data: { attributedDecisionId: "dec-1" },
+    });
+  });
+
+  it("ne pose jamais attributedDecisionId pour CSO_STALE_REJECT (abandon, pas de pipeline généré)", async () => {
+    vi.mocked(prisma.agentDecision.findFirst).mockResolvedValueOnce({
+      id: "dec-2",
+      workspaceId: WORKSPACE_ID,
+      actionType: "CSO_STALE_REJECT",
+      actionData: { prospectId: "p-2", prospectName: "John Doe" },
+      status: "APPROVED",
+    } as never);
+
+    const result = await executeCsoDecision("dec-2", WORKSPACE_ID);
+
+    expect(result.ok).toBe(true);
+    expect(prisma.prospect.updateMany).not.toHaveBeenCalled();
   });
 });

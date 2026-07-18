@@ -283,58 +283,59 @@ model SEOIntelligenceCache {
 }
 
 model Prospect {
-  id                  String                @id @default(cuid())
-  name                String
-  linkedInUrl         String
-  company             String
-  jobTitle            String?
-  email               String?
-  phone               String?
-  notes               String?
-  status              ProspectStatus        @default(NEW)
-  messages            Json?
-  workspaceId         String
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  companySize         String?
-  emailMessages       Json?
-  emailVerified       Boolean               @default(false)
-  enrichmentData      Json?
-  industry            String?
-  linkedInConnections Int?
-  location            String?
-  phoneScripts        Json?
-  phoneVerified       Boolean               @default(false)
-  revenue             String?
-  aiSummary           String?
-  handle              String?
-  lastInteractionAt   DateTime?
-  meetingBookedAt     DateTime?
-  platform            String?
-  score               Int                   @default(0)
-  sentiment           String                @default("NEUTRAL")
-  source              SourceType?
-  suggestedHook       String?
-  temperature         String                @default("COLD")
-  value               Float?
-  attributedPostId    String?
-  intentScore         Int?
-  lastScoredAt        DateTime?
-  emailStatus         String?
-  hubspotContactId    String?
-  hubspotSyncedAt     DateTime?
-  warmSignalType      String?
-  warmSignalAt        DateTime?
-  enrichments         LeadEnrichment[]
-  sequences           OutreachSequence[]
-  workspace           Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  aiNotes             ProspectAiNote[]
-  interactions        ProspectInteraction[]
-  lists               ProspectListEntry[]
-  intentSignals       IntentSignal[]
-  linkedInReplies     LinkedInReply[]
-  personaId           String?
-  persona             Persona?              @relation(fields: [personaId], references: [id])
+  id                   String                @id @default(cuid())
+  name                 String
+  linkedInUrl          String
+  company              String
+  jobTitle             String?
+  email                String?
+  phone                String?
+  notes                String?
+  status               ProspectStatus        @default(NEW)
+  messages             Json?
+  workspaceId          String
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  companySize          String?
+  emailMessages        Json?
+  emailVerified        Boolean               @default(false)
+  enrichmentData       Json?
+  industry             String?
+  linkedInConnections  Int?
+  location             String?
+  phoneScripts         Json?
+  phoneVerified        Boolean               @default(false)
+  revenue              String?
+  aiSummary            String?
+  handle               String?
+  lastInteractionAt    DateTime?
+  meetingBookedAt      DateTime?
+  platform             String?
+  score                Int                   @default(0)
+  sentiment            String                @default("NEUTRAL")
+  source               SourceType?
+  suggestedHook        String?
+  temperature          String                @default("COLD")
+  value                Float?
+  attributedPostId     String?
+  attributedDecisionId String?
+  intentScore          Int?
+  lastScoredAt         DateTime?
+  emailStatus          String?
+  hubspotContactId     String?
+  hubspotSyncedAt      DateTime?
+  warmSignalType       String?
+  warmSignalAt         DateTime?
+  enrichments          LeadEnrichment[]
+  sequences            OutreachSequence[]
+  workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  aiNotes              ProspectAiNote[]
+  interactions         ProspectInteraction[]
+  lists                ProspectListEntry[]
+  intentSignals        IntentSignal[]
+  linkedInReplies      LinkedInReply[]
+  personaId            String?
+  persona              Persona?              @relation(fields: [personaId], references: [id])
 
   @@unique([email, workspaceId])
   @@index([workspaceId])

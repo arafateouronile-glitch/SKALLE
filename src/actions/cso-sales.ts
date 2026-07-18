@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { ProspectStatus } from "@prisma/client";
 import { SalesCloserAgent, analyzeReplySentiment } from "@/lib/services/sales/closer";
 import type { PrepareProspectOutreachResult, SentimentResult } from "@/lib/services/sales/closer";
 import { generateClosingResponse } from "@/lib/services/sales/replier";
@@ -798,12 +799,19 @@ export async function saveProspectGeneratedMessagesAction(
 export async function updateProspectStatusAction(
   prospectId: string,
   workspaceId: string,
-  status: string
+  status: string,
+  value?: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
-    await prisma.$executeRaw`UPDATE "Prospect" SET status = ${status}::"ProspectStatus" WHERE id = ${prospectId} AND "workspaceId" = ${workspaceId}`;
+    await prisma.prospect.update({
+      where: { id: prospectId },
+      data: {
+        status: status as ProspectStatus,
+        ...(value !== undefined ? { value } : {}),
+      },
+    });
     return { success: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Erreur" };

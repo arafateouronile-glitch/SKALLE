@@ -16,8 +16,8 @@ export async function PATCH(
   if (!session?.user?.id) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
 
   const { prospectId } = await params;
-  const body = (await req.json()) as { status: string };
-  const { status } = body;
+  const body = (await req.json()) as { status: string; value?: number };
+  const { status, value } = body;
 
   if (!status || !VALID_STATUSES.has(status)) {
     return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
@@ -39,6 +39,7 @@ export async function PATCH(
       ...(status === "MEETING_BOOKED" && prospect.status !== "MEETING_BOOKED" && prospect.status !== "CONVERTED"
         ? { meetingBookedAt: new Date() }
         : {}),
+      ...(status === "CONVERTED" && typeof value === "number" && value > 0 ? { value } : {}),
     },
     select: {
       id: true,
