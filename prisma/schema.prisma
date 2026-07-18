@@ -20,8 +20,8 @@ model User {
   updatedAt        DateTime    @updatedAt
   stripeCustomerId String?
   suspendedAt      DateTime?
-  isAdmin          Boolean   @default(false)
-  tokenVersion     Int       @default(1)
+  isAdmin          Boolean     @default(false)
+  tokenVersion     Int         @default(1)
   accounts         Account[]
   sessions         Session[]
   workspaces       Workspace[]
@@ -120,8 +120,10 @@ model Workspace {
   personas                  Persona[]
   videoAdJobs               VideoAdJob[]
   avatarAssets              AvatarAsset[]
+  staticAds                 StaticAd[]
   persons                   Person[]
   sequenceSuggestions       SequenceSuggestion[]
+  competitorWatches         CompetitorWatch[]
   user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -321,6 +323,8 @@ model Prospect {
   emailStatus         String?
   hubspotContactId    String?
   hubspotSyncedAt     DateTime?
+  warmSignalType      String?
+  warmSignalAt        DateTime?
   enrichments         LeadEnrichment[]
   sequences           OutreachSequence[]
   workspace           Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -345,6 +349,7 @@ model Prospect {
   @@index([intentScore])
   @@index([hubspotContactId])
   @@index([lastScoredAt])
+  @@index([workspaceId, warmSignalAt])
 }
 
 model ProspectInteraction {
@@ -373,20 +378,20 @@ model ProspectAiNote {
 }
 
 model OutreachSequence {
-  id          String         @id @default(cuid())
+  id          String               @id @default(cuid())
   prospectId  String
   name        String
-  isActive    Boolean        @default(true)
+  isActive    Boolean              @default(true)
   workspaceId String
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
   campaignId  String?
-  abTestId    String?        // shared UUID linking A and B variants
-  abVariant   String?        // "A" or "B"
-  campaign     EmailCampaign?       @relation(fields: [campaignId], references: [id])
-  prospect     Prospect             @relation(fields: [prospectId], references: [id], onDelete: Cascade)
-  steps        SequenceStep[]
-  suggestions  SequenceSuggestion[]
+  abTestId    String? // shared UUID linking A and B variants
+  abVariant   String? // "A" or "B"
+  campaign    EmailCampaign?       @relation(fields: [campaignId], references: [id])
+  prospect    Prospect             @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  steps       SequenceStep[]
+  suggestions SequenceSuggestion[]
 
   @@index([prospectId])
   @@index([workspaceId])
@@ -414,7 +419,7 @@ model SequenceStep {
   updatedAt      DateTime           @updatedAt
   linkedInAction String?
   messageId      String?
-  scheduledAt    DateTime?          // null = immédiat ; set = ne pas envoyer avant cette date
+  scheduledAt    DateTime? // null = immédiat ; set = ne pas envoyer avant cette date
   replies        ReplyDetection[]
   sequence       OutreachSequence   @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
 
@@ -423,20 +428,20 @@ model SequenceStep {
 }
 
 model SequenceSuggestion {
-  id              String           @id @default(cuid())
+  id              String   @id @default(cuid())
   workspaceId     String
   sequenceId      String
   stepId          String?
-  type            String           // SUBJECT_REWRITE | DELAY_CHANGE | CONTENT_REWRITE | DEACTIVATE | CHANNEL_SWITCH
+  type            String // SUBJECT_REWRITE | DELAY_CHANGE | CONTENT_REWRITE | DEACTIVATE | CHANNEL_SWITCH
   reason          String
   currentValue    Json
   suggestedValue  Json
   estimatedImpact String
-  status          String           @default("PENDING") // PENDING | APPROVED | REJECTED | APPLIED
-  createdAt       DateTime         @default(now())
+  status          String   @default("PENDING") // PENDING | APPROVED | REJECTED | APPLIED
+  createdAt       DateTime @default(now())
 
-  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  sequence        OutreachSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sequence  OutreachSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, status])
   @@index([sequenceId])
@@ -617,59 +622,59 @@ model GenerationHistory {
 }
 
 model SmtpConfig {
-  id             String          @id @default(cuid())
-  workspaceId    String
-  host           String
-  port           Int             @default(587)
-  secure         Boolean         @default(false)
-  username       String
-  password       String
-  fromEmail      String
-  fromName       String
-  provider       String          @default("custom")
-  dailyLimit     Int             @default(500)
-  perMinuteLimit Int             @default(15)
-  isVerified     Boolean         @default(false)
-  lastVerifiedAt DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  imapHost       String?
-  imapPort       Int?            @default(993)
-  imapSecure     Boolean         @default(true)
-  isDefault      Boolean         @default(false)
-  label          String          @default("Principal")
+  id                String          @id @default(cuid())
+  workspaceId       String
+  host              String
+  port              Int             @default(587)
+  secure            Boolean         @default(false)
+  username          String
+  password          String
+  fromEmail         String
+  fromName          String
+  provider          String          @default("custom")
+  dailyLimit        Int             @default(500)
+  perMinuteLimit    Int             @default(15)
+  isVerified        Boolean         @default(false)
+  lastVerifiedAt    DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  imapHost          String?
+  imapPort          Int?            @default(993)
+  imapSecure        Boolean         @default(true)
+  isDefault         Boolean         @default(false)
+  label             String          @default("Principal")
   // Warm-up per mailbox
-  warmupEnabled     Boolean   @default(false)
-  warmupCompleted   Boolean   @default(false)
-  warmupDay         Int       @default(0)
-  warmupSentToday   Int       @default(0)
+  warmupEnabled     Boolean         @default(false)
+  warmupCompleted   Boolean         @default(false)
+  warmupDay         Int             @default(0)
+  warmupSentToday   Int             @default(0)
   warmupStartedAt   DateTime?
   warmupLastResetAt DateTime?
-  warmupTargetVol   Int       @default(100)
-  campaigns      EmailCampaign[]
-  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  warmupTargetVol   Int             @default(100)
+  campaigns         EmailCampaign[]
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, fromEmail])
   @@index([workspaceId])
 }
 
 model EmailCampaign {
-  id                  String             @id @default(cuid())
+  id                  String               @id @default(cuid())
   name                String
-  status              CampaignStatus     @default(DRAFT)
+  status              CampaignStatus       @default(DRAFT)
   workspaceId         String
   stepTemplates       Json
-  personalizationMode String             @default("template")
-  sendRatePerMinute   Int                @default(15)
-  totalProspects      Int                @default(0)
-  totalSent           Int                @default(0)
-  totalFailed         Int                @default(0)
-  totalOpened         Int                @default(0)
-  totalReplied        Int                @default(0)
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  personalizationMode String               @default("template")
+  sendRatePerMinute   Int                  @default(15)
+  totalProspects      Int                  @default(0)
+  totalSent           Int                  @default(0)
+  totalFailed         Int                  @default(0)
+  totalOpened         Int                  @default(0)
+  totalReplied        Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
   smtpConfigId        String?
-  smtpConfig          SmtpConfig?        @relation(fields: [smtpConfigId], references: [id])
+  smtpConfig          SmtpConfig?          @relation(fields: [smtpConfigId], references: [id])
   sequences           OutreachSequence[]
   attachments         CampaignAttachment[]
 
@@ -1033,8 +1038,6 @@ enum CMSPlatform {
 enum SequenceChannel {
   LINKEDIN
   EMAIL
-  PHONE
-  SMS
 }
 
 enum SequenceStepStatus {
@@ -1070,8 +1073,8 @@ model Persona {
   id          String        @id @default(cuid())
   workspaceId String
   name        String
-  raw         Json          // RawPersona: industry, jobTitles[], companySizes[], locations[], keywords[], painPoints[]
-  enhanced    Json?         // EnhancedPersona: channel queries, hooks, email template (set by AI)
+  raw         Json // RawPersona: industry, jobTitles[], companySizes[], locations[], keywords[], painPoints[]
+  enhanced    Json? // EnhancedPersona: channel queries, hooks, email template (set by AI)
   status      PersonaStatus @default(DRAFT)
   lastRunAt   DateTime?
   leadsFound  Int           @default(0)
@@ -1092,7 +1095,7 @@ model Person {
   id          String        @id @default(cuid())
   workspaceId String
   name        String
-  description String?       // Appearance description (used as generation reference)
+  description String? // Appearance description (used as generation reference)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -1104,8 +1107,8 @@ model Person {
 model PersonPhoto {
   id              String   @id @default(cuid())
   personId        String
-  formatId        String?  // UGC format id — null for base/manual photos
-  formatLabel     String?  // Human-readable label (e.g. "Café parisien")
+  formatId        String? // UGC format id — null for base/manual photos
+  formatLabel     String? // Human-readable label (e.g. "Café parisien")
   photoUrl        String
   storagePath     String
   isBase          Boolean  @default(false)
@@ -1184,30 +1187,30 @@ enum AdCampaignStatus {
 }
 
 model AdCampaign {
-  id                 String            @id @default(cuid())
+  id                 String           @id @default(cuid())
   workspaceId        String
   niche              String
-  status             AdCampaignStatus  @default(GENERATING)
+  status             AdCampaignStatus @default(GENERATING)
   competitorInsights Json?
   errorMessage       String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
-  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   variants  AdVariant[]
 
   @@index([workspaceId, createdAt])
 }
 
 model AdVariant {
-  id           String  @id @default(cuid())
-  campaignId   String
-  angle        String
-  framework    String
-  primaryText  String  @db.Text
-  headline     String
-  subheadline  String
-  imagePrompt  String  @db.Text
+  id          String @id @default(cuid())
+  campaignId  String
+  angle       String
+  framework   String
+  primaryText String @db.Text
+  headline    String
+  subheadline String
+  imagePrompt String @db.Text
 
   backgroundUrl String?
   squareUrl     String?
@@ -1234,16 +1237,16 @@ enum AbTestStatus {
 }
 
 model PostAbTest {
-  id          String       @id @default(cuid())
+  id          String          @id @default(cuid())
   workspaceId String
   name        String
   platform    String
-  baseContent String       @db.Text
-  status      AbTestStatus @default(DRAFT)
+  baseContent String          @db.Text
+  status      AbTestStatus    @default(DRAFT)
   winnerId    String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   variants    PostAbVariant[]
 
   @@index([workspaceId])
@@ -1251,19 +1254,19 @@ model PostAbTest {
 }
 
 model PostAbVariant {
-  id          String      @id @default(cuid())
-  testId      String
-  label       String      // "A", "B", "C"
-  content     String      @db.Text
-  hookType    String?
+  id             String     @id @default(cuid())
+  testId         String
+  label          String // "A", "B", "C"
+  content        String     @db.Text
+  hookType       String?
   predictedScore Float?
-  likes       Int         @default(0)
-  comments    Int         @default(0)
-  views       Int         @default(0)
+  likes          Int        @default(0)
+  comments       Int        @default(0)
+  views          Int        @default(0)
   engagementRate Float?
-  isWinner    Boolean     @default(false)
-  createdAt   DateTime    @default(now())
-  test        PostAbTest  @relation(fields: [testId], references: [id], onDelete: Cascade)
+  isWinner       Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  test           PostAbTest @relation(fields: [testId], references: [id], onDelete: Cascade)
 
   @@index([testId])
 }
@@ -1291,26 +1294,26 @@ enum HookType {
 }
 
 model ViralPost {
-  id            String         @id @default(cuid())
-  platform      ViralPlatform
-  content       String         @db.Text
-  authorName    String
-  authorHandle  String?
-  authorAvatar  String?
-  likes         Int            @default(0)
-  comments      Int            @default(0)
-  shares        Int            @default(0)
-  views         Int?
-  viralScore    Float          @default(0)
-  postUrl       String         @unique
-  postedAt      DateTime?
-  scrapedAt     DateTime       @default(now())
-  niche         String?
-  country       String?
-  hookType      HookType       @default(OTHER)
-  isBookmarked  Boolean        @default(false)
-  workspaceId   String?
-  workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  id           String        @id @default(cuid())
+  platform     ViralPlatform
+  content      String        @db.Text
+  authorName   String
+  authorHandle String?
+  authorAvatar String?
+  likes        Int           @default(0)
+  comments     Int           @default(0)
+  shares       Int           @default(0)
+  views        Int?
+  viralScore   Float         @default(0)
+  postUrl      String        @unique
+  postedAt     DateTime?
+  scrapedAt    DateTime      @default(now())
+  niche        String?
+  country      String?
+  hookType     HookType      @default(OTHER)
+  isBookmarked Boolean       @default(false)
+  workspaceId  String?
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([platform, viralScore(sort: Desc)])
   @@index([workspaceId])
@@ -1344,37 +1347,37 @@ model PostInsight {
 // BASE DE CONTACTS GLOBALE — admin uniquement, alimentée par tous les workspaces
 // ─────────────────────────────────────────────────────────────────────────────
 model ContactDB {
-  id              String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Identité
-  firstName       String?
-  lastName        String?
-  email           String?   @unique
-  emailVerified   Boolean   @default(false)
-  emailScore      Int?
-  emailSource     String?   // "apollo" | "google-search" | "website-scrape" | "pattern-mx"
-  phone           String?
+  firstName     String?
+  lastName      String?
+  email         String? @unique
+  emailVerified Boolean @default(false)
+  emailScore    Int?
+  emailSource   String? // "apollo" | "google-search" | "website-scrape" | "pattern-mx"
+  phone         String?
 
   // Profil professionnel
-  linkedInUrl     String?   @unique
-  company         String?
-  jobTitle        String?
-  location        String?
-  industry        String?
-  companySize     String?
-  seniority       String?
+  linkedInUrl String? @unique
+  company     String?
+  jobTitle    String?
+  location    String?
+  industry    String?
+  companySize String?
+  seniority   String?
 
   // Source & traçabilité
-  source          String    @default("manual") // "apollo" | "google-scraper" | "manual" | "csv"
+  source            String   @default("manual") // "apollo" | "google-scraper" | "manual" | "csv"
   sourceWorkspaceId String? // workspace qui a trouvé ce contact (analytics)
-  apolloId        String?
-  seenCount       Int       @default(1)  // combien de fois ce contact est apparu
-  tags            String[]
+  apolloId          String?
+  seenCount         Int      @default(1) // combien de fois ce contact est apparu
+  tags              String[]
 
   // Dates
-  lastVerifiedAt  DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  lastVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([company])
   @@index([industry])
@@ -1389,25 +1392,25 @@ model ContactDB {
 // ═══════════════════════════════════════════════════════════════════════════
 
 model LinkedInAutomationConfig {
-  id                   String    @id @default(cuid())
-  workspaceId          String    @unique
-  liAt                 String    // cookie li_at (session LinkedIn)
-  jsessionId           String?   // cookie JSESSIONID (CSRF token) — même onglet DevTools que li_at
-  isActive             Boolean   @default(false)
-  dailyConnectLimit    Int       @default(10)  // défaut sécurisé (pas 20)
-  dailyMessageLimit    Int       @default(25)  // défaut sécurisé (pas 50)
-  sendAt               String    @default("10:00") // heure locale HH:mm
-  connectActor         String    @default("voyager") // legacy, conservé pour compatibilité
-  messageActor         String    @default("voyager") // legacy, conservé pour compatibilité
-  warmupDay            Int       @default(0)   // incrément à chaque run (0→21 = warm-up)
-  warmupStartedAt      DateTime?               // date du 1er run réussi
-  proxyCountry         String    @default("FR") // code ISO pays (référence pour anti-ban)
-  lastRunAt            DateTime?
-  lastRunStats         Json?     // { sent, failed, skipped, abortReason? }
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+  liAt              String // cookie li_at (session LinkedIn)
+  jsessionId        String? // cookie JSESSIONID (CSRF token) — même onglet DevTools que li_at
+  isActive          Boolean   @default(false)
+  dailyConnectLimit Int       @default(10) // défaut sécurisé (pas 20)
+  dailyMessageLimit Int       @default(25) // défaut sécurisé (pas 50)
+  sendAt            String    @default("10:00") // heure locale HH:mm
+  connectActor      String    @default("voyager") // legacy, conservé pour compatibilité
+  messageActor      String    @default("voyager") // legacy, conservé pour compatibilité
+  warmupDay         Int       @default(0) // incrément à chaque run (0→21 = warm-up)
+  warmupStartedAt   DateTime? // date du 1er run réussi
+  proxyCountry      String    @default("FR") // code ISO pays (référence pour anti-ban)
+  lastRunAt         DateTime?
+  lastRunStats      Json? // { sent, failed, skipped, abortReason? }
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1415,19 +1418,19 @@ model LinkedInAutomationConfig {
 // ═══════════════════════════════════════════════════════════════════════════
 
 model LinkedInReply {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   workspaceId     String
   prospectId      String?
-  linkedInUrl     String    // URL du profil qui a répondu
+  linkedInUrl     String // URL du profil qui a répondu
   senderName      String
-  messageText     String    @db.Text
-  conversationUrn String    // urn:li:fs_conversation:xxx (identifiant unique)
+  messageText     String   @db.Text
+  conversationUrn String // urn:li:fs_conversation:xxx (identifiant unique)
   receivedAt      DateTime
-  isRead          Boolean   @default(false)
-  createdAt       DateTime  @default(now())
+  isRead          Boolean  @default(false)
+  createdAt       DateTime @default(now())
 
-  workspace       Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  prospect        Prospect?  @relation(fields: [prospectId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  prospect  Prospect? @relation(fields: [prospectId], references: [id])
 
   @@unique([workspaceId, conversationUrn])
   @@index([workspaceId])
@@ -1473,14 +1476,27 @@ model IntentSignal {
   workspaceId String
   detectedAt  DateTime   @default(now())
 
-  prospect    Prospect?  @relation(fields: [prospectId], references: [id], onDelete: SetNull)
-  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  prospect  Prospect? @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
   @@index([prospectId])
   @@index([companyName])
   @@index([type])
   @@index([detectedAt])
+}
+
+model CompetitorWatch {
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  name               String
+  linkedInCompanyUrl String
+  lastScannedAt      DateTime?
+  createdAt          DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1490,11 +1506,11 @@ model IntentSignal {
 model CMOObjective {
   id          String        @id @default(cuid())
   workspaceId String
-  type        String        // CONTENT | AUDIENCE | LEADS | SEO
-  period      String        // DAILY | WEEKLY | MONTHLY | CUSTOM
+  type        String // CONTENT | AUDIENCE | LEADS | SEO
+  period      String // DAILY | WEEKLY | MONTHLY | CUSTOM
   title       String
   description String?
-  target      Json          // { metric: string, value: number, unit: string }
+  target      Json // { metric: string, value: number, unit: string }
   status      String        @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED
   startDate   DateTime      @default(now())
   endDate     DateTime?
@@ -1509,21 +1525,21 @@ model CMOObjective {
 }
 
 model CMOProposal {
-  id           String       @id @default(cuid())
+  id           String        @id @default(cuid())
   workspaceId  String
   objectiveId  String?
-  type         String       // GENERATE_POSTS | GENERATE_ARTICLE | SCHEDULE_POSTS | ANALYZE | ADJUST_STRATEGY
+  type         String // GENERATE_POSTS | GENERATE_ARTICLE | SCHEDULE_POSTS | ANALYZE | ADJUST_STRATEGY
   title        String
   description  String
   agentReason  String?
-  payload      Json         // params for execution
-  status       String       @default("PENDING") // PENDING | APPROVED | REJECTED | IN_PROGRESS | DONE | FAILED
+  payload      Json // params for execution
+  status       String        @default("PENDING") // PENDING | APPROVED | REJECTED | IN_PROGRESS | DONE | FAILED
   userFeedback String?
   result       Json?
-  creditsEst   Int          @default(0)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creditsEst   Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   objective    CMOObjective? @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId])
@@ -1553,34 +1569,34 @@ enum VideoAdModel {
 }
 
 model VideoAdJob {
-  id                     String        @id @default(cuid())
-  workspaceId            String
-  status                 VideoAdStatus @default(PENDING)
-  errorMessage           String?
-  audioStoragePath       String?
-  avatarStoragePath      String?
-  script                 String        @default("")
-  animationPrompt        String        @default("")
-  voiceName              String        @default("nova")
-  videoModel             VideoAdModel  @default(KLING)
-  ugcStyle               String        @default("ugc_produit")
-  movementType           String        @default("statique")
-  storyboardPlans        Json?
-  klingImage2VideoTaskId String?
-  klingLipSyncTaskId     String?
-  klingVideoUrl               String?
-  finalVideoUrl               String?
-  screenRecordingStoragePath  String?
-  baseVideoStoragePath        String?
-  compositeVideoUrl           String?
-  captionedVideoUrl           String?
-  squareVideoUrl              String?
-  landscapeVideoUrl           String?
-  thumbnailUrl                String?
-  creditsUsed            Int           @default(0)
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
-  workspace              Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id                         String        @id @default(cuid())
+  workspaceId                String
+  status                     VideoAdStatus @default(PENDING)
+  errorMessage               String?
+  audioStoragePath           String?
+  avatarStoragePath          String?
+  script                     String        @default("")
+  animationPrompt            String        @default("")
+  voiceName                  String        @default("nova")
+  videoModel                 VideoAdModel  @default(KLING)
+  ugcStyle                   String        @default("ugc_produit")
+  movementType               String        @default("statique")
+  storyboardPlans            Json?
+  klingImage2VideoTaskId     String?
+  klingLipSyncTaskId         String?
+  klingVideoUrl              String?
+  finalVideoUrl              String?
+  screenRecordingStoragePath String?
+  baseVideoStoragePath       String?
+  compositeVideoUrl          String?
+  captionedVideoUrl          String?
+  squareVideoUrl             String?
+  landscapeVideoUrl          String?
+  thumbnailUrl               String?
+  creditsUsed                Int           @default(0)
+  createdAt                  DateTime      @default(now())
+  updatedAt                  DateTime      @updatedAt
+  workspace                  Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
   @@index([status])
@@ -1588,12 +1604,28 @@ model VideoAdJob {
 }
 
 model AvatarAsset {
-  id           String    @id @default(cuid())
-  workspaceId  String
-  name         String    @default("")
-  storagePath  String
-  createdAt    DateTime  @default(now())
-  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String    @default("")
+  storagePath String
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
+}
+
+model StaticAd {
+  id          String   @id @default(cuid())
+  workspaceId String
+  storagePath String
+  headline    String?
+  body        String?
+  cta         String?
+  format      String   @default("square")
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, createdAt])
 }

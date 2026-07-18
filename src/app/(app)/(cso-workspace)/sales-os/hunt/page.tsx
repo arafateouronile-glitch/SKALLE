@@ -21,11 +21,11 @@ import {
 } from "@/actions/cso-sales";
 import {
   trackLinkedInEngagementAction,
-  enrollInSequenceAction,
-  generateDMAction,
+  prioritizeWarmLeadAction,
   getLinkedInStatusAction,
   getPublishedLinkedInPostsAction,
   getLinkedInInteractionsBySourceAction,
+  getInteractionsAction,
 } from "@/actions/social-prospector";
 import type { AnalyzedSignal } from "@/lib/services/sales/intent-signals";
 import type { LocalLeadEvaluated } from "@/lib/services/sales/local-scraper";
@@ -42,6 +42,8 @@ const WARM_SOURCES = [
     desc: "Ceux qui ont visité votre profil LinkedIn récemment",
     pitch: "Ils vous connaissent déjà — relancez pendant qu'ils se souviennent de vous.",
     color: "violet",
+    interactionType: "PROFILE_VIEW",
+    requiresOAuth: false, // capturé par sync extension → LinkedInAutomationConfig, pas OAuth
   },
   {
     id: "engagers",
@@ -51,6 +53,8 @@ const WARM_SOURCES = [
     desc: "Likes, commentaires et partages sur vos posts",
     pitch: "Déjà engagés avec votre contenu — la conversion la plus facile.",
     color: "amber",
+    interactionType: null,
+    requiresOAuth: true, // nécessite l'API officielle LinkedIn (r_member_social)
   },
   {
     id: "followers",
@@ -60,6 +64,8 @@ const WARM_SOURCES = [
     desc: "Nouveaux abonnés à votre profil ou page",
     pitch: "Ils ont décidé de vous suivre — ils attendent juste que vous parliez.",
     color: "emerald",
+    interactionType: "FOLLOW",
+    requiresOAuth: false,
   },
 ] as const;
 
@@ -177,7 +183,7 @@ interface LinkedInPost {
   content: string;
 }
 
-type EnrollState = "idle" | "generating" | "enrolling" | "done" | "skipped" | "error";
+type EnrollState = "idle" | "capturing" | "done" | "skipped" | "error";
 
 // ─── Warmth scoring ───────────────────────────────────────────────────────────
 
@@ -254,6 +260,7 @@ export function HuntTab() {
   const [warmError, setWarmError] = useState<string | null>(null);
   const [currentSourceUrl, setCurrentSourceUrl] = useState("");
   const [enrollStates, setEnrollStates] = useState<Record<string, EnrollState>>({});
+  const [warmCounts, setWarmCounts] = useState<Record<string, number>>({});
 
   // Toast LinkedIn OAuth
   useEffect(() => {
@@ -269,13 +276,22 @@ export function HuntTab() {
     getUserWorkspace().then(async (r) => {
       if (!r.workspaceId) return;
       setWorkspaceId(r.workspaceId);
-      const [status, posts] = await Promise.all([
+      const [status, posts, interactions] = await Promise.all([
         getLinkedInStatusAction(r.workspaceId),
         getPublishedLinkedInPostsAction(r.workspaceId),
+        getInteractionsAction(r.workspaceId),
       ]);
       setLinkedInConnected(status.connected);
       if (status.connected && "name" in status) setLinkedInName(status.name ?? null);
       if (posts.success) setLinkedInPosts(posts.posts as LinkedInPost[]);
+      if (interactions.success) {
+        const counts: Record<string, number> = {};
+        for (const i of interactions.data.interactions) {
+          if (i.platform !== "LINKEDIN") continue;
+          counts[i.type] = (counts[i.type] ?? 0) + 1;
+        }
+        setWarmCounts(counts);
+      }
     });
   }, []);
 
@@ -408,15 +424,11 @@ export function HuntTab() {
     }
   }
 
-  async function handleEnroll(interaction: WarmInteraction) {
+  async function handlePrioritize(interaction: WarmInteraction) {
     if (!workspaceId || enrollStates[interaction.id] === "done") return;
-    setEnrollStates((prev) => ({ ...prev, [interaction.id]: "generating" }));
+    setEnrollStates((prev) => ({ ...prev, [interaction.id]: "capturing" }));
     try {
-      if (!interaction.suggestedDMs) {
-        await generateDMAction(workspaceId, interaction.id);
-      }
-      setEnrollStates((prev) => ({ ...prev, [interaction.id]: "enrolling" }));
-      const r = await enrollInSequenceAction(workspaceId, interaction.id);
+      const r = await prioritizeWarmLeadAction(workspaceId, interaction.id);
       setEnrollStates((prev) => ({
         ...prev,
         [interaction.id]: !r.success ? "error" : r.skipped ? "skipped" : "done",
@@ -426,12 +438,12 @@ export function HuntTab() {
     }
   }
 
-  async function handleEnrollAll() {
+  async function handlePrioritizeAll() {
     const pending = warmResults.filter((i) => {
       const s = enrollStates[i.id];
       return !s || s === "idle" || s === "error";
     });
-    for (const i of pending) await handleEnroll(i);
+    for (const i of pending) await handlePrioritize(i);
   }
 
   function handleCopyHook(lead: HuntResult) {
@@ -498,7 +510,14 @@ export function HuntTab() {
                       IA personnalisée
                     </div>
                   </div>
-                  {linkedInConnected ? (
+                  {!src.requiresOAuth ? (
+                    <Link href="/sales-os/agent"
+                      className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-[9px] text-[11px] font-semibold transition-all hover:brightness-110"
+                      style={{ background: `var(--${src.color}-soft)`, border: `1px solid var(--${src.color}-line)`, color: `var(--${src.color}-fg)` }}>
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      {warmCounts[src.interactionType as string] ?? 0} capturé{(warmCounts[src.interactionType as string] ?? 0) > 1 ? "s" : ""} · voir l&apos;Agent CSO
+                    </Link>
+                  ) : linkedInConnected ? (
                     <div className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-[9px] text-[11px] font-semibold"
                       style={{ background: `var(--${src.color}-soft)`, border: `1px solid var(--${src.color}-line)`, color: `var(--${src.color}-fg)` }}>
                       <CheckCircle className="h-3.5 w-3.5" />
@@ -580,12 +599,12 @@ export function HuntTab() {
                       {warmResults.length} engageur{warmResults.length > 1 ? "s" : ""} détecté{warmResults.length > 1 ? "s" : ""}
                     </p>
                     <button
-                      onClick={handleEnrollAll}
+                      onClick={handlePrioritizeAll}
                       disabled={warmResults.every((i) => enrollStates[i.id] === "done")}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[11px] font-semibold transition-all hover:brightness-110 disabled:opacity-50"
                       style={{ background: "var(--violet-fg)", color: "white" }}>
                       <Sparkles className="h-3 w-3" />
-                      Tout enrôler
+                      Tout prioriser
                     </button>
                   </div>
                   <div className="space-y-2">
@@ -643,8 +662,8 @@ export function HuntTab() {
                               </a>
                             )}
                             <button
-                              onClick={() => handleEnroll(interaction)}
-                              disabled={es === "done" || es === "skipped" || es === "generating" || es === "enrolling"}
+                              onClick={() => handlePrioritize(interaction)}
+                              disabled={es === "done" || es === "skipped" || es === "capturing"}
                               title={es === "skipped" ? "Conversation LinkedIn existante — skip automatique" : undefined}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[11px] font-semibold transition-all hover:brightness-110 disabled:opacity-70"
                               style={
@@ -652,18 +671,17 @@ export function HuntTab() {
                               : es === "skipped" ? { background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-mute)" }
                               :                    { background: "var(--violet-fg)", color: "white" }
                               }>
-                              {(es === "generating" || es === "enrolling") && <Loader2 className="h-3 w-3 animate-spin" />}
+                              {es === "capturing" && <Loader2 className="h-3 w-3 animate-spin" />}
                               {es === "done"    && <CheckCircle className="h-3 w-3" />}
                               {es === "skipped" && <span className="text-[10px]">↩</span>}
                               {es === "error"   && <span>✕</span>}
                               {es === "idle"    && <Sparkles className="h-3 w-3" />}
                               <span>
-                                {es === "generating" ? "DM IA…"
-                                : es === "enrolling" ? "Séquence…"
-                                : es === "done"      ? "Enrôlé"
+                                {es === "capturing" ? "Priorisation…"
+                                : es === "done"      ? "Priorisé"
                                 : es === "skipped"   ? "Déjà en conv."
                                 : es === "error"     ? "Erreur"
-                                :                      "Enrôler"}
+                                :                      "Prioriser"}
                               </span>
                             </button>
                           </div>
@@ -687,7 +705,10 @@ export function HuntTab() {
             style={{ background: "var(--bg-2)", border: "1px solid var(--line)" }}>
             <div className="text-[11px]" style={{ color: "var(--fg-mute)" }}>
               <span className="font-bold" style={{ color: "var(--fg)" }}>Flow :</span>{" "}
-              Invitation vide → acceptée → DM IA personnalisé → relance J+5 si pas de réponse.
+              Les leads chauds sont priorisés et envoyés à l&apos;Agent CSO pour validation —{" "}
+              <Link href="/sales-os/agent" className="underline" style={{ color: "var(--violet-fg)" }}>
+                voir la file d&apos;approbation
+              </Link>. Aucun envoi automatique.
             </div>
           </div>
         </section>

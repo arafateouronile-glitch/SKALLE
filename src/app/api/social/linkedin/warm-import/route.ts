@@ -4,16 +4,15 @@
  * Reçoit les profile viewers et followers scrapés par l'extension Chrome.
  * Authentification : Bearer token (ExtensionToken table).
  * Crée des SocialInteraction (platform: LINKEDIN, type: PROFILE_VIEW | FOLLOW)
- * et déclenche la génération de DM IA + enrôlement séquence warm lead.
+ * et tague le Prospect correspondant comme signal chaud (priorisé par le CSO
+ * Agent, jamais envoyé automatiquement).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
 import {
   importInteractions,
-  generatePersonalizedDM,
-  enrollInteractionInSequence,
+  captureWarmProspect,
   type RawInteraction,
 } from "@/lib/services/social/prospector";
 
@@ -88,7 +87,7 @@ export async function POST(req: NextRequest) {
 
   const { imported, duplicates } = await importInteractions(workspaceId, interactions);
 
-  // Génération DM + enrôlement séquence en arrière-plan (fire & forget)
+  // Priorisation warm en arrière-plan (fire & forget) — pas d'envoi automatique
   if (imported > 0) {
     void (async () => {
       try {
@@ -98,7 +97,6 @@ export async function POST(req: NextRequest) {
             platform: "LINKEDIN",
             type,
             sourceUrl,
-            suggestedDMs: { equals: Prisma.DbNull },
             status: "PENDING",
           },
           select: { id: true },
@@ -108,8 +106,7 @@ export async function POST(req: NextRequest) {
 
         for (const interaction of freshInteractions) {
           try {
-            await generatePersonalizedDM(interaction.id);
-            await enrollInteractionInSequence(interaction.id);
+            await captureWarmProspect(interaction.id);
           } catch { /* non bloquant */ }
         }
       } catch { /* non bloquant */ }

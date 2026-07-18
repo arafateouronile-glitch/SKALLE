@@ -1137,7 +1137,52 @@ async function runAutonomousSearch() {
   await setStatus(`autonomous_done:${finalCount}/${effectiveLimit}`);
 }
 
+// ── Session sync — envoie li_at/JSESSIONID au backend (toutes les 6h) ────────
+// @deprecated : non utilisée actuellement. Alimenterait LinkedInAutomationConfig
+// pour que le cron serveur (scrapeWarmLeadsServerSide) scrape viewers/followers
+// sans dépendre d'un onglet LinkedIn ouvert — mais ça fait tourner ces appels
+// Voyager depuis l'IP serveur SKALLE, partagée entre workspaces (signal de
+// détection de fraude/bot pour LinkedIn). Décision : tant que l'outreach reste
+// semi-manuel via l'extension (donc déjà dépendant d'un navigateur ouvert),
+// pas d'urgence à payer ce risque pour gagner de la fraîcheur de capture.
+// Chemin dormant, à réactiver si la couverture extension-only (importWarmLeads
+// ci-dessous) s'avère insuffisante en pratique. Plus appelée par l'alarme.
+
+async function syncLinkedInSession() {
+  const config = await getConfig();
+  if (!config.skalleToken) return;
+
+  const liAtCookie = await chrome.cookies.get({ url: "https://www.linkedin.com", name: "li_at" });
+  if (!liAtCookie?.value) return;
+
+  const jsessionCookie = await chrome.cookies.get({ url: "https://www.linkedin.com", name: "JSESSIONID" });
+  // JSESSIONID est stocké entre guillemets littéraux côté LinkedIn ; le backend
+  // (createVoyagerSession) les ré-ajoute déjà — envoyer la valeur nue.
+  const jsessionId = jsessionCookie?.value ? jsessionCookie.value.replace(/^"|"$/g, "") : undefined;
+
+  try {
+    await fetch(`${API_BASE}/api/social/linkedin/session-sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.skalleToken}`,
+      },
+      body: JSON.stringify({ liAt: liAtCookie.value, jsessionId }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    console.log("[SKALLE] Session LinkedIn synchronisée");
+  } catch (err) {
+    console.error("[SKALLE] Erreur sync session LinkedIn:", err);
+  }
+}
+
 // ── Warm leads import — viewers + followers (toutes les 6h) ──────────────────
+// Mécanisme principal de capture des signaux chauds (viewers/followers) :
+// scraping DOM/Voyager depuis l'onglet LinkedIn de l'utilisateur, donc son
+// IP résidentielle plutôt qu'une IP serveur partagée. Couverture dépendante
+// du navigateur ouvert, mais c'est déjà le cas pour l'outreach (validation
+// manuelle des séquences) — voir syncLinkedInSession() ci-dessus pour
+// l'alternative server-side dormante.
 
 async function importWarmLeads() {
   const config = await getConfig();

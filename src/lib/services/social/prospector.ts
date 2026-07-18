@@ -24,7 +24,7 @@ import { FAR_FUTURE } from "@/lib/services/smart-sequence-processor";
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type SocialPlatform = "INSTAGRAM" | "FACEBOOK" | "LINKEDIN";
-export type InteractionType = "LIKE" | "COMMENT" | "FOLLOW" | "GROUP_MEMBER" | "PROFILE_VIEW";
+export type InteractionType = "LIKE" | "COMMENT" | "FOLLOW" | "GROUP_MEMBER" | "PROFILE_VIEW" | "COMPETITOR_FOLLOW";
 export type InteractionStatus = "PENDING" | "CONTACTED" | "IGNORED";
 
 export interface RawInteraction {
@@ -43,6 +43,45 @@ export interface RawInteraction {
 export interface DMVariant {
   label: string; // "Chaleureuse", "Directe", "Curieuse"
   message: string;
+}
+
+/**
+ * Score de priorité d'un signal chaud — source de vérité unique, utilisée à
+ * la fois pour Prospect.score (côté serveur) et le badge de warmth côté UI
+ * (hunt/page.tsx), pour éviter que les deux divergent.
+ */
+export function computeWarmScore(type: InteractionType, hasText: boolean): number {
+  switch (type) {
+    case "COMMENT":
+      return hasText ? 90 : 72;
+    case "PROFILE_VIEW":
+      return 68;
+    case "COMPETITOR_FOLLOW":
+      return 65;
+    case "FOLLOW":
+      return 63;
+    case "LIKE":
+      return 55;
+    default:
+      return 50;
+  }
+}
+
+export function warmSignalLabel(type: string | null): string {
+  switch (type) {
+    case "PROFILE_VIEW":
+      return "a visité votre profil";
+    case "LIKE":
+      return "a interagi avec un post";
+    case "COMMENT":
+      return "a commenté un post";
+    case "FOLLOW":
+      return "vous suit";
+    case "COMPETITOR_FOLLOW":
+      return "suit un concurrent";
+    default:
+      return "signal entrant";
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -689,14 +728,12 @@ export async function trackLinkedInPostEngagement(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 5️⃣ ENRÔLEMENT SÉQUENCE WARM LEAD (Gap B)
+// 5️⃣ CAPTURE WARM LEAD → priorisation CSO Agent (Gap B)
 // ═══════════════════════════════════════════════════════════════════════════
 
-
-export type EnrollResult =
-  | { sequenceId: string; prospectId: string; skipped?: false }
-  | { skipped: true; reason: string }
-  | null; // DM pas encore généré
+export type CaptureResult =
+  | { prospectId: string; tagged: true; skipped: false }
+  | { skipped: true; reason: string };
 
 const ALREADY_IN_CONVERSATION_STATUSES = new Set(["RESPONDED", "MEETING_BOOKED", "CONVERTED"]);
 
@@ -762,17 +799,16 @@ async function detectExistingConversation(
 }
 
 /**
- * Crée un Prospect (si inexistant) depuis une SocialInteraction,
- * puis l'enrôle dans une séquence warm lead en 2 temps :
- *   Step 1 — Demande de connexion sans note (meilleur taux d'acceptation)
- *   Step 2 — DM IA personnalisé (bloqué sur FAR_FUTURE jusqu'à acceptation)
- *   Step 3 — Relance si pas de réponse après 5j (aussi FAR_FUTURE)
+ * Crée un Prospect (si inexistant) depuis une SocialInteraction, et le tague
+ * comme signal chaud (warmSignalType/At + score). Ne crée AUCUNE séquence ni
+ * message : le prospect entre simplement dans le pipeline NEW normal, où il
+ * sera repris par le cycle quotidien du CSO Agent (observePipeline →
+ * generateCsoDecisions → storeCsoDecisions) et proposé comme décision PENDING
+ * pour validation humaine — jamais envoyé automatiquement.
  *
- * Skip automatique si une conversation LinkedIn existe déjà avec cette personne.
+ * Skip si une conversation LinkedIn existe déjà avec cette personne.
  */
-export async function enrollInteractionInSequence(
-  interactionId: string
-): Promise<EnrollResult> {
+export async function captureWarmProspect(interactionId: string): Promise<CaptureResult> {
   ensurePrismaModel();
 
   const interaction = await prisma.socialInteraction.findUnique({
@@ -786,16 +822,13 @@ export async function enrollInteractionInSequence(
       platform: true,
       type: true,
       sourceUrl: true,
-      suggestedDMs: true,
+      interactionText: true,
     },
   });
 
-  if (!interaction?.suggestedDMs) return null;
+  if (!interaction) return { skipped: true, reason: "interaction introuvable" };
 
   const { workspaceId } = interaction;
-  const dms = interaction.suggestedDMs as unknown as DMVariant[];
-  const aiDM = dms[0]?.message ?? "";
-  const firstName = interaction.prospectName.split(" ")[0] ?? interaction.prospectName;
 
   // 1. Find or create Prospect
   const profileUrl = interaction.profileUrl ?? "";
@@ -820,7 +853,6 @@ export async function enrollInteractionInSequence(
         handle: interaction.prospectHandle,
         platform: interaction.platform,
         source: "LINKEDIN",
-        temperature: "WARM",
         notes: `Warm lead — ${interaction.type} sur ${interaction.sourceUrl}`,
       },
       select: { id: true },
@@ -831,65 +863,24 @@ export async function enrollInteractionInSequence(
   const skipReason = await detectExistingConversation(workspaceId, prospect.id, profileUrl);
   if (skipReason) return { skipped: true, reason: skipReason };
 
-  // 3. Déjà enrôlé dans une séquence warm active ?
-  const existing = await prisma.outreachSequence.findFirst({
-    where: {
-      prospectId: prospect.id,
-      name: { contains: "Warm" },
-      isActive: true,
-    },
-    select: { id: true },
-  });
-  if (existing) return { sequenceId: existing.id, prospectId: prospect.id };
-
-  // 4. Séquence : connexion → DM IA (smart branch) → relance
-  const sequence = await prisma.outreachSequence.create({
+  // 3. Tagger le signal chaud — pas de séquence, pas d'envoi.
+  const score = computeWarmScore(interaction.type as InteractionType, !!interaction.interactionText);
+  await prisma.prospect.update({
+    where: { id: prospect.id },
     data: {
-      workspaceId,
-      prospectId: prospect.id,
-      name: `Warm Lead — ${interaction.platform} ${interaction.type}`,
-      isActive: true,
-      steps: {
-        create: [
-          {
-            // Étape 1 : demande de connexion sans note (meilleur taux d'acceptation sur warm leads)
-            stepNumber: 1,
-            channel: "LINKEDIN",
-            linkedInAction: "CONNECTION_REQUEST",
-            content: "",
-            delayDays: 0,
-            status: "PENDING",
-            scheduledAt: null,
-          },
-          {
-            // Étape 2 : DM IA personnalisé — bloqué jusqu'à acceptation connexion
-            stepNumber: 2,
-            channel: "LINKEDIN",
-            linkedInAction: "POST_CONNECTION_MESSAGE",
-            content: aiDM,
-            delayDays: 0,
-            status: "PENDING",
-            scheduledAt: FAR_FUTURE,
-            metadata: { smartBranch: true, waitingFor: "CONNECTION_ACCEPTED" },
-          },
-          {
-            // Étape 3 : relance si pas de réponse (activé par onConnectionAccepted, J+5)
-            stepNumber: 3,
-            channel: "LINKEDIN",
-            linkedInAction: "FOLLOWUP_MESSAGE",
-            content: `Hey ${firstName}, juste pour voir si mon message t'avait bien atteint — pas de pression, juste curieux(se) 😊`,
-            delayDays: 5,
-            status: "PENDING",
-            scheduledAt: FAR_FUTURE,
-            metadata: { smartBranch: true, waitingFor: "NO_REPLY", daysThreshold: 5 },
-          },
-        ],
-      },
+      warmSignalType: interaction.type,
+      warmSignalAt: new Date(),
+      temperature: "WARM",
     },
-    select: { id: true },
+  });
+  // Score relevé séparément, seulement s'il progresse — ne fait jamais
+  // régresser un score déjà plus élevé (ex. enrichi par Apollo entre-temps).
+  await prisma.prospect.updateMany({
+    where: { id: prospect.id, score: { lt: score } },
+    data: { score },
   });
 
-  return { sequenceId: sequence.id, prospectId: prospect.id };
+  return { prospectId: prospect.id, tagged: true, skipped: false };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

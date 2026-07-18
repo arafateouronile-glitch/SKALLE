@@ -11,6 +11,7 @@ import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { SequenceChannel } from "@prisma/client";
 import { checkBudget, trackSpend } from "@/lib/ai/budget-guard";
 import { researchProspectsBatch, type ProspectInput } from "@/lib/prospection/prospect-researcher";
+import { warmSignalLabel } from "@/lib/services/social/prospector";
 import { generateCsoMessages, buildBrandContext } from "@/lib/prospection/message-generator";
 import { FAR_FUTURE } from "@/lib/services/smart-sequence-processor";
 import { getApolloApiKey, apolloEnrichPerson } from "@/lib/services/apollo-client";
@@ -38,6 +39,7 @@ export interface PipelineObservation {
     email: string | null; linkedInUrl: string | null; score: number;
     hasEmail: boolean; hasLinkedIn: boolean;
     enrichmentData: Record<string, unknown> | null;
+    warmSignalType: string | null; warmSignalAt: Date | null;
   }>;
   stagnantContacted: Array<{
     id: string; name: string; company: string; jobTitle: string | null;
@@ -108,15 +110,24 @@ export async function autoEnrichWithApollo(
 
 export async function observePipeline(workspaceId: string): Promise<PipelineObservation> {
   const now = new Date();
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1_000);
 
   // Load active persona IDs to restrict prospects to ICP-matching ones only
   const activePersonas = await prisma.persona.findMany({
     where: { workspaceId, status: { in: ["ACTIVE", "RUNNING"] } },
     select: { id: true },
   });
+  // Un signal chaud récent (vue de profil, engagement, follow) prime sur le
+  // ciblage ICP : l'intérêt entrant ne doit jamais être masqué par un persona
+  // actif, contrairement au reste de la prospection froide.
   const personaFilter =
     activePersonas.length > 0
-      ? { personaId: { in: activePersonas.map((p) => p.id) } }
+      ? {
+          OR: [
+            { personaId: { in: activePersonas.map((p) => p.id) } },
+            { warmSignalAt: { gte: fourteenDaysAgo } },
+          ],
+        }
       : {};
 
   // Prospects non contactés — pas de filtre score (Claude priorise lui-même)
@@ -129,6 +140,7 @@ export async function observePipeline(workspaceId: string): Promise<PipelineObse
     select: {
       id: true, name: true, company: true, jobTitle: true,
       email: true, linkedInUrl: true, score: true, enrichmentData: true,
+      warmSignalType: true, warmSignalAt: true,
     },
     orderBy: { score: "desc" },
     take: 20,
@@ -271,7 +283,7 @@ ${brandSection}${icpSection}
 Pour chaque prospect, tu génères une décision structurée :
 - actionType : CSO_LAUNCH_LINKEDIN | CSO_LAUNCH_EMAIL | CSO_FOLLOWUP | CSO_STALE_REJECT
 - Règles :
-  • CSO_LAUNCH_LINKEDIN : prospect NEW/RESEARCHED avec linkedInUrl, score ≥ 70
+  • CSO_LAUNCH_LINKEDIN : prospect NEW/RESEARCHED avec linkedInUrl, score ≥ 70 OU signal 🎯 entrant (l'intérêt entrant justifie l'action même à score plus bas)
   • CSO_LAUNCH_EMAIL : prospect NEW/RESEARCHED avec email, score ≥ 50 (et pas de LinkedIn ou score < 70)
   • CSO_FOLLOWUP : prospect CONTACTED depuis 5-20 jours sans réponse → message de relance
   • CSO_STALE_REJECT : prospect CONTACTED depuis 21+ jours → suggérer de marquer REJECTED (libère le pipeline)
@@ -402,14 +414,16 @@ export async function generateCsoDecisions(
   // Enrich highScoreNew with research signals for better decision making
   const newProspectsWithContext = obs.highScoreNew.map((p) => {
     const r = researchMap.get(p.id);
-    const signals = r
-      ? [
-          r.companyTrigger ? `🔥 ${r.companyTrigger}` : null,
-          r.hiringSignals[0] ? `💼 ${r.hiringSignals[0]}` : null,
-          r.recentJobChange ? "🆕 Changement de poste récent" : null,
-          `Confiance research: ${r.confidence}`,
-        ].filter(Boolean).join(" | ")
-      : "Pas de signal fort détecté";
+    const signalParts = [
+      p.warmSignalAt
+        ? `🎯 Signal entrant : ${warmSignalLabel(p.warmSignalType)} il y a ${Math.floor((Date.now() - p.warmSignalAt.getTime()) / 86_400_000)}j`
+        : null,
+      r?.companyTrigger ? `🔥 ${r.companyTrigger}` : null,
+      r?.hiringSignals[0] ? `💼 ${r.hiringSignals[0]}` : null,
+      r?.recentJobChange ? "🆕 Changement de poste récent" : null,
+      r ? `Confiance research: ${r.confidence}` : null,
+    ].filter(Boolean);
+    const signals = signalParts.length ? signalParts.join(" | ") : "Pas de signal fort détecté";
     const liUrl = p.linkedInUrl ? `linkedInUrl: ${p.linkedInUrl}` : "LinkedIn: ✗";
     return `- ${p.name} | ${p.company} | ${p.jobTitle ?? "N/A"} | Score: ${p.score} | Email: ${p.hasEmail ? "✓" : "✗"} | ${liUrl} | SIGNALS: [${signals}] | id: ${p.id}`;
   });
@@ -430,7 +444,7 @@ ${obs.staleProspects.map((p) =>
     `- ${p.name} | ${p.company} | ${p.daysSinceContact}j sans activité | id: ${p.id}`
   ).join("\n")}
 
-Priorise les prospects avec des SIGNALS forts (🔥 levée, 💼 recrutement, 🆕 changement de poste).
+Priorise en premier les prospects avec un 🎯 signal entrant (ils ont initié le contact — vue de profil, engagement, follow) : c'est un signal d'achat plus fort qu'un déclencheur externe. Priorise ensuite les SIGNALS firmographiques (🔥 levée, 💼 recrutement, 🆕 changement de poste).
 Génère les décisions. Les messages seront personnalisés séparément.
 `;
 

@@ -5,9 +5,10 @@
  *   des posts LinkedIn publiés dans les 14 derniers jours et les insère
  *   dans SocialInteraction.
  *
- * Gap B — Enrôlement : sur l'événement "linkedin/dm.generated", crée le
- *   Prospect (si absent) et l'enrôle dans une séquence warm lead 3 étapes,
- *   puis déclenche "sequence/start" pour activer l'envoi.
+ * Gap B — Priorisation : sur l'événement "linkedin/dms.generated", tague le
+ *   Prospect correspondant comme signal chaud (warmSignalType/At + score).
+ *   Aucune séquence ni message n'est créé ici — le prospect est repris par
+ *   le cycle quotidien du CSO Agent et proposé comme décision PENDING.
  */
 
 import { inngest } from "../client";
@@ -16,7 +17,7 @@ import { Prisma } from "@prisma/client";
 import {
   trackLinkedInPostEngagement,
   generatePersonalizedDM,
-  enrollInteractionInSequence,
+  captureWarmProspect,
 } from "@/lib/services/social/prospector";
 import { scrapeWarmLeadsServerSide } from "@/lib/services/social/linkedin-warm-scraper";
 
@@ -168,13 +169,13 @@ export const pollLinkedInEngagementManual = inngest.createFunction(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 3️⃣ AUTO-ENRÔLEMENT SÉQUENCE (Gap B) — event "linkedin/dms.generated"
+// 3️⃣ PRIORISATION WARM (Gap B) — event "linkedin/dms.generated"
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const autoEnrollWarmLeads = inngest.createFunction(
   {
     id: "linkedin-warm-lead-enroller",
-    name: "Auto-Enroll LinkedIn Warm Leads in Sequence",
+    name: "Tag LinkedIn Warm Leads for CSO Agent",
     concurrency: { limit: 5 },
   },
   { event: "linkedin/dms.generated" },
@@ -184,27 +185,19 @@ export const autoEnrollWarmLeads = inngest.createFunction(
       interactionIds: string[];
     };
 
-    const enrolled: string[] = [];
-    const sequenceIds: string[] = [];
+    const tagged: string[] = [];
 
     for (const interactionId of interactionIds) {
-      const result = await step.run(`enroll-${interactionId}`, async () => {
-        return enrollInteractionInSequence(interactionId);
+      const result = await step.run(`capture-${interactionId}`, async () => {
+        return captureWarmProspect(interactionId);
       });
 
-      if (result && !result.skipped) {
-        enrolled.push(result.prospectId);
-        sequenceIds.push(result.sequenceId);
-
-        // Déclencher la séquence (step 1 immédiat, steps 2-3 différés)
-        await inngest.send({
-          name: "sequence/start",
-          data: { sequenceId: result.sequenceId, workspaceId },
-        });
+      if (!result.skipped) {
+        tagged.push(result.prospectId);
       }
     }
 
-    return { workspaceId, enrolled: enrolled.length, sequenceIds };
+    return { workspaceId, tagged: tagged.length };
   }
 );
 

@@ -15,7 +15,7 @@
 import { prisma } from "@/lib/prisma";
 import { createVoyagerSession } from "@/lib/services/prospects/linkedin-sender";
 import { getExternalIntegrationKey } from "@/lib/services/integrations/external";
-import { importInteractions, generatePersonalizedDM, enrollInteractionInSequence } from "./prospector";
+import { importInteractions, captureWarmProspect } from "./prospector";
 import type { RawInteraction } from "./prospector";
 
 const LI_API_V2 = "https://api.linkedin.com/v2";
@@ -195,17 +195,9 @@ async function importAndEnroll(
   const { imported } = await importInteractions(workspaceId, interactions);
   if (imported === 0) return { imported: 0, enrolled: 0 };
 
-  // Générer DM + enrôler en séquence pour les nouvelles interactions
-  const { Prisma } = await import("@prisma/client");
+  // Priorisation warm des nouvelles interactions — pas de DM, pas de séquence
   const fresh = await prisma.socialInteraction.findMany({
-    where: {
-      workspaceId,
-      platform: "LINKEDIN",
-      type,
-      sourceUrl,
-      suggestedDMs: { equals: Prisma.DbNull },
-      status: "PENDING",
-    },
+    where: { workspaceId, platform: "LINKEDIN", type, sourceUrl, status: "PENDING" },
     select: { id: true },
     orderBy: { createdAt: "desc" },
     take: imported,
@@ -214,9 +206,8 @@ async function importAndEnroll(
   let enrolled = 0;
   for (const interaction of fresh) {
     try {
-      await generatePersonalizedDM(interaction.id);
-      const result = await enrollInteractionInSequence(interaction.id);
-      if (result && !result.skipped) enrolled++;
+      const result = await captureWarmProspect(interaction.id);
+      if (!result.skipped) enrolled++;
     } catch { /* non bloquant */ }
   }
 

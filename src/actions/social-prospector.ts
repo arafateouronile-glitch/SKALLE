@@ -14,7 +14,7 @@ import {
   markAsIgnored,
   deleteInteraction,
   trackLinkedInPostEngagement,
-  enrollInteractionInSequence,
+  captureWarmProspect,
   type SocialPlatform,
   type RawInteraction,
 } from "@/lib/services/social/prospector";
@@ -365,14 +365,15 @@ export async function trackLinkedInEngagementAction(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔗 ENRÔLEMENT SÉQUENCE WARM LEAD (Gap B)
+// 🎯 PRIORISATION WARM LEAD (Gap B)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Enrôle une SocialInteraction dans une séquence warm lead 3 étapes.
- * Crée le Prospect si inexistant. Doit être appelé après generateDM.
+ * Tague une SocialInteraction comme signal chaud sur son Prospect (crée le
+ * Prospect si inexistant). Aucun envoi : le prospect est repris par le cycle
+ * du CSO Agent et proposé comme décision PENDING sur /sales-os/agent.
  */
-export async function enrollInSequenceAction(
+export async function prioritizeWarmLeadAction(
   workspaceId: string,
   interactionId: string
 ) {
@@ -380,20 +381,17 @@ export async function enrollInSequenceAction(
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
 
-    const result = await enrollInteractionInSequence(interactionId);
-    if (!result) {
-      return { success: false as const, skipped: false, error: "DM non encore généré ou interaction introuvable" };
-    }
+    const result = await captureWarmProspect(interactionId);
     if (result.skipped) {
       return { success: true as const, skipped: true, reason: result.reason };
     }
-    return { success: true as const, skipped: false, sequenceId: result.sequenceId, prospectId: result.prospectId };
+    return { success: true as const, skipped: false, prospectId: result.prospectId };
   } catch (error) {
-    console.error("enrollInSequenceAction:", error);
+    console.error("prioritizeWarmLeadAction:", error);
     return {
       success: false as const,
       skipped: false,
-      error: error instanceof Error ? error.message : "Erreur enrôlement",
+      error: error instanceof Error ? error.message : "Erreur priorisation",
     };
   }
 }
