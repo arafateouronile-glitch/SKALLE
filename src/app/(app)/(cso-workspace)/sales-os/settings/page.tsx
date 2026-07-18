@@ -23,9 +23,11 @@ import { ProfileForm } from "@/components/modules/settings/profile-form";
 import { SignatureForm } from "@/components/modules/settings/signature-form";
 import { SmtpConfigForm } from "@/components/campaigns/smtp-config-form";
 import { ChromeExtensionCard } from "@/components/modules/cso/chrome-extension-card";
+import { CompetitorWatchCard } from "@/components/modules/cso/competitor-watch-card";
 import { BrandVoiceCard } from "@/components/modules/cso/brand-voice-card";
 import { ApolloSettingsCard } from "@/components/modules/cso/apollo-settings-card";
 import { HubSpotCard } from "@/components/modules/cso/hubspot-card";
+import { canAccessCso } from "@/lib/credits";
 
 const PLAN_LABELS: Record<string, string> = {
   FREE: "Gratuit",
@@ -87,6 +89,7 @@ export default async function SalesSettingsPage() {
     : [];
   const planLabel = PLAN_LABELS[user.plan] ?? user.plan;
   const planColor = PLAN_COLORS[user.plan] ?? "bg-gray-100 text-gray-700";
+  const csoAccess = canAccessCso(user, workspace);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -175,14 +178,14 @@ export default async function SalesSettingsPage() {
               </div>
               <div
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border ${
-                  workspace?.hasCsoAccess
+                  csoAccess
                     ? "bg-violet-50 border-violet-200 text-violet-700"
                     : "bg-gray-50 border-gray-200 text-gray-400"
                 }`}
               >
                 <Zap className="h-3.5 w-3.5" />
                 Sales OS (CSO)
-                {workspace?.hasCsoAccess ? " ✓" : " ✗"}
+                {csoAccess ? " ✓" : " ✗"}
               </div>
             </div>
           </div>
@@ -228,6 +231,9 @@ export default async function SalesSettingsPage() {
           workspaceId={workspace.id}
         />
       )}
+
+      {/* Concurrents à surveiller — followers LinkedIn */}
+      {workspace && <CompetitorWatchCard workspaceId={workspace.id} />}
 
       {/* Lien de réservation d'appel */}
       {workspace && (

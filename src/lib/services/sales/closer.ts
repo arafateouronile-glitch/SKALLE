@@ -19,6 +19,7 @@ import {
   hasEnoughCredits,
   useCredits,
   CREDIT_COSTS,
+  canAccessCso,
   type OperationType,
 } from "@/lib/credits";
 
@@ -393,10 +394,10 @@ export const SalesCloserAgent = {
       metaUserId: optionsMetaUserId,
     } = options;
 
-    // 1) Charger prospect + workspace
+    // 1) Charger prospect + workspace + plan du propriétaire
     const prospect = await prisma.prospect.findUnique({
       where: { id: prospectId },
-      include: { workspace: true },
+      include: { workspace: { include: { user: { select: { plan: true } } } } },
     });
 
     if (!prospect || !prospect.workspace) {
@@ -406,7 +407,7 @@ export const SalesCloserAgent = {
     const workspaceId = prospect.workspaceId;
     const workspace = prospect.workspace;
 
-    if (!workspace?.hasCsoAccess) {
+    if (!canAccessCso(workspace.user, workspace)) {
       return { success: false, error: "Accès CSO non activé pour ce workspace." };
     }
 

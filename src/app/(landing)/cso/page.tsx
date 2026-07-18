@@ -8,7 +8,6 @@ import {
   Target,
   BarChart3,
   Mail,
-  Phone,
   CheckCircle,
   Clock,
 } from "lucide-react";
@@ -37,13 +36,7 @@ export default function CsoLandingPage() {
       icon: Target,
       title: "Lead Enrichment",
       description:
-        "Enrichissez vos leads avec Apollo, Clay, Hunter et ZoomInfo. Emails et téléphones vérifiés automatiquement.",
-    },
-    {
-      icon: Phone,
-      title: "Scripts d'appel IA",
-      description:
-        "Générez des scripts d'appel et SMS personnalisés pour chaque prospect selon son profil et son industrie.",
+        "Enrichissez vos leads avec Apollo, Clay et Hunter. Emails et téléphones vérifiés automatiquement.",
     },
     {
       icon: BarChart3,

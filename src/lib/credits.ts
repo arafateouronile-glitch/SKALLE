@@ -9,6 +9,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import type { Plan } from "@prisma/client";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 COÛT PAR OPÉRATION (en crédits)
@@ -118,6 +119,10 @@ export const CREDIT_COSTS = {
   // Video Ads UGC (Kling AI)
   video_ad_generate: 20,      // Pipeline Kling AI: image2video + lip-sync
   avatar_generate: 5,         // Génération avatar DALL-E 3 HD portrait
+  face_swap: 5,               // gpt-image-1 face swap Pinterest → avatar
+
+  // Static Ads Generator
+  static_ad_generate: 5,      // gpt-image-1 pub statique (1024×1024 / 1024×1536 / 1536×1024)
 } as const;
 
 export type OperationType = keyof typeof CREDIT_COSTS;
@@ -156,6 +161,27 @@ export const PLAN_LIMITS = {
     apiAccess: true,
   },
 } as const;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔐 ACCÈS CSO — dérivé du plan, pas d'un booléen à synchroniser
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** BUSINESS/AGENCY/SCALE incluent le CSO, cf. pricing-table.tsx. */
+export function planIncludesCso(plan: Plan): boolean {
+  return plan !== "FREE";
+}
+
+/**
+ * workspace.hasCsoAccess n'est plus l'entitlement courant — c'est un flag de
+ * grandfather figé pour les workspaces qui l'avaient déjà avant ce fix. Le
+ * plan reste la source de vérité pour tout accès futur.
+ */
+export function canAccessCso(
+  user: { plan: Plan },
+  workspace: { hasCsoAccess: boolean } | null | undefined
+): boolean {
+  return planIncludesCso(user.plan) || workspace?.hasCsoAccess === true;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔍 FONCTIONS DE VÉRIFICATION

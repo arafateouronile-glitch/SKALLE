@@ -37,7 +37,6 @@ export async function getOrCreateWorkspace(
       domainUrl: "",
       userId,
       hasCmoAccess: true,
-      hasCsoAccess: true,
     },
     select: { id: true },
   });

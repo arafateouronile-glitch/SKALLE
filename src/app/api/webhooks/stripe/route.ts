@@ -18,6 +18,16 @@ async function setUserPlan(userId: string, plan: Plan) {
     where: { id: userId },
     data: { plan, credits: monthlyCredits },
   });
+  // Downgrade vers FREE : ferme la boucle sur le flag hasCsoAccess legacy pour
+  // éviter qu'un upgrade-puis-downgrade garde un accès CSO acquis avant ce fix.
+  // L'accès des comptes payants reste dérivé du plan (canAccessCso), jamais
+  // écrit ici — seule la révocation l'est.
+  if (plan === "FREE") {
+    await prisma.workspace.updateMany({
+      where: { userId },
+      data: { hasCsoAccess: false },
+    });
+  }
 }
 
 export async function POST(request: Request) {

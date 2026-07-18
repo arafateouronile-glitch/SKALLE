@@ -29,7 +29,7 @@ export const sequenceOptimizerFunction = inngest.createFunction(
       if (targetWorkspaceId) return [targetWorkspaceId];
 
       const workspaces = await prisma.workspace.findMany({
-        where: { hasCsoAccess: true },
+        where: { OR: [{ user: { plan: { not: "FREE" } } }, { hasCsoAccess: true }] },
         select: { id: true },
       });
       return workspaces.map((w) => w.id);

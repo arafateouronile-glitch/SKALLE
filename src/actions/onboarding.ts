@@ -192,7 +192,6 @@ export async function completeOnboarding(
       data: {
         onboardingStep: 0,
         hasCmoAccess: true,
-        hasCsoAccess: true,
       },
     });
     return { success: true };

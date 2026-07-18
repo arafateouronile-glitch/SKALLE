@@ -121,10 +121,8 @@ export async function getDomainReputation(
     };
 
     // 1. Google Postmaster Tools (Gmail)
-    if (process.env.GOOGLE_POSTMASTER_API_KEY) {
+    if (process.env.GOOGLE_POSTMASTER_SERVICE_ACCOUNT_JSON) {
       try {
-        // TODO: Intégrer Google Postmaster Tools API
-        // Pour l'instant, simulation
         const googleReputation = await fetchGooglePostmasterReputation(domain);
         if (googleReputation) {
           reputation.googlePostmaster = googleReputation;
@@ -139,14 +137,12 @@ export async function getDomainReputation(
         reputation.recommendations.push("Configurez Google Postmaster Tools pour monitoring Gmail");
       }
     } else {
-      reputation.recommendations.push("Configurez GOOGLE_POSTMASTER_API_KEY pour monitoring Gmail");
+      reputation.recommendations.push("Configurez GOOGLE_POSTMASTER_SERVICE_ACCOUNT_JSON pour monitoring Gmail");
     }
 
     // 2. Microsoft SNDS (Outlook/Hotmail)
-    if (process.env.MICROSOFT_SNDS_API_KEY) {
+    if (process.env.MICROSOFT_SNDS_SCORE) {
       try {
-        // TODO: Intégrer Microsoft SNDS API
-        // Pour l'instant, simulation
         const microsoftReputation = await fetchMicrosoftSNDSReputation(domain);
         if (microsoftReputation) {
           reputation.microsoftSNDS = microsoftReputation;
@@ -161,13 +157,11 @@ export async function getDomainReputation(
         reputation.recommendations.push("Configurez Microsoft SNDS pour monitoring Outlook");
       }
     } else {
-      reputation.recommendations.push("Configurez MICROSOFT_SNDS_API_KEY pour monitoring Outlook");
+      reputation.recommendations.push("Configurez MICROSOFT_SNDS_SCORE pour monitoring Outlook");
     }
 
-    // 3. Senderscore.org (général)
+    // 3. Senderscore.org (général) — appel réel, gated par SENDERSCORE_API_KEY
     try {
-      // TODO: Intégrer Senderscore.org API
-      // Pour l'instant, simulation
       const senderScore = await fetchSenderScore(domain);
       if (senderScore !== undefined) {
         reputation.senderScore = senderScore;
