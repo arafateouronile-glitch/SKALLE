@@ -8,8 +8,6 @@ import {
   Send,
   Mail,
   Linkedin,
-  MessageSquare,
-  Phone,
   Loader2,
   Inbox,
   Clock,
@@ -42,7 +40,7 @@ interface InboxReply {
 }
 
 interface SeqStep {
-  channel: "EMAIL" | "LINKEDIN" | "PHONE" | "SMS";
+  channel: "EMAIL" | "LINKEDIN";
   status: string;
 }
 
@@ -76,7 +74,7 @@ function getReplyRate(steps: SeqStep[]) {
   return `${Math.round((replied / sentCount) * 100)}%`;
 }
 
-function getChannels(steps: SeqStep[]): Array<"EMAIL" | "LINKEDIN" | "PHONE" | "SMS"> {
+function getChannels(steps: SeqStep[]): Array<"EMAIL" | "LINKEDIN"> {
   return [...new Set(steps.map((s) => s.channel))];
 }
 
@@ -92,8 +90,6 @@ function timeAgo(dateStr: string) {
 const CHANNEL_ICON: Record<string, React.ElementType> = {
   EMAIL: Mail,
   LINKEDIN: Linkedin,
-  PHONE: Phone,
-  SMS: MessageSquare,
 };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────

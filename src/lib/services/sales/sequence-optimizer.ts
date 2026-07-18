@@ -292,7 +292,7 @@ export async function applySuggestion(
         if (suggested.channel) {
           await prisma.sequenceStep.update({
             where: { id: suggestion.stepId },
-            data: { channel: suggested.channel as "EMAIL" | "LINKEDIN" | "PHONE" | "SMS" },
+            data: { channel: suggested.channel as "EMAIL" | "LINKEDIN" },
           });
         }
         break;

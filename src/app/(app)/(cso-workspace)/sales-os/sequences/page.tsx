@@ -10,8 +10,6 @@ import {
   GitMerge,
   Mail,
   Linkedin,
-  Phone,
-  MessageSquare,
   CheckCircle2,
   Clock,
   PauseCircle,
@@ -45,7 +43,7 @@ import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SequenceChannel = "EMAIL" | "LINKEDIN" | "PHONE" | "SMS";
+type SequenceChannel = "EMAIL" | "LINKEDIN";
 type StepStatus = "PENDING" | "SENT" | "DELIVERED" | "OPENED" | "CLICKED" | "REPLIED" | "FAILED" | "SKIPPED";
 
 interface SequenceStep {
@@ -97,15 +95,11 @@ interface Sequence {
 const CHANNEL_ICONS: Record<SequenceChannel, React.ElementType> = {
   EMAIL: Mail,
   LINKEDIN: Linkedin,
-  PHONE: Phone,
-  SMS: MessageSquare,
 };
 
 const CHANNEL_COLORS: Record<SequenceChannel, string> = {
   EMAIL: "text-violet-400",
   LINKEDIN: "text-blue-400",
-  PHONE: "text-green-400",
-  SMS: "text-orange-400",
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {

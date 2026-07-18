@@ -2,9 +2,9 @@
 
 /**
  * 📧 Outreach Sequences - Séquences Multi-Canal
- * 
+ *
  * Gestion des séquences de prospection multi-canal:
- * - Création de séquences (LinkedIn, Email, Phone, SMS)
+ * - Création de séquences (LinkedIn, Email)
  * - Envoi automatique selon délais
  * - Tracking complet (sent, delivered, opened, clicked, replied)
  */
@@ -16,13 +16,6 @@ import { z } from "zod";
 import { decryptIfNeeded } from "@/lib/encryption";
 import { generatePersonalizedEmail, type ProspectData } from "@/lib/prospection/email-personalization";
 import { generatePersonalizedLinkedInMessage } from "@/lib/prospection/linkedin-outreach";
-import {
-  generatePersonalizedCallScript,
-  calculateOptimalCallTime,
-  generateVoicemailMessage,
-  generatePersonalizedSMS,
-  type PhoneProspectData,
-} from "@/lib/prospection/phone-sms-optimization";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔐 AUTH
@@ -42,7 +35,7 @@ async function requireAuth() {
 
 const sequenceStepSchema = z.object({
   stepNumber: z.number().min(1),
-  channel: z.enum(["LINKEDIN", "EMAIL", "PHONE", "SMS"]),
+  channel: z.enum(["LINKEDIN", "EMAIL"]),
   subject: z.string().optional(),
   content: z.string().min(1),
   delayDays: z.number().min(0).default(3),
@@ -759,7 +752,7 @@ export async function sendStep(
       // Le step a déjà été mis à jour avec le contenu personnalisé
     }
 
-    // Pour les autres canaux (LinkedIn, Phone, SMS) ou emails sans personnalisation,
+    // Pour les autres canaux (LinkedIn) ou emails sans personnalisation,
     // récupérer les données du step à jour
     const currentStep = await prisma.sequenceStep.findUnique({
       where: { id: stepId },
@@ -941,240 +934,6 @@ export async function sendStep(
             prospect.id, // lien unsubscribe
             campaignAttachments
           );
-        }
-        break;
-      case "PHONE":
-        if (!prospect.phone) {
-          deliveryResult = { success: false, error: "Téléphone non disponible" };
-        } else {
-          // Pour Phone: générer un script ultra-personnalisé (Top 1%)
-          // Récupérer l'historique des appels précédents
-          const previousSteps = await prisma.sequenceStep.findMany({
-            where: {
-              sequenceId: step.sequenceId,
-              channel: "PHONE",
-              stepNumber: { lt: step.stepNumber },
-              status: { in: ["SENT", "DELIVERED", "REPLIED"] },
-            },
-            orderBy: { stepNumber: "asc" },
-            include: {
-              sequence: {
-                include: {
-                  prospect: true,
-                },
-              },
-            },
-          });
-
-          const previousCalls = previousSteps.map((s) => ({
-            date: s.sentAt || s.createdAt,
-            outcome: (s.metadata as any)?.outcome || ("no_answer" as const),
-            duration: (s.metadata as any)?.duration,
-            notes: (s.metadata as any)?.notes,
-          }));
-
-          // Préparer les données du prospect pour personnalisation
-          const phoneProspectData: PhoneProspectData = {
-            id: prospect.id,
-            name: prospect.name,
-            firstName: prospect.name.split(" ")[0],
-            lastName: prospect.name.split(" ").slice(1).join(" "),
-            phone: prospect.phone,
-            email: prospect.email || undefined,
-            company: prospect.company,
-            jobTitle: prospect.jobTitle || undefined,
-            location: prospect.location || undefined,
-            industry: prospect.industry || undefined,
-            timezone: (prospect as { timezone?: string | null }).timezone ?? undefined,
-            linkedInUrl: prospect.linkedInUrl || undefined,
-            notes: prospect.notes || undefined,
-            enrichmentData: prospect.enrichmentData as any,
-            phoneVerified: prospect.phoneVerified || undefined,
-            phoneScore: (prospect as { phoneScore?: number | null }).phoneScore ?? undefined,
-            previousCalls,
-          };
-
-          // Générer le script d'appel ultra-personnalisé
-          const personalizedCallScript = await generatePersonalizedCallScript({
-            prospect: phoneProspectData,
-            sequenceStep: step.stepNumber,
-            ourOffer: process.env.COMPANY_OFFER || "Solutions marketing automatisées avec IA",
-            ourCompany: workspaceForStep?.name || "Skalle",
-            previousCalls,
-          });
-
-          // Calculer le timing optimal
-          const optimalCallTime = calculateOptimalCallTime(phoneProspectData, previousCalls);
-
-          // Mettre à jour le step avec le script personnalisé
-          await prisma.sequenceStep.update({
-            where: { id: stepId },
-            data: {
-              content: personalizedCallScript.script,
-              metadata: JSON.parse(
-                JSON.stringify({
-                  script: personalizedCallScript.script,
-                  opening: personalizedCallScript.opening,
-                  valueProposition: personalizedCallScript.valueProposition,
-                  objectionHandling: personalizedCallScript.objectionHandling,
-                  closing: personalizedCallScript.closing,
-                  estimatedDuration: personalizedCallScript.estimatedDuration,
-                  personalizationScore: personalizedCallScript.personalizationScore,
-                  personalizationPoints: personalizedCallScript.personalizationPoints,
-                  optimalCallTime,
-                  recommendations: personalizedCallScript.recommendations,
-                })
-              ),
-              status: "PENDING", // Sera envoyé au timing optimal
-            },
-          });
-
-          // Si le timing optimal est dans le futur, programmer l'appel
-          const now = new Date();
-          const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-          const targetDay = DAY_NAMES.indexOf(optimalCallTime.bestDay);
-          const [hours, minutes] = optimalCallTime.bestTime.split(":").map(Number);
-          // Trouver la prochaine occurrence du jour cible (aujourd'hui inclus si l'heure est dans le futur)
-          const callDateTime = new Date();
-          callDateTime.setHours(hours, minutes, 0, 0);
-          const daysUntilTarget = ((targetDay - callDateTime.getDay()) + 7) % 7;
-          // Si le jour cible est aujourd'hui mais l'heure est passée, passer à la semaine suivante
-          if (daysUntilTarget > 0 || callDateTime <= now) {
-            callDateTime.setDate(callDateTime.getDate() + (daysUntilTarget === 0 ? 7 : daysUntilTarget));
-          }
-          
-          if (callDateTime > now) {
-            const { inngest } = await import("@/inngest/client");
-            await inngest.send({
-              name: "sequence/step.send",
-              data: {
-                stepId,
-                sequenceId: step.sequenceId,
-                delayDays: 0,
-              },
-              ts: callDateTime.getTime(), // Planifier au timing optimal
-            });
-            return { success: true }; // Appel programmé
-          }
-
-          // Si timing optimal = maintenant, continuer avec l'appel immédiat
-          deliveryResult = await sendPhoneCall(
-            prospect.phone,
-            personalizedCallScript.script,
-            personalizedCallScript,
-            optimalCallTime
-          );
-        }
-        break;
-      case "SMS":
-        if (!prospect.phone) {
-          deliveryResult = { success: false, error: "Téléphone non disponible" };
-        } else {
-          // Pour SMS: générer un SMS ultra-personnalisé (Top 1%)
-          // Récupérer l'historique des appels précédents pour context
-          const previousSteps = await prisma.sequenceStep.findMany({
-            where: {
-              sequenceId: step.sequenceId,
-              channel: { in: ["PHONE", "SMS"] },
-              stepNumber: { lt: step.stepNumber },
-              status: { in: ["SENT", "DELIVERED", "REPLIED"] },
-            },
-            orderBy: { stepNumber: "asc" },
-            include: {
-              sequence: {
-                include: {
-                  prospect: true,
-                },
-              },
-            },
-          });
-
-          const previousCalls = previousSteps
-            .filter((s) => s.channel === "PHONE")
-            .map((s) => ({
-              date: s.sentAt || s.createdAt,
-              outcome: (s.metadata as any)?.outcome || ("no_answer" as const),
-            }));
-
-          // Déterminer le type de follow-up SMS
-          const lastPhoneCall = previousSteps.find((s) => s.channel === "PHONE");
-          const followUpType: "reminder" | "value_add" | "voicemail_followup" | "meeting_reminder" =
-            lastPhoneCall?.status === "DELIVERED" && !lastPhoneCall?.repliedAt
-              ? "reminder"
-              : lastPhoneCall && (lastPhoneCall.metadata as any)?.outcome === "voicemail"
-              ? "voicemail_followup"
-              : "value_add";
-
-          // Préparer les données du prospect
-          const phoneProspectData: PhoneProspectData = {
-            id: prospect.id,
-            name: prospect.name,
-            firstName: prospect.name.split(" ")[0],
-            lastName: prospect.name.split(" ").slice(1).join(" "),
-            phone: prospect.phone,
-            email: prospect.email || undefined,
-            company: prospect.company,
-            jobTitle: prospect.jobTitle || undefined,
-            location: prospect.location || undefined,
-            industry: prospect.industry || undefined,
-            timezone: (prospect as { timezone?: string | null }).timezone ?? undefined,
-            linkedInUrl: prospect.linkedInUrl || undefined,
-            notes: prospect.notes || undefined,
-            enrichmentData: prospect.enrichmentData as any,
-            phoneVerified: prospect.phoneVerified || undefined,
-            phoneScore: (prospect as { phoneScore?: number | null }).phoneScore ?? undefined,
-            previousCalls,
-          };
-
-          // Générer le SMS ultra-personnalisé
-          const personalizedSMS = await generatePersonalizedSMS({
-            prospect: phoneProspectData,
-            followUpType,
-            ourOffer: process.env.COMPANY_OFFER || "Solutions marketing automatisées avec IA",
-            ourCompany: workspaceForStep?.name || "Skalle",
-            previousCalls,
-          });
-
-          // Mettre à jour le step avec le SMS personnalisé
-          await prisma.sequenceStep.update({
-            where: { id: stepId },
-            data: {
-              content: personalizedSMS.message,
-              metadata: {
-                followUpType: personalizedSMS.followUpType,
-                personalizationScore: personalizedSMS.personalizationScore,
-                personalizationPoints: personalizedSMS.personalizationPoints,
-                optimalSendTime:
-                  personalizedSMS.optimalSendTime instanceof Date
-                    ? personalizedSMS.optimalSendTime.getTime()
-                    : personalizedSMS.optimalSendTime,
-                recommendations: personalizedSMS.recommendations,
-              },
-              status: "PENDING", // Sera envoyé au timing optimal
-            },
-          });
-
-          // Si le timing optimal est dans le futur, programmer l'envoi
-          const now = new Date();
-          if (personalizedSMS.optimalSendTime > now) {
-            const { inngest } = await import("@/inngest/client");
-            await inngest.send({
-              name: "sequence/step.send",
-              data: {
-                stepId,
-                sequenceId: step.sequenceId,
-                delayDays: 0,
-              },
-              ts:
-                personalizedSMS.optimalSendTime instanceof Date
-                  ? personalizedSMS.optimalSendTime.getTime()
-                  : personalizedSMS.optimalSendTime,
-            });
-            return { success: true }; // SMS programmé
-          }
-
-          // Si timing optimal = maintenant, continuer avec l'envoi immédiat
-          deliveryResult = await sendSMS(prospect.phone, personalizedSMS.message, personalizedSMS);
         }
         break;
     }
@@ -1428,67 +1187,6 @@ async function sendLinkedInMessage(
   // LinkedIn automation n'est pas disponible sans API tierce (Phantombuster, Dux-Soup, etc.).
   // Le step reste PENDING — l'utilisateur l'envoie manuellement via la file d'attente LinkedIn.
   return { success: true, keepPending: true };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 📞 SEND PHONE - Envoyer un appel téléphonique (simulé)
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function sendPhoneCall(
-  phone: string,
-  script: string,
-  personalizedScript?: Awaited<ReturnType<typeof generatePersonalizedCallScript>>,
-  optimalTime?: ReturnType<typeof calculateOptimalCallTime>
-): Promise<{ success: boolean; error?: string }> {
-  if (!phone) {
-    return { success: false, error: "Téléphone non disponible" };
-  }
-
-  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
-    return {
-      success: false,
-      error: "Twilio non configuré — renseignez TWILIO_ACCOUNT_SID et TWILIO_AUTH_TOKEN dans .env",
-    };
-  }
-
-  // Twilio Voice API — intégration à implémenter
-  // Utiliser un numéro local (même indicatif que le lead) + enregistrer l'appel
-  console.log(`[Phone] Script: ${personalizedScript?.opening || script.substring(0, 100)}...`);
-  if (optimalTime) {
-    console.log(`[Phone] Timing: ${optimalTime.bestDay} ${optimalTime.bestTime} (${optimalTime.timezone})`);
-  }
-
-  return {
-    success: false,
-    error: "Intégration Twilio Voice non implémentée — contactez le support pour l'activation",
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 💬 SEND SMS - Envoyer un SMS (simulé)
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function sendSMS(
-  phone: string,
-  _message: string,
-  _personalizedSMS?: Awaited<ReturnType<typeof generatePersonalizedSMS>>
-): Promise<{ success: boolean; error?: string }> {
-  if (!phone) {
-    return { success: false, error: "Téléphone non disponible" };
-  }
-
-  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
-    return {
-      success: false,
-      error: "Twilio non configuré — renseignez TWILIO_ACCOUNT_SID et TWILIO_AUTH_TOKEN dans .env",
-    };
-  }
-
-  // Twilio SMS API — intégration à implémenter
-  return {
-    success: false,
-    error: "Intégration Twilio SMS non implémentée — contactez le support pour l'activation",
-  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

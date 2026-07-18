@@ -30,8 +30,6 @@ import {
   ChevronDown,
   Mail,
   Linkedin,
-  Phone,
-  MessageSquare,
   Loader2,
   GitMerge,
   Users,
@@ -63,7 +61,7 @@ const TRIGGER_CONDITION_LABELS: Record<TriggerCondition, string> = {
   IF_OPENED_NO_REPLY: "Si ouvert sans réponse",
 };
 
-type Channel = "EMAIL" | "LINKEDIN" | "PHONE" | "SMS";
+type Channel = "EMAIL" | "LINKEDIN";
 const CREATABLE_CHANNELS: Channel[] = ["EMAIL", "LINKEDIN"];
 
 interface Prospect {
@@ -109,22 +107,6 @@ const CHANNEL_CONFIG: Record<
     bg: "bg-blue-500/15",
     border: "border-blue-500/30",
     dot: "bg-blue-400",
-  },
-  PHONE: {
-    icon: Phone,
-    label: "Téléphone",
-    color: "text-green-400",
-    bg: "bg-green-500/15",
-    border: "border-green-500/30",
-    dot: "bg-green-400",
-  },
-  SMS: {
-    icon: MessageSquare,
-    label: "SMS",
-    color: "text-orange-400",
-    bg: "bg-orange-500/15",
-    border: "border-orange-500/30",
-    dot: "bg-orange-400",
   },
 };
 
@@ -713,13 +695,7 @@ export function SequenceBuilder({
                     {/* Content */}
                     <div className="space-y-1">
                       <Label className="text-[11px] text-slate-500">
-                        {step.channel === "EMAIL"
-                          ? "Corps du message"
-                          : step.channel === "LINKEDIN"
-                          ? "Message LinkedIn"
-                          : step.channel === "PHONE"
-                          ? "Script d'appel / notes"
-                          : "Message SMS"}
+                        {step.channel === "EMAIL" ? "Corps du message" : "Message LinkedIn"}
                       </Label>
                       <Textarea
                         value={step.content}
@@ -727,11 +703,7 @@ export function SequenceBuilder({
                         placeholder={
                           step.channel === "EMAIL"
                             ? "Bonjour {firstName},\n\nJ'ai vu que vous gérez un organisme de formation…"
-                            : step.channel === "LINKEDIN"
-                            ? "Bonjour {firstName}, je découvre votre OF sur LinkedIn…"
-                            : step.channel === "PHONE"
-                            ? "Présentation rapide + question ouverte sur leur process actuel…"
-                            : "Bonjour {firstName}, suite à mon email…"
+                            : "Bonjour {firstName}, je découvre votre OF sur LinkedIn…"
                         }
                         className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-600 text-[12px] min-h-[80px] resize-none"
                       />

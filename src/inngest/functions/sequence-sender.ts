@@ -85,7 +85,7 @@ async function sendEmailForStep(params: {
  * 
  * Envoi automatique des séquences multi-canal selon délais:
  * - Planification des étapes selon délais
- * - Envoi LinkedIn, Email, Phone, SMS
+ * - Envoi LinkedIn, Email
  * - Tracking complet (sent, delivered, opened, replied)
  * - Retry automatique en cas d'échec
  */
@@ -148,7 +148,7 @@ export const sendSequenceStep = inngest.createFunction(
     // Envoyer selon le canal
     const result = await step.run(`send-step-${stepId}`, async () => {
       if (currentStep.channel !== "EMAIL" || !prospect.email) {
-        // LinkedIn/Phone/SMS : envoi manuel, on laisse en PENDING
+        // LinkedIn : envoi manuel, on laisse en PENDING
         return { success: true, manual: true };
       }
 

@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Users, Plus, Loader2, Linkedin, Mail, Phone, MessageCircle, Send, Play, Pause,
+  Users, Plus, Loader2, Linkedin, Mail, MessageCircle, Send, Play, Pause,
 } from "lucide-react";
 import { startSequence, pauseSequence } from "@/actions/sequences";
 import { toast } from "sonner";
@@ -54,8 +54,6 @@ export function SequencesTab({ workspaceId }: { workspaceId: string }) {
     switch (channel) {
       case "LINKEDIN": return <Linkedin className="h-4 w-4 text-blue-400" />;
       case "EMAIL": return <Mail className="h-4 w-4 text-emerald-600" />;
-      case "PHONE": return <Phone className="h-4 w-4 text-green-400" />;
-      case "SMS": return <MessageCircle className="h-4 w-4 text-yellow-400" />;
       default: return <Send className="h-4 w-4" />;
     }
   };
@@ -136,7 +134,7 @@ export function SequencesTab({ workspaceId }: { workspaceId: string }) {
                         <Users className="h-3 w-3" /> {sequence.prospect?.name}
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {sequence.steps?.filter((step: any) => step.channel !== "PHONE" && step.channel !== "SMS").map((step: any) => (
+                        {sequence.steps?.map((step: any) => (
                           <Badge key={step.id} variant="outline" className="text-xs flex items-center gap-1">
                             {getChannelIcon(step.channel)} Étape {step.stepNumber}
                           </Badge>
@@ -168,7 +166,7 @@ export function SequencesTab({ workspaceId }: { workspaceId: string }) {
                   <CardDescription className="text-gray-500">{selectedSequence.prospect?.name}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {selectedSequence.steps?.filter((step: any) => step.channel !== "PHONE" && step.channel !== "SMS").map((step: any) => (
+                  {selectedSequence.steps?.map((step: any) => (
                     <div key={step.id} className="bg-white/50 backdrop-blur-sm rounded-lg p-3 border border-gray-200">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">

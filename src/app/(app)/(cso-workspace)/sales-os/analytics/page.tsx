@@ -1000,14 +1000,8 @@ function MeetingsAnalyticsTab({ workspaceId }: { workspaceId: string }) {
                 {data.byChannel.sort((a, b) => b.meetings - a.meetings).map((c) => {
                   const maxCh = Math.max(...data.byChannel.map((x) => x.meetings));
                   const pctBar = Math.round((c.meetings / maxCh) * 100);
-                  const color =
-                    c.channel === "EMAIL" ? "#6366f1" :
-                    c.channel === "LINKEDIN" ? "#0ea5e9" :
-                    c.channel === "SMS" ? "#f59e0b" : "#22c55e";
-                  const label =
-                    c.channel === "EMAIL" ? "Email" :
-                    c.channel === "LINKEDIN" ? "LinkedIn" :
-                    c.channel === "SMS" ? "SMS" : c.channel;
+                  const color = c.channel === "EMAIL" ? "#6366f1" : "#0ea5e9";
+                  const label = c.channel === "EMAIL" ? "Email" : "LinkedIn";
                   return (
                     <div key={c.channel}>
                       <div className="flex items-center justify-between text-xs mb-1">
