@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { AppTopBar } from "@/components/modules/app-topbar";
 import { KpiCard } from "@/components/ui/kpi-card";
+import { getUserWorkspace } from "@/actions/leads";
+import { getCsoRoiAction } from "@/actions/cso-roi";
+import type { CsoROIReport } from "@/lib/services/analytics/cso-roi-tracking";
 
 const PERIODS = ["7j", "30j", "90j", "12 mois"] as const;
 type Period = typeof PERIODS[number];
@@ -31,6 +34,21 @@ const AB_TESTS = [
 
 export default function CSOInsightsPage() {
   const [period, setPeriod] = useState<Period>("30j");
+  const [roi, setRoi] = useState<CsoROIReport | null>(null);
+
+  useEffect(() => {
+    getUserWorkspace().then((r) => {
+      if (r.success && r.workspaceId) {
+        getCsoRoiAction(r.workspaceId).then((res) => {
+          if (res.success && res.data) setRoi(res.data);
+        });
+      }
+    });
+  }, []);
+
+  const aiRate = roi?.attributionByOrigin.AI_AGENT.conversionRate ?? 0;
+  const manualRate = roi?.attributionByOrigin.MANUAL.conversionRate ?? 0;
+  const roiMultiplier = manualRate > 0 ? aiRate / manualRate : null;
 
   return (
     <>
@@ -177,13 +195,29 @@ export default function CSOInsightsPage() {
               ))}
             </div>
 
-            {/* Hunter ROI */}
+            {/* ROI Agent IA — comparaison taux de conversion IA vs manuel, sur 90j */}
             <div
               className="px-4 py-3 rounded-[10px] text-center"
               style={{ background: "var(--violet-soft)", border: "1px solid var(--violet-line)" }}
             >
-              <p className="text-[11px] font-mono uppercase tracking-wider mb-1" style={{ color: "var(--violet-fg)" }}>ROI Outreach IA</p>
-              <p className="font-display text-[28px] font-bold" style={{ color: "var(--violet-fg)" }}>×14</p>
+              <p className="text-[11px] font-mono uppercase tracking-wider mb-1" style={{ color: "var(--violet-fg)" }}>ROI Agent IA vs manuel</p>
+              {roiMultiplier !== null ? (
+                <>
+                  <p className="font-display text-[28px] font-bold" style={{ color: "var(--violet-fg)" }}>
+                    ×{roiMultiplier.toFixed(1)}
+                  </p>
+                  <p className="text-[10.5px] mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                    {aiRate}% conv. IA vs {manualRate}% manuel
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-display text-[20px] font-bold" style={{ color: "var(--violet-fg)" }}>—</p>
+                  <p className="text-[10.5px] mt-0.5" style={{ color: "var(--fg-mute)" }}>
+                    Pas encore de baseline manuelle (90j)
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>

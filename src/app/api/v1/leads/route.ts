@@ -7,11 +7,13 @@
  * Auth : Authorization: Bearer <sk_live_xxx>
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateSkalleApi, consumeApiCredits } from "@/lib/skalle-api-auth";
 import { inngest } from "@/inngest/client";
 import { z } from "zod";
+import { tagWarmSignal } from "@/lib/services/social/prospector";
+import { attributeInboundToPost } from "@/lib/services/analytics/roi-tracking";
 
 const VALID_STATUSES = new Set([
   "NEW", "RESEARCHED", "MESSAGES_GENERATED", "CONTACTED",
@@ -70,6 +72,10 @@ const createLeadSchema = z.object({
   jobTitle: z.string().max(200).optional(),
   linkedInUrl: z.string().url().optional().or(z.literal("")),
   notes: z.string().max(2000).optional(),
+  // Mots-clés de la page/campagne d'origine (ex. Typeform sur une landing
+  // page, formulaire embarqué dans un article) — optionnel, rétrocompatible.
+  // Alimente l'attribution vers l'article SEO source + le signal chaud CSO.
+  keywords: z.array(z.string()).max(10).optional(),
 });
 
 export async function POST(req: Request) {
@@ -128,6 +134,18 @@ export async function POST(req: Request) {
       source: "SEO_INBOUND",
     },
   });
+
+  // Signal chaud + attribution best-effort — seulement si l'appelant affirme
+  // un contexte marketing (keywords). Ne bloque jamais la réponse au webhook.
+  // `after()` (et non un simple `void promise`) car le runtime peut couper les
+  // promesses non attendues dès que la réponse est renvoyée.
+  if (data.keywords?.length) {
+    const keywords = data.keywords;
+    after(async () => {
+      await tagWarmSignal(prospect.id, "SEO_CONVERSION", 80).catch(() => null);
+      await attributeInboundToPost(auth.workspaceId, prospect.id, keywords).catch(() => null);
+    });
+  }
 
   const creditResult = await consumeApiCredits(
     auth.userId,

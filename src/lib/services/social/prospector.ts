@@ -79,9 +79,28 @@ export function warmSignalLabel(type: string | null): string {
       return "vous suit";
     case "COMPETITOR_FOLLOW":
       return "suit un concurrent";
+    case "SEO_CONVERSION":
+      return "a converti depuis un contenu marketing";
     default:
       return "signal entrant";
   }
+}
+
+/**
+ * Pose un signal chaud sur un Prospect — source de vérité unique pour
+ * warmSignalType/At + relève de score, réutilisée par captureWarmProspect
+ * (LinkedIn) et par tout autre point d'entrée de lead entrant (ex. leads
+ * marketing via l'API publique). Le score n'est jamais rétrogradé.
+ */
+export async function tagWarmSignal(prospectId: string, type: string, score: number): Promise<void> {
+  await prisma.prospect.update({
+    where: { id: prospectId },
+    data: { warmSignalType: type, warmSignalAt: new Date(), temperature: "WARM" },
+  });
+  await prisma.prospect.updateMany({
+    where: { id: prospectId, score: { lt: score } },
+    data: { score },
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -865,20 +884,7 @@ export async function captureWarmProspect(interactionId: string): Promise<Captur
 
   // 3. Tagger le signal chaud — pas de séquence, pas d'envoi.
   const score = computeWarmScore(interaction.type as InteractionType, !!interaction.interactionText);
-  await prisma.prospect.update({
-    where: { id: prospect.id },
-    data: {
-      warmSignalType: interaction.type,
-      warmSignalAt: new Date(),
-      temperature: "WARM",
-    },
-  });
-  // Score relevé séparément, seulement s'il progresse — ne fait jamais
-  // régresser un score déjà plus élevé (ex. enrichi par Apollo entre-temps).
-  await prisma.prospect.updateMany({
-    where: { id: prospect.id, score: { lt: score } },
-    data: { score },
-  });
+  await tagWarmSignal(prospect.id, interaction.type, score);
 
   return { prospectId: prospect.id, tagged: true, skipped: false };
 }

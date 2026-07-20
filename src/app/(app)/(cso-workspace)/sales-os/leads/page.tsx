@@ -10,6 +10,7 @@ import {
   updateProspectStatusAction,
   type ScoredProspectForDashboard,
 } from "@/actions/cso-sales";
+import { MarkConvertedDialog } from "@/components/modules/cso/mark-converted-dialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ export default function LeadsPage() {
   const [activeFilter, setActiveFilter] = useState<TempFilter>("all");
   const [advancingId, setAdvancingId] = useState<string | null>(null);
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
+  const [pendingConversion, setPendingConversion] = useState<{ prospectId: string; prospectName: string } | null>(null);
 
   useEffect(() => {
     getUserWorkspace().then((r) => {
@@ -170,14 +172,24 @@ export default function LeadsPage() {
     { id: "agent" as const, label: "Agent IA", count: pendingDecisions.length },
   ];
 
-  const handleAdvance = useCallback(async (prospectId: string, currentStatus: string) => {
-    const nextStatus = NEXT_STATUS[currentStatus];
-    if (!nextStatus || !workspaceId || advancingId) return;
+  const applyAdvance = useCallback(async (prospectId: string, nextStatus: string, value?: number) => {
+    if (!workspaceId) return;
     setAdvancingId(prospectId);
-    const r = await updateProspectStatusAction(prospectId, workspaceId, nextStatus).catch(() => ({ success: false }));
+    const r = await updateProspectStatusAction(prospectId, workspaceId, nextStatus, value).catch(() => ({ success: false }));
     if (r.success) setLocalStatuses((prev) => ({ ...prev, [prospectId]: nextStatus }));
     setAdvancingId(null);
-  }, [workspaceId, advancingId]);
+  }, [workspaceId]);
+
+  const handleAdvance = useCallback((prospectId: string, currentStatus: string) => {
+    const nextStatus = NEXT_STATUS[currentStatus];
+    if (!nextStatus || !workspaceId || advancingId) return;
+    if (nextStatus === "CONVERTED") {
+      const prospect = prospects.find((p) => p.id === prospectId);
+      setPendingConversion({ prospectId, prospectName: prospect?.name ?? "Ce prospect" });
+      return;
+    }
+    void applyAdvance(prospectId, nextStatus);
+  }, [workspaceId, advancingId, prospects, applyAdvance]);
 
   const TEMP_FILTERS = [
     { id: "hot" as const, label: "HOT", count: tempCounts.hot, color: "danger" as const },
@@ -283,7 +295,9 @@ export default function LeadsPage() {
             <div className="overflow-x-auto -mx-6 px-6">
               <div className="flex gap-3 min-w-max">
                 {KANBAN_COLS.map((col) => {
-                  const colLeads = filteredProspects.filter((p) => STATUS_TO_COL[p.status] === col.id);
+                  const colLeads = filteredProspects.filter(
+                    (p) => STATUS_TO_COL[localStatuses[p.id] ?? p.status] === col.id
+                  );
                   return (
                     <div key={col.id} className="w-[220px] shrink-0">
                       <div className="flex items-center justify-between mb-3">
@@ -395,7 +409,7 @@ export default function LeadsPage() {
                 </div>
                 {filteredProspects.map((p, i) => {
                   const temp = getTemp(p);
-                  const colLabel = KANBAN_COLS.find((c) => c.id === STATUS_TO_COL[p.status])?.label ?? p.status;
+                  const colLabel = KANBAN_COLS.find((c) => c.id === STATUS_TO_COL[localStatuses[p.id] ?? p.status])?.label ?? p.status;
                   return (
                     <Link
                       key={p.id}
@@ -532,6 +546,17 @@ export default function LeadsPage() {
       )}
 
       <div className="h-16" />
+
+      <MarkConvertedDialog
+        open={!!pendingConversion}
+        prospectName={pendingConversion?.prospectName ?? ""}
+        onClose={() => setPendingConversion(null)}
+        onConfirm={async (value) => {
+          if (!pendingConversion) return;
+          await applyAdvance(pendingConversion.prospectId, "CONVERTED", value ?? undefined);
+          setPendingConversion(null);
+        }}
+      />
     </>
   );
 }
