@@ -12,6 +12,7 @@
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { inngest } from "@/inngest/client";
 import { findQualifiedLeads, enrichLeadClay, verifyEmailHunter } from "@/lib/prospection/enrichment";
 import { z } from "zod";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
@@ -241,6 +242,14 @@ export async function importLeads(
           });
           importedProspectIds.push(created.id);
           imported++;
+          // Sans email, rend ce lead éligible à l'enrichissement Dropcontact
+          // (cf. autoEnrichOnCreate) — les autres flux de création (Local/Signals
+          // Radar, import Apollo) émettent déjà cet événement, celui-ci ne le
+          // faisait pas et ne passait donc que par le batch nocturne autopilot-only.
+          await inngest.send({
+            name: "prospect/created",
+            data: { prospectId: created.id, workspaceId, userId: session.user!.id! },
+          }).catch(() => {/* fire-and-forget */});
         }
       } catch (error: any) {
         // Gerer les violations de contrainte unique (P2002)

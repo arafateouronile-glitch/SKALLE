@@ -622,6 +622,12 @@ import {
   type NewbornSearchCriteria,
   type NewbornLeadEnriched,
 } from "@/lib/services/sales/newborn-leads";
+import {
+  scanQualiopiOrganisms,
+  bulkSaveQualiopiLeads,
+  type QualiopiSearchCriteria,
+  type QualiopiLead,
+} from "@/lib/services/sales/qualiopi-radar";
 
 const calendarLinkSchema = z.object({
   calendarLink: z.string().url("L'URL doit être valide (ex: https://cal.com/votrenpm)").optional().or(z.literal("")),
@@ -748,6 +754,87 @@ export async function bulkImportNewbornLeadsAction(
     return { success: true, imported: result.imported, prospects: result.prospects };
   } catch (error) {
     console.error("bulkImportNewbornLeadsAction:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erreur lors de l'import",
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎓 QUALIOPI RADAR (Registre des organismes de formation certifiés)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const QUALIOPI_OP: OperationType = "qualiopi_radar_scan";
+
+/**
+ * Scan du cache local `QualiopiOrganism` (synchronisé hebdomadairement) :
+ * filtre région + catégories de certification, génère les accroches IA.
+ * Retourne les leads sans les sauvegarder. Coût : 5 crédits.
+ */
+export async function scanQualiopiRadarAction(
+  workspaceId: string,
+  criteria: QualiopiSearchCriteria
+): Promise<{
+  success: boolean;
+  leads?: QualiopiLead[];
+  total?: number;
+  error?: string;
+  creditsUsed?: number;
+  currentCredits?: number;
+}> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+    const userId = session.user!.id!;
+
+    const { hasCredits, currentCredits, cost } = await hasEnoughCredits(userId, QUALIOPI_OP);
+    if (!hasCredits) {
+      return {
+        success: false,
+        error: `Crédits insuffisants. Requis : ${cost}, disponibles : ${currentCredits}`,
+        currentCredits,
+      };
+    }
+
+    const result = await scanQualiopiOrganisms(userId, criteria);
+    if (!result.success) {
+      return { success: false, error: result.error, creditsUsed: result.creditsUsed };
+    }
+
+    return {
+      success: true,
+      leads: result.leads,
+      total: result.total,
+      creditsUsed: result.creditsUsed,
+    };
+  } catch (error) {
+    console.error("scanQualiopiRadarAction:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erreur lors du scan",
+    };
+  }
+}
+
+/**
+ * Importe en masse les leads sélectionnés dans le CRM.
+ * source = "QUALIOPI_REGISTRY", status = "NEW". Le décideur (nom de personne)
+ * n'est pas encore connu à ce stade — résolu par le cron
+ * `resolve-radar-decision-makers`, qui déclenchera l'enrichissement Dropcontact
+ * une fois un nom trouvé.
+ */
+export async function bulkImportQualiopiLeadsAction(
+  workspaceId: string,
+  leads: QualiopiLead[]
+): Promise<{ success: boolean; imported?: number; prospects?: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]; error?: string }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+    const result = await bulkSaveQualiopiLeads(workspaceId, leads);
+    return { success: true, imported: result.imported, prospects: result.prospects };
+  } catch (error) {
+    console.error("bulkImportQualiopiLeadsAction:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erreur lors de l'import",
@@ -918,7 +1005,7 @@ export async function bulkSaveApolloLeadsAction(
           industry: lead.industry ?? null,
           location: lead.location ?? null,
           companySize: lead.companySize ?? null,
-          source: "LINKEDIN" as const,
+          source: "APOLLO_ICP_MATCH" as const,
           temperature: lead.emailVerified ? "WARM" : "COLD",
           score: lead.emailVerified ? 75 : lead.email ? 65 : 55,
           workspaceId,
@@ -969,6 +1056,11 @@ export async function bulkSaveApolloLeadsAction(
             });
           }
         }
+
+        await inngest.send({
+          name: "signal/prospect-fusion",
+          data: { prospectId: prospect.id, workspaceId },
+        }).catch(() => {/* fire-and-forget */});
 
         saved.push({ id: prospect.id, name: prospect.name });
       } catch {

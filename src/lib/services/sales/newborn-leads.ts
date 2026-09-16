@@ -216,7 +216,9 @@ async function fetchFromPappers(
     }));
 }
 
-function normalizeInseeResults(results: any[]): NewbornCompanyRaw[] {
+// Exporté pour réutilisation par `insee-lookup.ts` (lookup ponctuel par SIREN,
+// ex. Qualiopi Radar) — même parsing des `dirigeants[]`, pas de duplication.
+export function normalizeInseeResults(results: any[]): NewbornCompanyRaw[] {
   return results.map((r: any) => {
     const siege = r.siege ?? {};
     const dirigeants = r.dirigeants ?? [];
@@ -526,6 +528,11 @@ export async function bulkSaveNewbornLeads(
           data: { prospectId: prospect.id, workspaceId, userId },
         }).catch(() => {/* fire-and-forget */});
       }
+      // Fusion de signaux : toujours déclenchée, indépendamment de l'enrichissement
+      await inngest.send({
+        name: "signal/prospect-fusion",
+        data: { prospectId: prospect.id, workspaceId },
+      }).catch(() => {/* fire-and-forget */});
     } catch (err) {
       console.error(`[NewbornLeads] Failed to save ${lead.companyName}:`, err);
     }
