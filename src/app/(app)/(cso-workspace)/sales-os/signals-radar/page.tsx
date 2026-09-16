@@ -42,7 +42,7 @@ import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
 const COST = CREDIT_COSTS.job_board_signals;
 
 export { SignalsRadarPage as SignalsRadarTab };
-export default function SignalsRadarPage() {
+export default function SignalsRadarPage({ crmHref = "/sales-os/crm" }: { crmHref?: string } = {}) {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [location, setLocation] = useState("Paris");
@@ -374,7 +374,7 @@ export default function SignalsRadarPage() {
         )}
 
         {/* Aucun résultat */}
-        {!scanning && signals.length === 0 && keyword && <EmptyState />}
+        {!scanning && signals.length === 0 && keyword && <EmptyState crmHref={crmHref} />}
 
         {/* État initial */}
         {!keyword && !scanning && <InitialState />}
@@ -700,7 +700,7 @@ function InitialState() {
 
 // ─── État vide ───────────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyState({ crmHref = "/sales-os/crm" }: { crmHref?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -716,7 +716,7 @@ function EmptyState() {
         size="sm"
         className="mt-6 rounded-xl border-gray-200 text-gray-600 hover:bg-gray-50"
       >
-        <Link href="/sales-os/crm">
+        <Link href={crmHref}>
           Voir le CRM
           <ArrowRight className="ml-2 h-3.5 w-3.5" />
         </Link>

@@ -15,6 +15,15 @@ import { checkBudget, trackSpend } from "@/lib/ai/budget-guard";
 import { searchGoogle } from "@/lib/ai/serper";
 import { PLAN_LIMITS } from "@/lib/credits";
 import { getTopPages, getDecliningPages } from "@/lib/services/integrations/google-search-console";
+import type { CsoActionType } from "@/lib/services/sales/cso-agent";
+
+/** Types de décisions CSO — exclus du learning marketing (cf. cso-learning.ts, learning dédié). */
+const CSO_ACTION_TYPES: CsoActionType[] = [
+  "CSO_LAUNCH_LINKEDIN",
+  "CSO_LAUNCH_EMAIL",
+  "CSO_FOLLOWUP",
+  "CSO_STALE_REJECT",
+];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ZOD SCHEMA — Source of truth pour les décisions de l'agent
@@ -959,6 +968,7 @@ export async function runDailyMarketingCycle(
           workspaceId,
           status: "EXECUTED",
           executedAt: { gte: lastLearningDate },
+          actionType: { notIn: CSO_ACTION_TYPES }, // l'activité CSO ne doit pas déclencher le learning marketing
         },
       });
 
@@ -1142,8 +1152,12 @@ export async function executeDecision(
  * - SOCIAL_POST : 80 si publié, 50 si schedulé
  * - PROSPECT_DM : taux de progression des prospects (REPLIED=60, CONVERTED=100)
  * - DISCOVERY_SCAN / AD_REMIX / COMPETITOR_REACT : 70 (utile par défaut)
+ * - CSO_LAUNCH_LINKEDIN / CSO_LAUNCH_EMAIL / CSO_FOLLOWUP : statut réel du prospect ciblé
+ *   (CONVERTED=100, MEETING_BOOKED=90, RESPONDED/REPLIED=70, CONTACTED=35, REJECTED/LOST=10)
+ * - CSO_STALE_REJECT : 55 fixe (le prospect est systématiquement REJECTED après exécution,
+ *   pas de signal de succès mesurable)
  */
-async function scoreDecisionPerformance(workspaceId: string): Promise<void> {
+export async function scoreDecisionPerformance(workspaceId: string): Promise<void> {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -1241,6 +1255,50 @@ async function scoreDecisionPerformance(workspaceId: string): Promise<void> {
         break;
       }
 
+      case "CSO_LAUNCH_LINKEDIN":
+      case "CSO_LAUNCH_EMAIL":
+      case "CSO_FOLLOWUP": {
+        // Score basé sur le statut réel et actuel du prospect ciblé par CETTE décision
+        // (actionData.prospectId est toujours renseigné pour ces 3 types — cso-agent.ts:642-655)
+        const prospectId = (decision.actionData as Record<string, unknown> | null)?.prospectId as
+          | string
+          | undefined;
+        const prospect = prospectId
+          ? await prisma.prospect.findUnique({ where: { id: prospectId }, select: { status: true } })
+          : null;
+        switch (prospect?.status) {
+          case "CONVERTED":
+            performanceScore = 100;
+            break;
+          case "MEETING_BOOKED":
+            performanceScore = 90;
+            break;
+          case "RESPONDED":
+          case "REPLIED":
+            performanceScore = 70;
+            break;
+          case "REJECTED":
+          case "LOST":
+          case "UNSUBSCRIBED":
+            performanceScore = 10;
+            break;
+          case "CONTACTED":
+          case "MESSAGES_GENERATED":
+            performanceScore = 35; // envoyé, pas encore de réponse
+            break;
+          default:
+            performanceScore = 40; // NEW/RESEARCHED, ou prospect introuvable
+        }
+        break;
+      }
+
+      case "CSO_STALE_REJECT":
+        // L'exécution met systématiquement le prospect à REJECTED (cso-agent.ts:832-835) —
+        // mesurer le "succès" via son statut n'aurait aucun sens. Score neutre fixe, comme
+        // DISCOVERY_SCAN/AD_REMIX ci-dessus pour les actions sans signal de succès mesurable.
+        performanceScore = 55;
+        break;
+
       default:
         performanceScore = 50;
     }
@@ -1282,12 +1340,13 @@ export async function learnFromPerformance(
       select: { type: true, keywords: true, title: true, seoScore: true },
     });
 
-    // Décisions exécutées AVEC leur score de performance
+    // Décisions exécutées AVEC leur score de performance — CSO exclu (learning dédié, cso-learning.ts)
     const executedDecisions = await prisma.agentDecision.findMany({
       where: {
         workspaceId,
         status: "EXECUTED",
         createdAt: { gte: thirtyDaysAgo },
+        actionType: { notIn: CSO_ACTION_TYPES },
       },
       select: { actionType: true, priority: true, impact: true, result: true, performanceScore: true },
     });

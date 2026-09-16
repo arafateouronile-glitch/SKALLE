@@ -21,9 +21,13 @@ import {
 } from "@/app/(app)/(cso-workspace)/sales-os/social-prospector/page";
 import { GoskalleCrmView } from "@/components/modules/goskalle/goskalle-crm-view";
 
+const SOURCER_RADAR_TABS = ["signals", "local", "newborn", "qualiopi", "warm"] as const;
+
 function ProspectsContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") === "pipeline" ? "pipeline" : "sourcer";
+  const radarParam = searchParams.get("radar");
+  const initialRadarTab = SOURCER_RADAR_TABS.find((t) => t === radarParam) ?? "signals";
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,7 +62,7 @@ function ProspectsContent() {
         </TabsList>
 
         <TabsContent value="sourcer">
-          <Tabs defaultValue="signals" className="space-y-6">
+          <Tabs defaultValue={initialRadarTab} className="space-y-6">
             <TabsList className="gk-tabslist">
               <TabsTrigger value="signals" className="gk-tabtrigger"><Briefcase className="h-4 w-4 mr-2" /> Signals</TabsTrigger>
               <TabsTrigger value="local" className="gk-tabtrigger"><MapPin className="h-4 w-4 mr-2" /> Local</TabsTrigger>

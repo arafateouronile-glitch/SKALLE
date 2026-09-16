@@ -26,10 +26,15 @@ import {
   GitBranch,
   Globe,
   ShieldCheck,
+  Radar,
+  PenLine,
+  MessageCircle as MessageCircleIcon,
 } from "lucide-react";
 
+export type OsKey = "cmo" | "cso" | "goskalle";
+
 interface AppSidebarProps {
-  os: "cmo" | "cso";
+  os: OsKey;
   user: {
     name?: string | null;
     email?: string | null;
@@ -64,6 +69,15 @@ const CSO_NAV = [
   { id: "deliverability",    name: "Délivrabilité", href: "/sales-os/deliverability",  icon: ShieldCheck,     desc: "SPF · DKIM · DMARC" },
 ] as const;
 
+const GOSKALLE_NAV = [
+  { id: "today",         name: "Aujourd'hui",   href: "/goskalle",               icon: Radar,       desc: "Score & décisions" },
+  { id: "prospects",     name: "Prospects",     href: "/goskalle/prospects",     icon: Target,      desc: "Sourcer & Pipeline" },
+  { id: "campaigns",     name: "Campagnes",     href: "/goskalle/campaigns",     icon: Mail,        desc: "ICP ou import de liste" },
+  { id: "conversations", name: "Conversations", href: "/goskalle/conversations", icon: MessageCircleIcon, desc: "Inbox & Séquences" },
+  { id: "content",       name: "Contenu",       href: "/goskalle/content",       icon: PenLine,     desc: "LinkedIn calé ICP" },
+  { id: "analytics",     name: "Analytics",     href: "/goskalle/analytics",     icon: TrendingUp,  desc: "Métriques & pipeline" },
+] as const;
+
 const PLAN_LABELS: Record<string, string> = {
   FREE: "Free",
   BUSINESS: "Business",
@@ -71,21 +85,53 @@ const PLAN_LABELS: Record<string, string> = {
   SCALE: "Scale",
 };
 
+const OS_CONFIG: Record<
+  OsKey,
+  {
+    label: string;
+    switchLabel: string;
+    basePath: string;
+    settingsPath: string;
+    accent: "emerald" | "violet" | "amber";
+    nav: readonly { id: string; name: string; href: string; icon: typeof LayoutDashboard; desc: string }[];
+  }
+> = {
+  cmo: {
+    label: "CMO",
+    switchLabel: "Marketing OS",
+    basePath: "/marketing-os",
+    settingsPath: "/marketing-os/settings",
+    accent: "emerald",
+    nav: CMO_NAV,
+  },
+  cso: {
+    label: "CSO",
+    switchLabel: "Sales OS",
+    basePath: "/sales-os",
+    settingsPath: "/sales-os/settings",
+    accent: "violet",
+    nav: CSO_NAV,
+  },
+  goskalle: {
+    label: "GO",
+    switchLabel: "Goskalle",
+    basePath: "/goskalle",
+    settingsPath: "/goskalle/settings",
+    accent: "amber",
+    nav: GOSKALLE_NAV,
+  },
+};
+
 export function AppSidebar({ os, user, credits, plan }: AppSidebarProps) {
   const pathname = usePathname();
-  const isCmo = os === "cmo";
-  const nav = isCmo ? CMO_NAV : CSO_NAV;
-  const otherOs = isCmo ? "cso" : "cmo";
-  const otherLabel = isCmo ? "Sales OS" : "Marketing OS";
-  const otherHref = isCmo ? "/sales-os" : "/marketing-os";
-  const osLabel = isCmo ? "CMO" : "CSO";
+  const current = OS_CONFIG[os];
+  const nav = current.nav;
+  const osLabel = current.label;
+  const otherOsKeys = (Object.keys(OS_CONFIG) as OsKey[]).filter((key) => key !== os);
 
-  const accentFg = `var(--${isCmo ? "emerald" : "violet"}-fg)`;
-  const accentSoft = `var(--${isCmo ? "emerald" : "violet"}-soft)`;
-  const accentLine = `var(--${isCmo ? "emerald" : "violet"}-line)`;
-  const otherFg = `var(--${isCmo ? "violet" : "emerald"}-fg)`;
-  const otherSoft = `var(--${isCmo ? "violet" : "emerald"}-soft)`;
-  const otherLine = `var(--${isCmo ? "violet" : "emerald"}-line)`;
+  const accentFg = `var(--${current.accent}-fg)`;
+  const accentSoft = `var(--${current.accent}-soft)`;
+  const accentLine = `var(--${current.accent}-line)`;
 
   const maxCredits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS]?.monthlyCredits ?? 100;
   const creditPct = Math.min(100, Math.round((credits / maxCredits) * 100));
@@ -166,7 +212,7 @@ export function AppSidebar({ os, user, credits, plan }: AppSidebarProps) {
       {/* Settings + Help */}
       <div className="px-3 pb-2 space-y-0.5">
         <Link
-          href={`/${os === "cmo" ? "marketing" : "sales"}-os/settings`}
+          href={current.settingsPath}
           className="flex items-center gap-3 px-3 py-2 rounded-[8px] text-[12.5px] transition-all hover:bg-black/[0.04]"
           style={{ color: "var(--fg-mute)" }}
         >
@@ -185,14 +231,25 @@ export function AppSidebar({ os, user, credits, plan }: AppSidebarProps) {
       {/* OS switch + user footer */}
       <div className="px-3 pb-3 pt-2 space-y-3" style={{ borderTop: "1px solid var(--line)" }}>
         {/* Switch OS */}
-        <Link
-          href={otherHref}
-          className="flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-[12px] font-medium transition-all hover:brightness-[0.97]"
-          style={{ background: otherSoft, border: `1px solid ${otherLine}`, color: otherFg }}
-        >
-          <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1">Passer en {otherLabel}</span>
-        </Link>
+        <div className="space-y-1">
+          {otherOsKeys.map((key) => {
+            const target = OS_CONFIG[key];
+            const fg = `var(--${target.accent}-fg)`;
+            const soft = `var(--${target.accent}-soft)`;
+            const line = `var(--${target.accent}-line)`;
+            return (
+              <Link
+                key={key}
+                href={target.basePath}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-[12px] font-medium transition-all hover:brightness-[0.97]"
+                style={{ background: soft, border: `1px solid ${line}`, color: fg }}
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1">Passer en {target.switchLabel}</span>
+              </Link>
+            );
+          })}
+        </div>
 
         {/* Credits bar */}
         <div className="px-1">
