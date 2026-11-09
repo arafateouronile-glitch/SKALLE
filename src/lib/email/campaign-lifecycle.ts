@@ -17,6 +17,14 @@ import { useCredits } from "@/lib/credits";
 
 const PERSONALIZE_BATCH_CONCURRENCY = 3;
 
+// Garde-fou taux d'échec/rebond — met en pause automatiquement une campagne
+// qui échoue trop pour protéger la réputation d'envoi du domaine. `FAILED`
+// sur un SequenceStep est le seul signal de rebond déjà tracké aujourd'hui
+// (rejet SMTP immédiat) — pas de détection des rebonds différés (webhook ESP
+// ou scan IMAP), à construire séparément si le besoin se confirme.
+const BOUNCE_RATE_THRESHOLD = 0.15; // 15% d'échecs déclenche la pause
+const BOUNCE_RATE_MIN_SAMPLE = 10; // pas de pause sur un trop petit échantillon (1 échec sur 2 ne doit pas compter)
+
 interface PersonalizeTask {
   stepId: string;
   prospect: {
@@ -36,6 +44,52 @@ function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
   return chunks;
+}
+
+/**
+ * Vérifie le taux d'échec d'envoi (step 1, tous les prospects de la
+ * campagne) et met la campagne en pause si le seuil est dépassé — stoppe
+ * aussi les séquences actives pour qu'aucun follow-up ne reparte. Ne
+ * réactive jamais automatiquement (contrairement au warm-up) : un taux de
+ * rebond élevé doit être revu par un humain avant de relancer.
+ * Appelé après chaque passage d'envoi (campaign-sender.ts), que ce soit le
+ * 1er contact ou un follow-up.
+ */
+export async function checkAndApplyBounceGuard(
+  campaignId: string
+): Promise<{ paused: boolean; failureRate?: number; totalAttempted?: number }> {
+  const steps = await prisma.sequenceStep.findMany({
+    where: { sequence: { campaignId }, channel: "EMAIL" },
+    select: { status: true },
+  });
+
+  const attempted = steps.filter((s) =>
+    ["SENT", "DELIVERED", "OPENED", "CLICKED", "REPLIED", "FAILED"].includes(s.status)
+  );
+  const failed = attempted.filter((s) => s.status === "FAILED").length;
+
+  if (attempted.length < BOUNCE_RATE_MIN_SAMPLE) {
+    return { paused: false };
+  }
+
+  const failureRate = failed / attempted.length;
+  if (failureRate <= BOUNCE_RATE_THRESHOLD) {
+    return { paused: false, failureRate, totalAttempted: attempted.length };
+  }
+
+  await prisma.emailCampaign.update({
+    where: { id: campaignId },
+    data: {
+      status: "PAUSED",
+      pausedReason: `Taux d'échec d'envoi élevé (${Math.round(failureRate * 100)}% sur ${attempted.length} tentatives) — mise en pause automatique pour protéger la réputation d'envoi. Vérifiez la qualité des emails avant de relancer manuellement.`,
+    },
+  });
+  await prisma.outreachSequence.updateMany({
+    where: { campaignId },
+    data: { isActive: false },
+  });
+
+  return { paused: true, failureRate, totalAttempted: attempted.length };
 }
 
 export async function personalizeCampaignCore(

@@ -668,6 +668,10 @@ model EmailCampaign {
   id                  String               @id @default(cuid())
   name                String
   status              CampaignStatus       @default(DRAFT)
+  // Renseigné quand `status` passe à PAUSED automatiquement (garde-fou taux
+  // d'échec/rebond, warm-up...) — permet de distinguer une pause automatique
+  // d'une pause manuelle, et d'expliquer pourquoi sans fouiller les logs.
+  pausedReason        String?
   workspaceId         String
   stepTemplates       Json
   personalizationMode String               @default("template")

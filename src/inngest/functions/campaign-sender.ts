@@ -14,6 +14,7 @@ import {
   checkSmtpWarmupAllowance,
   incrementSmtpWarmupCounter,
 } from "@/actions/warmup";
+import { checkAndApplyBounceGuard } from "@/lib/email/campaign-lifecycle";
 
 function injectEmailExtras(html: string, stepId: string, prospectId: string): string {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
@@ -296,7 +297,12 @@ export const launchCampaignFn = inngest.createFunction(
       });
     });
 
-    return { sent, failed, total: campaign.sequences.length };
+    // Garde-fou taux d'échec/rebond — repasse en PAUSED si le seuil est
+    // dépassé, après le calcul des stats ci-dessus (prioritaire sur
+    // COMPLETED/SENDING).
+    const bounceGuard = await step.run("bounce-guard", () => checkAndApplyBounceGuard(campaignId));
+
+    return { sent, failed, total: campaign.sequences.length, bounceGuard };
   }
 );
 
@@ -483,6 +489,10 @@ export const scheduleNextCampaignSteps = inngest.createFunction(
           },
         });
       });
+
+      // Même garde-fou que pour le 1er contact — les follow-ups peuvent
+      // aussi rebondir.
+      await step.run(`bounce-guard-${cId}`, () => checkAndApplyBounceGuard(cId!));
     }
 
     // Reprise des campagnes dont l'envoi du 1er contact n'est pas terminé

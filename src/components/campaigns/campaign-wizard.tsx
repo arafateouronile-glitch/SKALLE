@@ -54,6 +54,7 @@ import {
   generateCampaignTemplatesFromGoal,
 } from "@/actions/campaigns";
 import { toast } from "sonner";
+import { CREDIT_COSTS } from "@/lib/credits";
 
 interface Prospect {
   id: string;
@@ -309,6 +310,15 @@ export function CampaignWizard({
   const selectedProspects = prospects.filter((p) => selectedProspectIds.has(p.id));
   const prospectsWithEmail = selectedProspects.filter((p) => p.email);
 
+  // Estimation affichée avant le lancement — l'enrichissement a déjà eu lieu
+  // avant l'ouverture de ce wizard (cf. useEnrichBeforeCampaign), seule la
+  // personnalisation à venir reste à chiffrer ici. Le mode "template" est
+  // gratuit (pas d'appel IA par prospect).
+  const estimatedPersonalizationCredits =
+    personalizationMode === "ai"
+      ? prospectsWithEmail.length * stepTemplates.length * CREDIT_COSTS.campaign_ai_personalization
+      : 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-white border-gray-200 max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -501,6 +511,13 @@ export function CampaignWizard({
             {!hasAI && (
               <p className="text-xs text-gray-9000">
                 Configurez OPENAI_API_KEY pour que l’IA rédige les templates à partir du but. Sinon, utilisez les templates par défaut ci-dessous après avoir choisi le nombre d’étapes.
+              </p>
+            )}
+
+            {personalizationMode === "ai" && (
+              <p className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-md px-3 py-2">
+                Personnalisation IA profonde (recherche LinkedIn/actu par prospect) : ~{estimatedPersonalizationCredits} crédits
+                estimés pour {prospectsWithEmail.length} prospect(s) × {stepTemplates.length} étape(s).
               </p>
             )}
 
@@ -770,6 +787,12 @@ export function CampaignWizard({
                     <span className="text-gray-500">Total emails :</span>
                     <span className="text-gray-900 ml-2">
                       ~{prospectsWithEmail.length * stepTemplates.length}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Coût personnalisation IA estimé :</span>
+                    <span className="text-gray-900 ml-2 font-medium">
+                      {personalizationMode === "ai" ? `~${estimatedPersonalizationCredits} crédits` : "0 (mode template)"}
                     </span>
                   </div>
                   {attachmentFiles.length > 0 && (
