@@ -69,7 +69,7 @@ interface PersonalizationHook {
   industryNews?: string;   // Dernière actu du secteur
 }
 
-interface ResearchResult {
+export interface ResearchResult {
   recentActivity: string[];
   companyNews: string[];
   hiringSignals: string[];
@@ -87,6 +87,24 @@ interface EmailPersonalizationInput {
   ourOffer: string;
   ourCompany: string;
   previousEmails?: Array<{ subject: string; sentAt: Date; opened: boolean; replied: boolean }>;
+  /** Mémoïsation de la recherche par prospect, partagée entre les steps d'un
+   * même cycle de personnalisation (cf. `personalizeCampaignCore`) — sans ça,
+   * une séquence à 3 steps refait la recherche (LinkedIn + Serper) 3x pour le
+   * même prospect. Portée à l'appelant : pas de cache module-level, donc pas
+   * de staleness entre deux lancements de campagne différents. */
+  researchCache?: Map<string, Promise<ResearchResult>>;
+}
+
+function getCachedResearch(
+  prospect: ProspectData,
+  cache?: Map<string, Promise<ResearchResult>>
+): Promise<ResearchResult> {
+  if (!cache) return researchProspect(prospect);
+  const existing = cache.get(prospect.id);
+  if (existing) return existing;
+  const promise = researchProspect(prospect);
+  cache.set(prospect.id, promise);
+  return promise;
 }
 
 interface PersonalizedEmail {
@@ -300,10 +318,10 @@ export async function researchProspect(prospect: ProspectData): Promise<Research
 export async function generatePersonalizedEmail(
   input: EmailPersonalizationInput
 ): Promise<PersonalizedEmail> {
-  const { prospect, sequenceStep, ourOffer, ourCompany, previousEmails = [] } = input;
+  const { prospect, sequenceStep, ourOffer, ourCompany, previousEmails = [], researchCache } = input;
 
-  // 1. Recherche approfondie du prospect
-  const research = await researchProspect(prospect);
+  // 1. Recherche approfondie du prospect (mémoïsée par prospect si un cache est fourni)
+  const research = await getCachedResearch(prospect, researchCache);
 
   // 2. Calcul du score de personnalisation
   let personalizationScore = 0;

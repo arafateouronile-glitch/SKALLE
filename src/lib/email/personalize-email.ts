@@ -9,6 +9,7 @@ import {
   buildVariablesFromProspect,
   type StepTemplate,
 } from "./template-personalization";
+import type { ResearchResult } from "@/lib/prospection/email-personalization";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 TYPES
@@ -24,11 +25,15 @@ export interface PersonalizeParams {
     industry?: string | null;
     location?: string | null;
     linkedInUrl?: string | null;
+    enrichmentData?: unknown;
   };
   stepTemplate: StepTemplate;
   mode: "ai" | "template";
   sender: { name: string; email: string; company: string };
   ourOffer?: string;
+  /** Mémoïsation de la recherche prospect partagée entre les appels d'un même
+   * cycle de personnalisation — cf. `email-personalization.ts`. */
+  researchCache?: Map<string, Promise<ResearchResult>>;
 }
 
 export interface PersonalizedResult {
@@ -53,7 +58,7 @@ export function hasAIPersonalization(): boolean {
 export async function personalizeEmail(
   params: PersonalizeParams
 ): Promise<PersonalizedResult> {
-  const { prospect, stepTemplate, mode, sender, ourOffer } = params;
+  const { prospect, stepTemplate, mode, sender, ourOffer, researchCache } = params;
 
   // Mode AI : tenter la personnalisation OpenAI
   if (mode === "ai" && hasAIPersonalization()) {
@@ -75,10 +80,12 @@ export async function personalizeEmail(
           industry: prospect.industry || "",
           linkedInUrl: prospect.linkedInUrl || "",
           timezone: "Europe/Paris",
+          enrichmentData: prospect.enrichmentData,
         },
         sequenceStep: stepTemplate.stepNumber,
         ourOffer: ourOffer || "nos services",
         ourCompany: sender.company,
+        researchCache,
       });
 
       return {

@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { personalizeEmail } from "@/lib/email/personalize-email";
 import { type StepTemplate } from "@/lib/email/template-personalization";
 import { useCredits } from "@/lib/credits";
+import type { ResearchResult } from "@/lib/prospection/email-personalization";
 
 const PERSONALIZE_BATCH_CONCURRENCY = 3;
 
@@ -149,6 +150,11 @@ export async function personalizeCampaignCore(
     let personalized = 0;
     let creditsExhausted = false;
 
+    // Un seul cache pour tout le cycle : sans lui, la recherche prospect
+    // (LinkedIn + Serper) serait refaite une fois par step au lieu d'une fois
+    // par prospect (2-3x le coût pour une séquence à 2-3 steps).
+    const researchCache = new Map<string, Promise<ResearchResult>>();
+
     // Par lots (au lieu d'un par un séquentiellement) — une campagne de 50+
     // prospects × 2-3 steps dépasserait sinon largement le temps d'exécution
     // raisonnable d'un step Inngest.
@@ -170,7 +176,7 @@ export async function personalizeCampaignCore(
           }
 
           try {
-            const result = await personalizeEmail({ prospect: task.prospect, stepTemplate: task.template, mode, sender });
+            const result = await personalizeEmail({ prospect: task.prospect, stepTemplate: task.template, mode, sender, researchCache });
             await prisma.sequenceStep.update({
               where: { id: task.stepId },
               data: {
