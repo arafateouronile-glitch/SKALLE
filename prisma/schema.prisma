@@ -78,6 +78,7 @@ model Workspace {
   updatedAt                 DateTime                   @updatedAt
   hasCmoAccess              Boolean                    @default(false)
   hasCsoAccess              Boolean                    @default(false)
+  hasGoskalleAccess         Boolean                    @default(false)
   stripeConnected           Boolean                    @default(false)
   onboardingStep            Int                        @default(1)
   calendarLink              String?
@@ -326,6 +327,9 @@ model Prospect {
   hubspotSyncedAt      DateTime?
   warmSignalType       String?
   warmSignalAt         DateTime?
+  dedupKey             String?
+  compositeScore       Int?
+  fusionSources        SourceType[]          @default([])
   enrichments          LeadEnrichment[]
   sequences            OutreachSequence[]
   workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -351,6 +355,7 @@ model Prospect {
   @@index([hubspotContactId])
   @@index([lastScoredAt])
   @@index([workspaceId, warmSignalAt])
+  @@index([workspaceId, dedupKey])
 }
 
 model ProspectInteraction {
@@ -663,6 +668,10 @@ model EmailCampaign {
   id                  String               @id @default(cuid())
   name                String
   status              CampaignStatus       @default(DRAFT)
+  // Renseigné quand `status` passe à PAUSED automatiquement (garde-fou taux
+  // d'échec/rebond, warm-up...) — permet de distinguer une pause automatique
+  // d'une pause manuelle, et d'expliquer pourquoi sans fouiller les logs.
+  pausedReason        String?
   workspaceId         String
   stepTemplates       Json
   personalizationMode String               @default("template")
@@ -1027,8 +1036,10 @@ enum SourceType {
   JOB_BOARD_SIGNAL
   LOCAL_MAPS
   NEW_COMPANY_REGISTRY
+  APOLLO_ICP_MATCH
   PARTNER_SOCIAL
   PARTNER_SEO
+  QUALIOPI_REGISTRY
 }
 
 enum CMSPlatform {
@@ -1059,6 +1070,7 @@ enum EnrichmentProvider {
   ZOOMINFO
   CLEARBIT
   APIFY
+  DROPCONTACT
 }
 
 // ─── Persona ──────────────────────────────────────────────────────────────────
@@ -1498,6 +1510,33 @@ model CompetitorWatch {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUALIOPI RADAR — Cache du registre "Liste Publique des Organismes de
+// Formation" (data.gouv.fr, CSV mis à jour quotidiennement, sync hebdo ici).
+// Table de requêtage rapide pour le scan à la demande — pas de FK workspace,
+// c'est un référentiel partagé entre tous les workspaces (comme une donnée
+// publique), pas une donnée par-workspace.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model QualiopiOrganism {
+  id                     String   @id @default(cuid())
+  siren                  String   @unique
+  denomination           String
+  nda                    String
+  region                 String?
+  city                   String?
+  zipCode                String?
+  certifActionsFormation Boolean  @default(false)
+  certifBilanCompetences Boolean  @default(false)
+  certifVAE              Boolean  @default(false)
+  certifApprentissage    Boolean  @default(false)
+  nbStagiaires           Int?
+  syncedAt               DateTime @updatedAt
+
+  @@index([region])
+  @@index([syncedAt])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

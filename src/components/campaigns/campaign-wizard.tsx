@@ -54,6 +54,7 @@ import {
   generateCampaignTemplatesFromGoal,
 } from "@/actions/campaigns";
 import { toast } from "sonner";
+import { CREDIT_COSTS } from "@/lib/credits";
 
 interface Prospect {
   id: string;
@@ -141,6 +142,11 @@ export function CampaignWizard({
     const result = await getDefaultTemplates();
     if (result.success) {
       setHasAI(result.hasAI || false);
+      // Personnalisation IA profonde par défaut dès qu'elle est disponible —
+      // "un email qui donne l'impression d'avoir été rédigé à la main pour
+      // chacun", pas du mail-merge. L'utilisateur peut repasser en mode
+      // template s'il préfère.
+      if (result.hasAI) setPersonalizationMode("ai");
       setStepTemplates(result.templates3 || []);
     }
   };
@@ -238,6 +244,7 @@ export function CampaignWizard({
         prospectIds: [...selectedProspectIds],
         stepTemplates,
         personalizationMode,
+        autoLaunch: true, // enchaîne personnalisation + envoi en tâche de fond, sans quitter cette page
       });
 
       if (result.success && result.campaignId) {
@@ -256,10 +263,10 @@ export function CampaignWizard({
           if (uploadErrors > 0) {
             toast.warning(`Campagne créée, mais ${uploadErrors} pièce(s) jointe(s) n'ont pas pu être uploadée(s).`);
           } else {
-            toast.success("Campagne créée avec pièces jointes !");
+            toast.success("Campagne créée — personnalisation en cours, l'envoi démarrera automatiquement.");
           }
         } else {
-          toast.success("Campagne créée !");
+          toast.success("Campagne créée — personnalisation en cours, l'envoi démarrera automatiquement.");
         }
         onOpenChange(false);
         onCreated();
@@ -302,6 +309,15 @@ export function CampaignWizard({
 
   const selectedProspects = prospects.filter((p) => selectedProspectIds.has(p.id));
   const prospectsWithEmail = selectedProspects.filter((p) => p.email);
+
+  // Estimation affichée avant le lancement — l'enrichissement a déjà eu lieu
+  // avant l'ouverture de ce wizard (cf. useEnrichBeforeCampaign), seule la
+  // personnalisation à venir reste à chiffrer ici. Le mode "template" est
+  // gratuit (pas d'appel IA par prospect).
+  const estimatedPersonalizationCredits =
+    personalizationMode === "ai"
+      ? prospectsWithEmail.length * stepTemplates.length * CREDIT_COSTS.campaign_ai_personalization
+      : 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -495,6 +511,13 @@ export function CampaignWizard({
             {!hasAI && (
               <p className="text-xs text-gray-9000">
                 Configurez OPENAI_API_KEY pour que l’IA rédige les templates à partir du but. Sinon, utilisez les templates par défaut ci-dessous après avoir choisi le nombre d’étapes.
+              </p>
+            )}
+
+            {personalizationMode === "ai" && (
+              <p className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-md px-3 py-2">
+                Personnalisation IA profonde (recherche LinkedIn/actu par prospect) : ~{estimatedPersonalizationCredits} crédits
+                estimés pour {prospectsWithEmail.length} prospect(s) × {stepTemplates.length} étape(s).
               </p>
             )}
 
@@ -764,6 +787,12 @@ export function CampaignWizard({
                     <span className="text-gray-500">Total emails :</span>
                     <span className="text-gray-900 ml-2">
                       ~{prospectsWithEmail.length * stepTemplates.length}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Coût personnalisation IA estimé :</span>
+                    <span className="text-gray-900 ml-2 font-medium">
+                      {personalizationMode === "ai" ? `~${estimatedPersonalizationCredits} crédits` : "0 (mode template)"}
                     </span>
                   </div>
                   {attachmentFiles.length > 0 && (

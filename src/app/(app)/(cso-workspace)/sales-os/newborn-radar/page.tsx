@@ -44,6 +44,7 @@ import { CREDIT_COSTS } from "@/lib/credits";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
+import { useEnrichBeforeCampaign } from "@/hooks/use-enrich-before-campaign";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Waterfall loading steps
@@ -300,6 +301,7 @@ export default function NewbornRadarPage() {
   const [importing, setImporting] = useState(false);
   const [campaignProspects, setCampaignProspects] = useState<{ id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const { enriching, enrichThenOpen } = useEnrichBeforeCampaign(workspaceId);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -462,9 +464,11 @@ export default function NewbornRadarPage() {
         const importedIds = new Set(toImport.map(leadId));
         setAddedIds((prev) => new Set([...prev, ...importedIds]));
         setSelectedIds(new Set());
-        setCampaignProspects(res.prospects);
-        setWizardOpen(true);
-        toast.success(`${res.imported} entreprise(s) importée(s). Configurez votre campagne.`);
+        toast.success(`${res.imported} entreprise(s) importée(s). Enrichissement en cours…`);
+        await enrichThenOpen(res.prospects, (prospects) => {
+          setCampaignProspects(prospects);
+          setWizardOpen(true);
+        });
       } else {
         toast.error(res.error ?? "Erreur lors de l'import.");
       }
@@ -473,7 +477,7 @@ export default function NewbornRadarPage() {
     } finally {
       setImporting(false);
     }
-  }, [workspaceId, leads, selectedIds]);
+  }, [workspaceId, leads, selectedIds, enrichThenOpen]);
 
   const availableForSelect = leads.filter((l) => !addedIds.has(leadId(l)));
   const steps = withEnrich ? LOADING_STEPS_ENRICH : LOADING_STEPS;
@@ -714,11 +718,11 @@ export default function NewbornRadarPage() {
                 </Button>
                 <Button
                   size="sm"
-                  disabled={selectedIds.size === 0 || importing}
+                  disabled={selectedIds.size === 0 || importing || enriching}
                   onClick={handleLaunchCampaign}
                   className="h-8 rounded-xl border-0 bg-gradient-to-r from-violet-600 to-purple-600 px-4 text-xs font-semibold text-white shadow-md shadow-violet-200 hover:from-violet-500 hover:to-purple-500 disabled:opacity-40"
                 >
-                  {importing ? (
+                  {importing || enriching ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <>

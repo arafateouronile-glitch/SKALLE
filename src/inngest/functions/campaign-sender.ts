@@ -14,6 +14,7 @@ import {
   checkSmtpWarmupAllowance,
   incrementSmtpWarmupCounter,
 } from "@/actions/warmup";
+import { checkAndApplyBounceGuard } from "@/lib/email/campaign-lifecycle";
 
 function injectEmailExtras(html: string, stepId: string, prospectId: string): string {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
@@ -134,18 +135,44 @@ export const launchCampaignFn = inngest.createFunction(
       };
     }
 
-    // Effective remaining slots: tightest of workspace & mailbox limits
+    // Limite journalière statique de la boîte mail (smtpConfig.dailyLimit,
+    // réglable dans smtp-config-form.tsx) — s'applique TOUJOURS, même sans
+    // warm-up activé (contrairement à `checkSmtpWarmupAllowance`, qui renvoie
+    // "illimité" tant que `warmupEnabled` est faux). C'est le réglage simple
+    // "5/jour, 10/jour..." attendu par l'utilisateur.
+    const dailyLimitRemaining = await step.run("check-daily-limit", async () => {
+      if (!smtpConfig) return null;
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const sentToday = await prisma.sequenceStep.count({
+        where: {
+          channel: "EMAIL",
+          status: { in: ["SENT", "DELIVERED", "OPENED"] },
+          sentAt: { gte: startOfDay },
+          sequence: { workspaceId: campaign.workspaceId },
+        },
+      });
+      return Math.max(0, smtpConfig.dailyLimit - sentToday);
+    });
+
+    // Effective remaining slots: le plus strict entre warm-up (workspace/
+    // mailbox) et la limite journalière statique ci-dessus.
     const smtpRemaining = smtpWarmup.remainingToday;
     const wsRemaining = warmup.remainingToday;
-    const warmupRemainingSlots =
+    const warmupOnlyRemaining =
       smtpRemaining !== null && wsRemaining !== null
         ? Math.min(smtpRemaining, wsRemaining)
         : smtpRemaining ?? wsRemaining;
+    const warmupRemainingSlots =
+      warmupOnlyRemaining !== null && dailyLimitRemaining !== null
+        ? Math.min(warmupOnlyRemaining, dailyLimitRemaining)
+        : warmupOnlyRemaining ?? dailyLimitRemaining;
+    const anyDailyCapActive = warmup.warmupActive || dailyLimitRemaining !== null;
 
     // Envoyer les premiers emails un par un avec rate limiting
     for (const sequence of campaign.sequences) {
-      // Respecter la limite warm-up restante
-      if (warmup.warmupActive && warmupRemainingSlots !== null && sent >= warmupRemainingSlots) {
+      // Respecter la limite journalière restante (warm-up et/ou dailyLimit statique)
+      if (anyDailyCapActive && warmupRemainingSlots !== null && sent >= warmupRemainingSlots) {
         break;
       }
 
@@ -270,7 +297,12 @@ export const launchCampaignFn = inngest.createFunction(
       });
     });
 
-    return { sent, failed, total: campaign.sequences.length };
+    // Garde-fou taux d'échec/rebond — repasse en PAUSED si le seuil est
+    // dépassé, après le calcul des stats ci-dessus (prioritaire sur
+    // COMPLETED/SENDING).
+    const bounceGuard = await step.run("bounce-guard", () => checkAndApplyBounceGuard(campaignId));
+
+    return { sent, failed, total: campaign.sequences.length, bounceGuard };
   }
 );
 
@@ -457,8 +489,44 @@ export const scheduleNextCampaignSteps = inngest.createFunction(
           },
         });
       });
+
+      // Même garde-fou que pour le 1er contact — les follow-ups peuvent
+      // aussi rebondir.
+      await step.run(`bounce-guard-${cId}`, () => checkAndApplyBounceGuard(cId!));
     }
 
-    return { sent, failed, skipped: toSkip, total: pendingFollowups.length };
+    // Reprise des campagnes dont l'envoi du 1er contact n'est pas terminé
+    // (plafond journalier — `dailyLimit` ou warm-up — atteint lors d'un
+    // passage précédent, ou campagne de plus de `dailyLimit` prospects).
+    // `campaign/launch` recalcule lui-même le quota restant aujourd'hui et
+    // n'enverra rien de plus si le plafond est encore atteint — relancer
+    // l'événement toutes les 30 min est donc sûr, pas seulement une fois/jour.
+    const campaignsToResume = await step.run("find-campaigns-to-resume", async () => {
+      const campaigns = await prisma.emailCampaign.findMany({
+        where: {
+          status: "SENDING",
+          sequences: {
+            some: { isActive: true, steps: { some: { stepNumber: 1, status: "PENDING" } } },
+          },
+        },
+        select: { id: true },
+        take: 50,
+      });
+      return campaigns.map((c) => c.id);
+    });
+
+    for (const resumeCampaignId of campaignsToResume) {
+      await step.run(`resume-${resumeCampaignId}`, async () => {
+        await inngest.send({ name: "campaign/launch", data: { campaignId: resumeCampaignId } });
+      });
+    }
+
+    return {
+      sent,
+      failed,
+      skipped: toSkip,
+      total: pendingFollowups.length,
+      resumed: campaignsToResume.length,
+    };
   }
 );

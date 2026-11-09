@@ -39,22 +39,27 @@ import { scheduledPostPublisher } from "./functions/scheduled-publisher";
 import { runSuperscaleAd } from "./functions/superscale-ads";
 import { syncPostAnalyticsCron, syncPostAnalyticsManual } from "./functions/sync-post-analytics";
 import { intentSignalsDailyCron, intentSignalsManual } from "./functions/intent-signals-daily";
-import { linkedInReplyChecker, linkedInReplyCheckerManual } from "./functions/linkedin-reply-checker";
+import { linkedInReplyCheckerManual } from "./functions/linkedin-reply-checker";
 import { emailOutreachDaily, emailOutreachManual } from "./functions/email-outreach-daily";
-import { csoAgentDaily, csoAgentManual, csoAgentExecute } from "./functions/cso-agent-daily";
+import { csoAgentDaily, csoAgentManual } from "./functions/cso-agent-daily";
 import { runPersonaPipeline } from "./functions/persona-pipeline";
 import { personaWeeklyLearning, personaLearningManual } from "./functions/persona-learning";
 import {
   pollLinkedInEngagement,
   pollLinkedInEngagementManual,
   autoEnrollWarmLeads,
-  serverSideWarmLeadsCron,
   serverSideWarmLeadsManual,
 } from "./functions/linkedin-engagement-poller";
 import { runVideoAdPipeline, videoAdPipelineFailure } from "./functions/video-ads-pipeline";
 import { hubspotSyncFunction } from "./functions/hubspot-sync";
 import { sequenceOptimizerFunction } from "./functions/sequence-optimizer";
 import { inngestFailureMonitor } from "./functions/failure-monitor";
+import { fuseProspectSignals } from "./functions/signal-fusion";
+import { enrichWarmLeadsNightly } from "./functions/warm-lead-enrichment";
+import { resolveRadarDecisionMakersNightly } from "./functions/resolve-radar-decision-makers";
+import { syncQualiopiRegistryWeekly, syncQualiopiRegistryManual } from "./functions/sync-qualiopi-registry";
+import { personalizeAndLaunchCampaign } from "./functions/personalize-and-launch-campaign";
+import { csoAgentWeeklyLearn } from "./functions/cso-learning";
 
 // Export all Inngest functions
 export const functions = [
@@ -104,16 +109,17 @@ export const functions = [
   // CSO Intelligence — Surveillance continue intent signals
   intentSignalsDailyCron,
   intentSignalsManual,
-  // CSO LinkedIn — Détection des réponses (toutes les 4h)
-  linkedInReplyChecker,
+  // CSO LinkedIn — Détection des réponses (déclenchement manuel uniquement —
+  // le cron automatique 4h a été coupé : rejouait un cookie de session
+  // potentiellement périmé sans contrôle de fraîcheur ni plafond quotidien)
   linkedInReplyCheckerManual,
   // CSO Email — Outreach autonome (envoi quotidien 8h)
   emailOutreachDaily,
   emailOutreachManual,
-  // CSO Agent — Pipeline manager semi-auto (analyse 7h + exécution on approve)
+  // CSO Agent — Pipeline manager semi-auto (analyse 7h). Exécution on approve
+  // directe dans /api/cso-agent PATCH, pas via Inngest (cf. audit fonctionnel).
   csoAgentDaily,
   csoAgentManual,
-  csoAgentExecute,
   // Persona Pipeline — prospection orchestrée par persona
   runPersonaPipeline,
   // Persona Learning — analyse hebdo + suggestions ICP (lundi 8h)
@@ -123,8 +129,10 @@ export const functions = [
   pollLinkedInEngagement,
   pollLinkedInEngagementManual,
   autoEnrollWarmLeads,
-  // CSO Warm Leads — server-side viewers + followers (sans extension ouverte)
-  serverSideWarmLeadsCron,
+  // CSO Warm Leads — server-side viewers + followers (déclenchement manuel
+  // uniquement — le cron automatique 6h a été coupé : même risque que ci-dessus,
+  // et redondant avec l'extension Chrome qui fait le même travail depuis l'IP
+  // résidentielle de l'utilisateur)
   serverSideWarmLeadsManual,
   // Video Ads UGC — Pipeline Kling AI (image2video + lip-sync)
   runVideoAdPipeline,
@@ -135,4 +143,18 @@ export const functions = [
   sequenceOptimizerFunction,
   // Monitoring — capture toutes les erreurs Inngest vers Sentry
   inngestFailureMonitor,
+  // Goskalle — fusion des signaux multi-radar en un score composite
+  fuseProspectSignals,
+  // Goskalle — batch nocturne d'enrichissement entreprise des warm leads
+  enrichWarmLeadsNightly,
+  // Goskalle — résolution nocturne d'un décideur nommé (Signals/Local/Qualiopi
+  // Radar) avant enrichissement Dropcontact
+  resolveRadarDecisionMakersNightly,
+  // Qualiopi Radar — sync hebdomadaire du registre Organismes de Formation
+  syncQualiopiRegistryWeekly,
+  syncQualiopiRegistryManual,
+  // Campagnes goskalle — personnalisation IA + lancement automatique en tâche de fond
+  personalizeAndLaunchCampaign,
+  // Goskalle — boucle d'apprentissage CSO hebdomadaire
+  csoAgentWeeklyLearn,
 ];

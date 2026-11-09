@@ -188,7 +188,7 @@ const platformIcons: Record<string, React.ElementType> = {
 // 🧱 ONGLET 1 : PROSPECTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ProspectsTab({ workspaceId }: { workspaceId: string }) {
+export function ProspectsTab({ workspaceId }: { workspaceId: string }) {
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [stats, setStats] = useState<Stats>({ PENDING: 0, CONTACTED: 0, IGNORED: 0 });
   const [loading, setLoading] = useState(true);
@@ -293,7 +293,7 @@ function ProspectsTab({ workspaceId }: { workspaceId: string }) {
 // 🧱 ONGLET 2 : QUEUE D'APPROBATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ApprovalQueueTab({ workspaceId }: { workspaceId: string }) {
+export function ApprovalQueueTab({ workspaceId }: { workspaceId: string }) {
   const [pending, setPending] = useState<Interaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -486,7 +486,7 @@ function ApprovalQueueTab({ workspaceId }: { workspaceId: string }) {
 // 🧱 ONGLET 3 : DM ENVOYÉS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function SentDMsTab({ workspaceId }: { workspaceId: string }) {
+export function SentDMsTab({ workspaceId }: { workspaceId: string }) {
   const [sent, setSent] = useState<Interaction[]>([]);
   const [loading, setLoading] = useState(true);
 

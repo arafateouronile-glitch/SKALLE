@@ -35,11 +35,22 @@ const FORMAT_LABELS: Record<LinkedInFormat, string> = {
   unknown: "Format inconnu",
 };
 
+export interface ImportedProspectSummary {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string;
+  jobTitle: string | null;
+}
+
 interface LinkedInImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
-  onImported: () => void;
+  /** Reçoit les prospects importés/mis à jour dans cet appel — ignoré par les
+   * appelants existants qui n'ont pas besoin de la liste (compatible sans
+   * changement côté eux). */
+  onImported: (prospects: ImportedProspectSummary[]) => void;
 }
 
 export function LinkedInImportDialog({
@@ -144,7 +155,7 @@ export function LinkedInImportDialog({
         if (result.duplicates) parts.push(`${result.duplicates} doublons`);
         if (result.errors) parts.push(`${result.errors} erreurs`);
         toast.success(parts.join(", "));
-        onImported();
+        onImported(result.prospects ?? []);
         onOpenChange(false);
       } else {
         toast.error(result.error || "Erreur d'import");

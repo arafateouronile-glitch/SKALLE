@@ -38,11 +38,12 @@ import { toast } from "sonner";
 import { CREDIT_COSTS } from "@/lib/credits";
 import { cn } from "@/lib/utils";
 import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
+import { useEnrichBeforeCampaign } from "@/hooks/use-enrich-before-campaign";
 
 const COST = CREDIT_COSTS.job_board_signals;
 
 export { SignalsRadarPage as SignalsRadarTab };
-export default function SignalsRadarPage() {
+export default function SignalsRadarPage({ crmHref = "/sales-os/crm" }: { crmHref?: string } = {}) {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [location, setLocation] = useState("Paris");
@@ -55,6 +56,7 @@ export default function SignalsRadarPage() {
   const [bulkImporting, setBulkImporting] = useState(false);
   const [campaignProspects, setCampaignProspects] = useState<{ id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const { enriching, enrichThenOpen } = useEnrichBeforeCampaign(workspaceId);
 
   const signalId = (s: AnalyzedSignal) => s.companyName + s.jobTitle;
 
@@ -162,9 +164,11 @@ export default function SignalsRadarPage() {
       if (res.success && res.prospects && res.prospects.length > 0) {
         setSignals((prev) => prev.filter((s) => !selectedIds.has(signalId(s))));
         setSelectedIds(new Set());
-        setCampaignProspects(res.prospects);
-        setWizardOpen(true);
-        toast.success(`${res.imported} signal(aux) importé(s). Configurez votre campagne.`);
+        toast.success(`${res.imported} signal(aux) importé(s). Enrichissement en cours…`);
+        await enrichThenOpen(res.prospects, (prospects) => {
+          setCampaignProspects(prospects);
+          setWizardOpen(true);
+        });
       } else {
         toast.error(res.error ?? "Erreur lors de l'import.");
       }
@@ -173,7 +177,7 @@ export default function SignalsRadarPage() {
     } finally {
       setBulkImporting(false);
     }
-  }, [workspaceId, signals, selectedIds]);
+  }, [workspaceId, signals, selectedIds, enrichThenOpen]);
 
   if (!workspaceId) {
     return (
@@ -224,11 +228,11 @@ export default function SignalsRadarPage() {
                     {selectedIds.size > 0 && (
                       <Button
                         size="sm"
-                        disabled={bulkImporting}
+                        disabled={bulkImporting || enriching}
                         onClick={handleLaunchCampaign}
                         className="h-7 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500"
                       >
-                        {bulkImporting ? (
+                        {bulkImporting || enriching ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <><Rocket className="mr-1 h-3 w-3" />Campagne ({selectedIds.size})</>
@@ -374,7 +378,7 @@ export default function SignalsRadarPage() {
         )}
 
         {/* Aucun résultat */}
-        {!scanning && signals.length === 0 && keyword && <EmptyState />}
+        {!scanning && signals.length === 0 && keyword && <EmptyState crmHref={crmHref} />}
 
         {/* État initial */}
         {!keyword && !scanning && <InitialState />}
@@ -700,7 +704,7 @@ function InitialState() {
 
 // ─── État vide ───────────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyState({ crmHref = "/sales-os/crm" }: { crmHref?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -716,7 +720,7 @@ function EmptyState() {
         size="sm"
         className="mt-6 rounded-xl border-gray-200 text-gray-600 hover:bg-gray-50"
       >
-        <Link href="/sales-os/crm">
+        <Link href={crmHref}>
           Voir le CRM
           <ArrowRight className="ml-2 h-3.5 w-3.5" />
         </Link>

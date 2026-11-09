@@ -12,6 +12,7 @@
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { inngest } from "@/inngest/client";
 import { findQualifiedLeads, enrichLeadClay, verifyEmailHunter } from "@/lib/prospection/enrichment";
 import { z } from "zod";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
@@ -174,7 +175,14 @@ export async function importLeads(
     industry?: string;
   }>,
   listId?: string
-): Promise<{ success: boolean; imported?: number; duplicates?: number; errors?: number; error?: string }> {
+): Promise<{
+  success: boolean;
+  imported?: number;
+  duplicates?: number;
+  errors?: number;
+  error?: string;
+  prospects?: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[];
+}> {
   try {
     const session = await requireAuth();
 
@@ -190,6 +198,7 @@ export async function importLeads(
     let duplicates = 0;
     let errors = 0;
     const importedProspectIds: string[] = [];
+    const importedProspects: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[] = [];
 
     // Importer chaque lead
     for (const lead of leads) {
@@ -207,7 +216,7 @@ export async function importLeads(
 
         if (existing) {
           // Mettre a jour le lead existant (merge)
-          await prisma.prospect.update({
+          const updated = await prisma.prospect.update({
             where: { id: existing.id },
             data: {
               name: lead.name || existing.name,
@@ -220,8 +229,10 @@ export async function importLeads(
               industry: lead.industry || existing.industry,
               emailVerified: lead.email ? true : existing.emailVerified,
             },
+            select: { id: true, name: true, email: true, company: true, jobTitle: true },
           });
-          importedProspectIds.push(existing.id);
+          importedProspectIds.push(updated.id);
+          importedProspects.push(updated);
           duplicates++;
         } else {
           // Creer un nouveau lead
@@ -238,9 +249,19 @@ export async function importLeads(
               emailVerified: lead.email ? true : false,
               workspaceId,
             },
+            select: { id: true, name: true, email: true, company: true, jobTitle: true },
           });
           importedProspectIds.push(created.id);
+          importedProspects.push(created);
           imported++;
+          // Sans email, rend ce lead éligible à l'enrichissement Dropcontact
+          // (cf. autoEnrichOnCreate) — les autres flux de création (Local/Signals
+          // Radar, import Apollo) émettent déjà cet événement, celui-ci ne le
+          // faisait pas et ne passait donc que par le batch nocturne autopilot-only.
+          await inngest.send({
+            name: "prospect/created",
+            data: { prospectId: created.id, workspaceId, userId: session.user!.id! },
+          }).catch(() => {/* fire-and-forget */});
         }
       } catch (error: any) {
         // Gerer les violations de contrainte unique (P2002)
@@ -264,7 +285,7 @@ export async function importLeads(
       });
     }
 
-    return { success: true, imported, duplicates, errors };
+    return { success: true, imported, duplicates, errors, prospects: importedProspects };
   } catch (error) {
     console.error("Import leads error:", error);
     return { success: false, error: String(error) };

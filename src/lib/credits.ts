@@ -37,6 +37,7 @@ export const CREDIT_COSTS = {
   social_post: 1,
   post_direct_generate: 3,       // Génération directe d'un post via architecture émotionnelle
   linkedin_series: 12,           // Série 5 posts LinkedIn cohérents (arc narratif Mon→Ven)
+  content_angle_suggest: 1,      // Goskalle — suggestions d'angles LinkedIn calées sur un persona ICP
 
   // Prospection
   prospect_sequence: 3,
@@ -65,6 +66,7 @@ export const CREDIT_COSTS = {
   local_maps_scan: 10,          // Local Radar — scan + qualification IA (jusqu'à 100 leads, Filtre à Douleur)
   newborn_radar_scan: 5,        // Newborn Radar — scan registre INSEE (jusqu'à 25 nouvelles entreprises + hooks IA)
   newborn_enrichment: 2,        // Enrichissement Dropcontact par lead qualifié (email professionnel + statut)
+  qualiopi_radar_scan: 5,       // Qualiopi Radar — scan du registre Organismes de Formation + hooks IA
 
   // Images
   image_generation: 3,
@@ -93,7 +95,10 @@ export const CREDIT_COSTS = {
   agent_prospection: 5,
 
   // Agent Intelligence (nouvelles fonctionnalités différenciatrices)
-  auto_enrichment: 3,       // Enrichissement automatique d'un prospect (Apollo/Hunter)
+  auto_enrichment: 3,       // Enrichissement automatique d'un prospect (Serper/Dropcontact/Apollo)
+  decision_maker_resolve: 3, // Résolution d'un décideur nommé (Serper) pour Signals/Local Radar avant enrichissement
+  campaign_ai_personalization: 2, // Personnalisation IA profonde d'un step de campagne (recherche LinkedIn/actu par prospect)
+  warm_lead_company_enrich: 2, // Goskalle — extraction entreprise d'un warm lead depuis son headline LinkedIn
   ab_test_variant: 2,       // Génération d'une variante B pour A/B test social
   competitor_alert_scan: 0, // Scan concurrent pour alertes (interne, gratuit)
   gsc_sync: 0,              // Synchronisation Google Search Console (interne, gratuit)
@@ -181,6 +186,20 @@ export function canAccessCso(
   workspace: { hasCsoAccess: boolean } | null | undefined
 ): boolean {
   return planIncludesCso(user.plan) || workspace?.hasCsoAccess === true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔐 ACCÈS GOSKALLE — produit en incubation, gate manuelle (pas de plan public)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Goskalle n'est pas encore vendu — l'accès se fait uniquement via le flag
+ * workspace.hasGoskalleAccess, activé manuellement pendant l'incubation.
+ */
+export function canAccessGoskalle(
+  workspace: { hasGoskalleAccess: boolean } | null | undefined
+): boolean {
+  return workspace?.hasGoskalleAccess === true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -309,6 +328,7 @@ export interface CreditStats {
   monthlyLimit: number;
   usedThisMonth: number;
   percentageUsed: number;
+  plan: Plan;
   topOperations: { operation: string; count: number; credits: number }[];
 }
 
@@ -344,6 +364,7 @@ export async function getCreditStats(userId: string): Promise<CreditStats | null
     monthlyLimit,
     usedThisMonth,
     percentageUsed: Math.round((usedThisMonth / monthlyLimit) * 100),
+    plan: user.plan,
     topOperations: usage
       .map(u => ({
         operation: u.operation,

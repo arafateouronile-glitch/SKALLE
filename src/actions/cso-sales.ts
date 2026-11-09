@@ -622,6 +622,14 @@ import {
   type NewbornSearchCriteria,
   type NewbornLeadEnriched,
 } from "@/lib/services/sales/newborn-leads";
+import {
+  scanQualiopiOrganisms,
+  bulkSaveQualiopiLeads,
+  type QualiopiSearchCriteria,
+  type QualiopiLead,
+} from "@/lib/services/sales/qualiopi-radar";
+import { resolveDecisionMaker } from "@/lib/services/prospects/decision-maker-resolver";
+import { autoEnrichProspect } from "@/lib/prospection/auto-enrichment";
 
 const calendarLinkSchema = z.object({
   calendarLink: z.string().url("L'URL doit être valide (ex: https://cal.com/votrenpm)").optional().or(z.literal("")),
@@ -751,6 +759,178 @@ export async function bulkImportNewbornLeadsAction(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erreur lors de l'import",
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎓 QUALIOPI RADAR (Registre des organismes de formation certifiés)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const QUALIOPI_OP: OperationType = "qualiopi_radar_scan";
+
+/**
+ * Scan du cache local `QualiopiOrganism` (synchronisé hebdomadairement) :
+ * filtre région + catégories de certification, génère les accroches IA.
+ * Retourne les leads sans les sauvegarder. Coût : 5 crédits.
+ */
+export async function scanQualiopiRadarAction(
+  workspaceId: string,
+  criteria: QualiopiSearchCriteria
+): Promise<{
+  success: boolean;
+  leads?: QualiopiLead[];
+  total?: number;
+  error?: string;
+  creditsUsed?: number;
+  currentCredits?: number;
+}> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+    const userId = session.user!.id!;
+
+    const { hasCredits, currentCredits, cost } = await hasEnoughCredits(userId, QUALIOPI_OP);
+    if (!hasCredits) {
+      return {
+        success: false,
+        error: `Crédits insuffisants. Requis : ${cost}, disponibles : ${currentCredits}`,
+        currentCredits,
+      };
+    }
+
+    const result = await scanQualiopiOrganisms(userId, criteria);
+    if (!result.success) {
+      return { success: false, error: result.error, creditsUsed: result.creditsUsed };
+    }
+
+    return {
+      success: true,
+      leads: result.leads,
+      total: result.total,
+      creditsUsed: result.creditsUsed,
+    };
+  } catch (error) {
+    console.error("scanQualiopiRadarAction:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erreur lors du scan",
+    };
+  }
+}
+
+/**
+ * Importe en masse les leads sélectionnés dans le CRM.
+ * source = "QUALIOPI_REGISTRY", status = "NEW". Le décideur (nom de personne)
+ * n'est pas encore connu à ce stade — résolu par le cron
+ * `resolve-radar-decision-makers`, qui déclenchera l'enrichissement Dropcontact
+ * une fois un nom trouvé.
+ */
+export async function bulkImportQualiopiLeadsAction(
+  workspaceId: string,
+  leads: QualiopiLead[]
+): Promise<{ success: boolean; imported?: number; prospects?: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]; error?: string }> {
+  try {
+    const session = await requireAuth();
+    await requireWorkspace(workspaceId, session.user!.id!);
+    const result = await bulkSaveQualiopiLeads(workspaceId, leads);
+    return { success: true, imported: result.imported, prospects: result.prospects };
+  } catch (error) {
+    console.error("bulkImportQualiopiLeadsAction:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erreur lors de l'import",
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🚀 ENRICHISSEMENT À LA DEMANDE — avant ouverture du wizard de campagne
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ENRICH_BATCH_CONCURRENCY = 5;
+
+/**
+ * Enrichit immédiatement un petit lot de prospects déjà sélectionnés (pas tout
+ * le pool scanné) avant de lancer une campagne — réutilise tel quel
+ * `resolveDecisionMaker` (résout un décideur nommé pour les leads radar encore
+ * au niveau entreprise — no-op silencieux pour les autres) puis
+ * `autoEnrichProspect` (cascade Serper → Dropcontact → Apollo) si l'email est
+ * toujours manquant. Contrairement au cron nocturne `resolve-radar-decision-
+ * makers`, tourne au clic — quelques secondes sur un petit lot, pas la nuit
+ * entière sur tout le pipeline.
+ */
+export interface EnrichedProspectSummary {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string;
+  jobTitle: string | null;
+}
+
+export async function enrichSelectedProspectsAction(
+  workspaceId: string,
+  prospectIds: string[]
+): Promise<{
+  success: boolean;
+  enrichedCount: number;
+  total: number;
+  prospects?: EnrichedProspectSummary[];
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth();
+    const userId = session.user!.id!;
+    await requireWorkspace(workspaceId, userId);
+
+    let enrichedCount = 0;
+
+    for (let i = 0; i < prospectIds.length; i += ENRICH_BATCH_CONCURRENCY) {
+      const batch = prospectIds.slice(i, i + ENRICH_BATCH_CONCURRENCY);
+      await Promise.allSettled(
+        batch.map(async (prospectId) => {
+          try {
+            // 1. Lead radar encore au niveau entreprise ? Résout un décideur nommé
+            // (no-op silencieux si pas applicable — déjà vérifié en interne).
+            await resolveDecisionMaker(prospectId, userId);
+
+            // 2. Email toujours manquant (radar juste résolu, warm lead, import CSV
+            // sans email...) → cascade d'enrichissement générique.
+            const prospect = await prisma.prospect.findUnique({
+              where: { id: prospectId, workspaceId },
+              select: { id: true, name: true, company: true, jobTitle: true, email: true, workspaceId: true },
+            });
+            if (!prospect) return;
+
+            if (prospect.email) {
+              enrichedCount++; // avait déjà un email réel
+              return;
+            }
+
+            const result = await autoEnrichProspect(prospect);
+            if (result.enriched) enrichedCount++;
+          } catch (err) {
+            console.error(`[EnrichSelected] Erreur prospect ${prospectId}:`, err);
+          }
+        })
+      );
+    }
+
+    // Renvoie l'état à jour (noms/emails potentiellement résolus à l'instant)
+    // pour éviter un second aller-retour avant d'ouvrir le wizard de campagne.
+    const prospects = await prisma.prospect.findMany({
+      where: { id: { in: prospectIds }, workspaceId },
+      select: { id: true, name: true, email: true, company: true, jobTitle: true },
+    });
+
+    return { success: true, enrichedCount, total: prospectIds.length, prospects };
+  } catch (error) {
+    console.error("enrichSelectedProspectsAction:", error);
+    return {
+      success: false,
+      enrichedCount: 0,
+      total: prospectIds.length,
+      error: error instanceof Error ? error.message : "Erreur lors de l'enrichissement",
     };
   }
 }
@@ -918,7 +1098,7 @@ export async function bulkSaveApolloLeadsAction(
           industry: lead.industry ?? null,
           location: lead.location ?? null,
           companySize: lead.companySize ?? null,
-          source: "LINKEDIN" as const,
+          source: "APOLLO_ICP_MATCH" as const,
           temperature: lead.emailVerified ? "WARM" : "COLD",
           score: lead.emailVerified ? 75 : lead.email ? 65 : 55,
           workspaceId,
@@ -969,6 +1149,11 @@ export async function bulkSaveApolloLeadsAction(
             });
           }
         }
+
+        await inngest.send({
+          name: "signal/prospect-fusion",
+          data: { prospectId: prospect.id, workspaceId },
+        }).catch(() => {/* fire-and-forget */});
 
         saved.push({ id: prospect.id, name: prospect.name });
       } catch {

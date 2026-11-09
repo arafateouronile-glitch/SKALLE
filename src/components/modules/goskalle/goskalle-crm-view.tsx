@@ -1,0 +1,802 @@
+"use client";
+
+/**
+ * CRM Pipeline — Kanban complet
+ * Statuts : NEW → RESEARCHED → MESSAGES_GENERATED → CONTACTED → RESPONDED → MEETING_BOOKED → CONVERTED (+ REJECTED)
+ * Drag & drop HTML5 · panneau de détail · filtres source · relance intelligente
+ */
+
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import {
+  Linkedin,
+  Instagram,
+  Facebook,
+  Loader2,
+  MessageCircle,
+  RefreshCw,
+  GripVertical,
+  TrendingUp,
+  AlertCircle,
+  Radio,
+  MapPin,
+  Building2,
+  Flame,
+  Thermometer,
+  Snowflake,
+  Globe,
+  Users,
+  LayoutGrid,
+  X,
+  Mail,
+  Phone,
+  ExternalLink,
+  ChevronRight,
+  Calendar,
+  StickyNote,
+  Rocket,
+} from "lucide-react";
+import {
+  getProspectsForCrm,
+  getRelanceLeads,
+  updateProspectStatusAction,
+  type CRMSourceFilter,
+  type ProspectForCrm,
+  type ProspectStatusPipeline,
+} from "@/actions/crm";
+import { getUserWorkspace } from "@/actions/leads";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { MarkConvertedDialog } from "@/components/modules/cso/mark-converted-dialog";
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+const SOURCE_TABS: {
+  value: CRMSourceFilter;
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+}[] = [
+  { value: "all", label: "Tous", icon: <LayoutGrid className="h-3.5 w-3.5" />, color: "text-gray-400" },
+  { value: "JOB_BOARD_SIGNAL", label: "Signaux", icon: <Radio className="h-3.5 w-3.5" />, color: "text-violet-500" },
+  { value: "LOCAL_MAPS", label: "Local", icon: <MapPin className="h-3.5 w-3.5" />, color: "text-amber-500" },
+  { value: "NEW_COMPANY_REGISTRY", label: "Registre", icon: <Building2 className="h-3.5 w-3.5" />, color: "text-emerald-500" },
+  { value: "LINKEDIN", label: "LinkedIn", icon: <Linkedin className="h-3.5 w-3.5" />, color: "text-sky-500" },
+  { value: "FACEBOOK_GROUP", label: "Facebook", icon: <Facebook className="h-3.5 w-3.5" />, color: "text-blue-500" },
+  { value: "INSTAGRAM_HASHTAG", label: "Instagram", icon: <Instagram className="h-3.5 w-3.5" />, color: "text-pink-500" },
+];
+
+type ColConfig = {
+  status: ProspectStatusPipeline;
+  label: string;
+  accent: string;
+  headerBg: string;
+  dot: string;
+  dropBg: string;
+};
+
+const PIPELINE_COLUMNS: ColConfig[] = [
+  {
+    status: "NEW",
+    label: "Nouveaux",
+    accent: "border-gray-200",
+    headerBg: "bg-gray-100",
+    dot: "bg-gray-400",
+    dropBg: "border-gray-400 bg-gray-100",
+  },
+  {
+    status: "RESEARCHED",
+    label: "Recherchés",
+    accent: "border-cyan-200",
+    headerBg: "bg-cyan-50",
+    dot: "bg-cyan-400",
+    dropBg: "border-cyan-400 bg-cyan-50",
+  },
+  {
+    status: "MESSAGES_GENERATED",
+    label: "Msgs générés",
+    accent: "border-purple-200",
+    headerBg: "bg-purple-50",
+    dot: "bg-purple-400",
+    dropBg: "border-purple-400 bg-purple-50",
+  },
+  {
+    status: "CONTACTED",
+    label: "Contactés",
+    accent: "border-amber-200",
+    headerBg: "bg-amber-50",
+    dot: "bg-amber-400",
+    dropBg: "border-amber-400 bg-amber-50",
+  },
+  {
+    status: "RESPONDED",
+    label: "Répondus",
+    accent: "border-violet-200",
+    headerBg: "bg-violet-50",
+    dot: "bg-violet-400",
+    dropBg: "border-violet-400 bg-violet-50",
+  },
+  {
+    status: "MEETING_BOOKED",
+    label: "RDV pris",
+    accent: "border-blue-200",
+    headerBg: "bg-blue-50",
+    dot: "bg-blue-400",
+    dropBg: "border-blue-400 bg-blue-50",
+  },
+  {
+    status: "CONVERTED",
+    label: "Gagnés",
+    accent: "border-emerald-200",
+    headerBg: "bg-emerald-50",
+    dot: "bg-emerald-400",
+    dropBg: "border-emerald-400 bg-emerald-50",
+  },
+  {
+    status: "REJECTED",
+    label: "Perdus",
+    accent: "border-red-200",
+    headerBg: "bg-red-50",
+    dot: "bg-red-400",
+    dropBg: "border-red-300 bg-red-50",
+  },
+];
+
+const STATUS_LABELS: Record<string, string> = {
+  NEW: "Nouveau",
+  RESEARCHED: "Recherché",
+  MESSAGES_GENERATED: "Msgs générés",
+  CONTACTED: "Contacté",
+  RESPONDED: "Répondu",
+  MEETING_BOOKED: "RDV pris",
+  CONVERTED: "Gagné",
+  REJECTED: "Perdu",
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatDate(d: Date | string | null) {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  const diff = Math.floor((Date.now() - date.getTime()) / 86400000);
+  if (diff === 0) return "Aujourd'hui";
+  if (diff === 1) return "Hier";
+  if (diff < 7) return `J-${diff}`;
+  return date.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+function SourceIcon({ source, platform }: { source: string | null; platform: string | null }) {
+  const s = (source || platform || "").toUpperCase();
+  if (s === "JOB_BOARD_SIGNAL") return <Radio className="h-3 w-3 text-violet-500" />;
+  if (s === "LOCAL_MAPS") return <MapPin className="h-3 w-3 text-amber-500" />;
+  if (s === "NEW_COMPANY_REGISTRY") return <Building2 className="h-3 w-3 text-emerald-500" />;
+  if (s === "SEO_INBOUND") return <Globe className="h-3 w-3 text-teal-500" />;
+  if (s.includes("INSTAGRAM")) return <Instagram className="h-3 w-3 text-pink-500" />;
+  if (s.includes("FACEBOOK")) return <Facebook className="h-3 w-3 text-blue-500" />;
+  return <Linkedin className="h-3 w-3 text-sky-500" />;
+}
+
+function TemperatureIcon({ temp }: { temp: string }) {
+  if (temp === "HOT") return <Flame className="h-3 w-3 text-red-400" />;
+  if (temp === "WARM") return <Thermometer className="h-3 w-3 text-amber-400" />;
+  return <Snowflake className="h-3 w-3 text-blue-300" />;
+}
+
+// ─── Prospect Card ────────────────────────────────────────────────────────────
+
+function ProspectCard({
+  p,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onClick,
+}: {
+  p: ProspectForCrm;
+  isDragging: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onClick: () => void;
+}) {
+  const date = formatDate(p.lastInteractionAt);
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("prospectId", p.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart(e);
+      }}
+      onDragEnd={onDragEnd}
+      onClick={onClick}
+      className={cn(
+        "gk-card-hover group rounded-xl p-3 cursor-pointer",
+        isDragging && "opacity-40 scale-95"
+      )}
+      style={{ background: "var(--bg-card)", border: `1px solid ${isDragging ? "var(--line-strong)" : "var(--line)"}` }}
+    >
+      <div className="flex items-start gap-2">
+        <GripVertical className="h-4 w-4 text-gray-300 group-hover:text-gray-400 shrink-0 mt-0.5 transition-colors cursor-grab active:cursor-grabbing" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-1">
+            <p className="font-semibold text-gray-900 text-sm truncate">{p.name}</p>
+            <TemperatureIcon temp={p.temperature} />
+          </div>
+
+          <p className="text-[11px] text-gray-500 truncate mt-0.5">
+            {p.company}
+            {p.jobTitle && <span className="text-gray-400"> · {p.jobTitle}</span>}
+          </p>
+
+          {p.score > 0 && (
+            <div className="mt-2 flex items-center gap-1.5">
+              <div className="flex-1 h-1 rounded-full bg-gray-200 overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    p.score >= 80 ? "bg-red-500" : p.score >= 40 ? "bg-amber-500" : "bg-gray-300"
+                  )}
+                  style={{ width: `${Math.min(p.score, 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] tabular-nums text-gray-400 w-6 text-right">{p.score}</span>
+            </div>
+          )}
+
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <SourceIcon source={p.source} platform={p.platform} />
+            {p.value != null && p.value > 0 && (
+              <span className="text-[10px] font-semibold text-emerald-600 tabular-nums">
+                {p.value.toLocaleString("fr-FR")} €
+              </span>
+            )}
+            {date && (
+              <span className="text-[10px] text-gray-400 ml-auto tabular-nums">{date}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Detail Panel ─────────────────────────────────────────────────────────────
+
+function DetailPanel({
+  prospect,
+  onClose,
+  onStatusChange,
+}: {
+  prospect: ProspectForCrm;
+  onClose: () => void;
+  onStatusChange: (prospectId: string, status: ProspectStatusPipeline) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  const col = PIPELINE_COLUMNS.find((c) => c.status === prospect.status);
+  const nextStatuses = PIPELINE_COLUMNS.filter((c) => c.status !== prospect.status && c.status !== "REJECTED");
+
+  const handleMove = async (status: ProspectStatusPipeline) => {
+    setSaving(true);
+    await onStatusChange(prospect.id, status);
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-y-0 right-0 z-40 flex">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/20 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="relative ml-auto w-[380px] bg-white shadow-2xl flex flex-col h-full overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-start justify-between gap-3 z-10">
+          <div className="min-w-0">
+            <h2 className="font-bold text-gray-900 text-base truncate">{prospect.name}</h2>
+            <p className="text-sm text-gray-500 mt-0.5 truncate">
+              {prospect.company}
+              {prospect.jobTitle && <span className="text-gray-400"> · {prospect.jobTitle}</span>}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5 flex-1">
+          {/* Status badge */}
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border",
+                col
+                  ? `${col.headerBg} ${col.accent}`
+                  : "bg-gray-100 border-gray-200"
+              )}
+            >
+              {col && <span className={cn("h-1.5 w-1.5 rounded-full", col.dot)} />}
+              {STATUS_LABELS[prospect.status] ?? prospect.status}
+            </span>
+            {prospect.temperature && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <TemperatureIcon temp={prospect.temperature} />
+                {prospect.temperature === "HOT" ? "Chaud" : prospect.temperature === "WARM" ? "Tiède" : "Froid"}
+              </span>
+            )}
+            {prospect.score > 0 && (
+              <span className="text-xs text-gray-400 ml-auto tabular-nums">
+                Score {prospect.score}/100
+              </span>
+            )}
+          </div>
+
+          {/* Contact info */}
+          <div className="space-y-2">
+            {prospect.email && (
+              <a
+                href={`mailto:${prospect.email}`}
+                className="flex items-center gap-2 text-sm text-gray-700 hover:text-blue-600 transition-colors group"
+              >
+                <Mail className="h-4 w-4 text-gray-400 group-hover:text-blue-400 shrink-0" />
+                <span className="truncate">{prospect.email}</span>
+              </a>
+            )}
+            {prospect.phone && (
+              <a
+                href={`tel:${prospect.phone}`}
+                className="flex items-center gap-2 text-sm text-gray-700 hover:text-blue-600 transition-colors group"
+              >
+                <Phone className="h-4 w-4 text-gray-400 group-hover:text-blue-400 shrink-0" />
+                {prospect.phone}
+              </a>
+            )}
+            {prospect.linkedInUrl && (
+              <a
+                href={prospect.linkedInUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-gray-700 hover:text-sky-600 transition-colors group"
+              >
+                <Linkedin className="h-4 w-4 text-gray-400 group-hover:text-sky-500 shrink-0" />
+                <span className="truncate text-sky-600">{prospect.linkedInUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "").replace(/\/$/, "")}</span>
+                <ExternalLink className="h-3 w-3 text-gray-300 shrink-0" />
+              </a>
+            )}
+          </div>
+
+          {/* Value */}
+          {prospect.value != null && prospect.value > 0 && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+              <p className="text-xs text-emerald-600 mb-0.5">Valeur estimée</p>
+              <p className="text-lg font-bold text-emerald-700 tabular-nums">
+                {prospect.value.toLocaleString("fr-FR")} €
+              </p>
+            </div>
+          )}
+
+          {/* Notes */}
+          {prospect.notes && (
+            <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <StickyNote className="h-3.5 w-3.5 text-gray-400" />
+                <p className="text-xs font-medium text-gray-500">Notes</p>
+              </div>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{prospect.notes}</p>
+            </div>
+          )}
+
+          {/* Timestamps */}
+          <div className="space-y-1.5 text-[11px] text-gray-400">
+            {prospect.lastInteractionAt && (
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-3 w-3" />
+                Dernière interaction : {formatDate(prospect.lastInteractionAt)}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3 w-3" />
+              Ajouté le {new Date(prospect.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+            </div>
+          </div>
+
+          {/* Quick actions */}
+          <div className="space-y-2 pt-1">
+            <Link
+              href={`/goskalle/conversations?prospectId=${prospect.id}`}
+              className="flex items-center justify-between w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-700 hover:border-[var(--amber-line)] hover:bg-[var(--amber-soft)] hover:text-[var(--amber-fg)] transition-all group"
+            >
+              <span className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-gray-400 group-hover:text-[var(--amber-fg)]" />
+                Reply Assistant
+              </span>
+              <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-[var(--amber-fg)]" />
+            </Link>
+            {prospect.linkedInUrl && (
+              <a
+                href={`/goskalle/conversations?tab=builder`}
+                className="flex items-center justify-between w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 transition-all group"
+              >
+                <span className="flex items-center gap-2">
+                  <Rocket className="h-4 w-4 text-gray-400 group-hover:text-sky-500" />
+                  Lancer séquence LinkedIn
+                </span>
+                <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-sky-400" />
+              </a>
+            )}
+          </div>
+
+          {/* Move to stage */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Déplacer vers</p>
+            <div className="flex flex-wrap gap-1.5">
+              {nextStatuses.map((c) => (
+                <button
+                  key={c.status}
+                  disabled={saving}
+                  onClick={() => handleMove(c.status)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border transition-all",
+                    c.headerBg,
+                    c.accent,
+                    "hover:brightness-95 disabled:opacity-50"
+                  )}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", c.dot)} />
+                  {c.label}
+                </button>
+              ))}
+              {prospect.status !== "REJECTED" && (
+                <button
+                  disabled={saving}
+                  onClick={() => handleMove("REJECTED")}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-all disabled:opacity-50"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-400 shrink-0" />
+                  Perdu
+                </button>
+              )}
+            </div>
+            {saving && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Mise à jour…
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export function GoskalleCrmView() {
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [prospects, setProspects] = useState<ProspectForCrm[]>([]);
+  const [relanceLeads, setRelanceLeads] = useState<ProspectForCrm[]>([]);
+  const [sourceTab, setSourceTab] = useState<CRMSourceFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<ProspectStatusPipeline | null>(null);
+  const [selectedProspect, setSelectedProspect] = useState<ProspectForCrm | null>(null);
+  const [pendingConversion, setPendingConversion] = useState<{ prospectId: string; name: string } | null>(null);
+
+  const loadAll = useCallback(async (wsId: string, tab: CRMSourceFilter) => {
+    setLoading(true);
+    try {
+      const [crmRes, relanceRes] = await Promise.all([
+        getProspectsForCrm(wsId, tab),
+        getRelanceLeads(wsId),
+      ]);
+      if (crmRes.success && crmRes.data) setProspects(crmRes.data);
+      else toast.error(crmRes.error || "Erreur chargement");
+      if (relanceRes.success && relanceRes.data) setRelanceLeads(relanceRes.data);
+    } catch {
+      toast.error("Erreur chargement");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const res = await getUserWorkspace();
+      if (res.success && res.workspaceId) {
+        setWorkspaceId(res.workspaceId);
+        loadAll(res.workspaceId, "all");
+      }
+    })();
+  }, [loadAll]);
+
+  useEffect(() => {
+    if (workspaceId) loadAll(workspaceId, sourceTab);
+  }, [workspaceId, sourceTab, loadAll]);
+
+  const performStatusChange = useCallback(
+    async (prospectId: string, newStatus: ProspectStatusPipeline, value?: number) => {
+      if (!workspaceId) return;
+      setDraggedId(null);
+      setDropTarget(null);
+      setProspects((prev) =>
+        prev.map((p) =>
+          p.id === prospectId ? { ...p, status: newStatus, ...(value !== undefined ? { value } : {}) } : p
+        )
+      );
+      if (selectedProspect?.id === prospectId) {
+        setSelectedProspect((p) =>
+          p ? { ...p, status: newStatus, ...(value !== undefined ? { value } : {}) } : p
+        );
+      }
+      const ok = await updateProspectStatusAction(prospectId, newStatus, workspaceId, value);
+      if (!ok.success) {
+        toast.error(ok.error || "Erreur");
+        loadAll(workspaceId, sourceTab);
+      }
+    },
+    [workspaceId, sourceTab, loadAll, selectedProspect]
+  );
+
+  // Passer par CONVERTED demande toujours un montant de deal (ou un refus explicite) —
+  // le drop est intercepté avant tout appel réseau, performStatusChange ne se
+  // déclenche qu'à la confirmation du dialog.
+  const onDrop = useCallback(
+    async (prospectId: string, newStatus: ProspectStatusPipeline) => {
+      if (newStatus === "CONVERTED") {
+        setDraggedId(null);
+        setDropTarget(null);
+        const p = prospects.find((x) => x.id === prospectId);
+        setPendingConversion({ prospectId, name: p?.name ?? "ce prospect" });
+        return;
+      }
+      await performStatusChange(prospectId, newStatus);
+    },
+    [prospects, performStatusChange]
+  );
+
+  const byStatus = (status: ProspectStatusPipeline) =>
+    prospects.filter((p) => p.status === status);
+
+  const total = prospects.length;
+  const hot = prospects.filter((p) => p.temperature === "HOT").length;
+  const pipelineValue = prospects.reduce((s, p) => s + (p.value ?? 0), 0);
+
+  if (!workspaceId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}>
+        <Loader2 className="h-8 w-8 animate-spin" style={{ color: "var(--amber-fg)" }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen" style={{ background: "var(--bg)", color: "var(--fg)" }}>
+
+      {/* ── Header ── */}
+      <div className="sticky top-0 z-20" style={{ borderBottom: "1px solid var(--line)", background: "var(--bg-card)" }}>
+        <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8">
+
+          <div className="flex items-center justify-between py-4" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-line)" }}>
+                <TrendingUp className="h-5 w-5" style={{ color: "var(--amber-fg)" }} />
+              </div>
+              <div>
+                <h1 className="text-[14px] font-display font-bold" style={{ color: "var(--fg)" }}>CRM Pipeline</h1>
+                <p className="text-[11px]" style={{ color: "var(--fg-mute)" }}>Drag & drop · cliquez une carte pour les détails</p>
+              </div>
+            </div>
+
+            <div className="hidden md:flex items-center gap-2">
+              <span
+                className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs"
+                style={{ border: "1px solid var(--line)", background: "var(--bg-sidebar)", color: "var(--fg-mute)" }}
+              >
+                <Users className="h-3 w-3" />
+                <span className="tabular-nums font-semibold" style={{ color: "var(--fg)" }}>{total}</span>
+                leads
+              </span>
+              {hot > 0 && (
+                <span
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs"
+                  style={{ border: "1px solid var(--danger-line)", background: "var(--danger-soft)", color: "var(--danger-fg)" }}
+                >
+                  <Flame className="h-3 w-3" />
+                  <span className="tabular-nums font-semibold">{hot}</span> HOT
+                </span>
+              )}
+              {pipelineValue > 0 && (
+                <span
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs tabular-nums"
+                  style={{ border: "1px solid var(--emerald-line)", background: "var(--emerald-soft)", color: "var(--emerald-fg)" }}
+                >
+                  {pipelineValue.toLocaleString("fr-FR")} € pipeline
+                </span>
+              )}
+              <button
+                onClick={() => workspaceId && loadAll(workspaceId, sourceTab)}
+                className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition-colors"
+                style={{ border: "1px solid var(--line)", background: "var(--bg-sidebar)", color: "var(--fg-mute)" }}
+              >
+                <RefreshCw className="h-3 w-3" />
+                Actualiser
+              </button>
+            </div>
+          </div>
+
+          {/* Source tabs */}
+          <div className="flex items-center gap-1 py-3 overflow-x-auto no-scrollbar">
+            {SOURCE_TABS.map((tab) => {
+              const count =
+                tab.value === "all"
+                  ? total
+                  : prospects.filter((p) =>
+                      tab.value === "LINKEDIN"
+                        ? p.source === "LINKEDIN" || p.platform === "LINKEDIN"
+                        : tab.value === "FACEBOOK_GROUP"
+                        ? p.source === "FACEBOOK_GROUP" || p.platform === "FACEBOOK"
+                        : tab.value === "INSTAGRAM_HASHTAG"
+                        ? p.source === "INSTAGRAM_HASHTAG" || p.platform === "INSTAGRAM"
+                        : p.source === tab.value
+                    ).length;
+
+              const active = sourceTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setSourceTab(tab.value)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150"
+                  style={
+                    active
+                      ? { background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }
+                      : { border: "1px solid transparent", color: "var(--fg-mute)" }
+                  }
+                >
+                  <span className={active ? "" : tab.color} style={active ? { color: "var(--amber-fg)" } : undefined}>
+                    {tab.icon}
+                  </span>
+                  {tab.label}
+                  {count > 0 && (
+                    <span
+                      className="ml-0.5 rounded-full px-1.5 py-0.5 text-[9px] tabular-nums font-bold"
+                      style={active ? { background: "var(--amber-line)", color: "var(--amber-fg)" } : { background: "var(--line-strong)", color: "var(--fg-mute)" }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-6">
+
+        {/* ── Relance intelligente ── */}
+        {relanceLeads.length > 0 && (
+          <div className="mb-6 rounded-xl p-4" style={{ border: "1px solid var(--amber-line)", background: "var(--amber-soft)" }}>
+            <div className="flex items-center gap-2 mb-3">
+              <AlertCircle className="h-4 w-4 shrink-0" style={{ color: "var(--amber-fg)" }} />
+              <p className="text-sm font-semibold" style={{ color: "var(--amber-fg)" }}>Relance intelligente</p>
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: "var(--amber-line)", color: "var(--amber-fg)" }}>
+                {relanceLeads.length} sans réponse depuis 4+ jours
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {relanceLeads.slice(0, 10).map((p) => (
+                <Link
+                  key={p.id}
+                  href={`/goskalle/conversations?prospectId=${p.id}`}
+                  className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-all"
+                  style={{ border: "1px solid var(--amber-line)", background: "var(--bg-card)", color: "var(--fg-dim)" }}
+                >
+                  <SourceIcon source={p.source} platform={p.platform} />
+                  <span className="font-medium" style={{ color: "var(--fg)" }}>{p.name}</span>
+                  <span style={{ color: "var(--fg-mute)" }}>{p.company}</span>
+                  <MessageCircle className="h-3 w-3 ml-1" style={{ color: "var(--amber-fg)" }} />
+                </Link>
+              ))}
+              {relanceLeads.length > 10 && (
+                <span className="flex items-center rounded-lg px-3 py-1.5 text-xs" style={{ border: "1px solid var(--line)", color: "var(--fg-mute)" }}>
+                  +{relanceLeads.length - 10} autres
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Kanban ── */}
+        <div className="flex gap-3 overflow-x-auto pb-4 items-start">
+          {PIPELINE_COLUMNS.map((col) => {
+            const cards = byStatus(col.status);
+            const isDropTarget = dropTarget === col.status;
+
+            return (
+              <div
+                key={col.status}
+                className={cn(
+                  "shrink-0 w-[240px] rounded-xl border-2 transition-all duration-150",
+                  isDropTarget ? col.dropBg : `${col.accent} bg-white/80`
+                )}
+                onDragOver={(e) => { e.preventDefault(); setDropTarget(col.status); }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const id = e.dataTransfer.getData("prospectId");
+                  if (id) onDrop(id, col.status);
+                  else setDropTarget(null);
+                }}
+              >
+                {/* Column header */}
+                <div className={cn("flex items-center justify-between px-3 py-2.5 rounded-t-[10px] border-b border-gray-200", col.headerBg)}>
+                  <div className="flex items-center gap-2">
+                    <span className={cn("h-2 w-2 rounded-full", col.dot)} />
+                    <span className="text-xs font-semibold text-gray-700">{col.label}</span>
+                  </div>
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-white/80 border border-gray-200 px-1.5 text-[10px] font-bold tabular-nums text-gray-500">
+                    {cards.length}
+                  </span>
+                </div>
+
+                {/* Cards */}
+                <div className="p-2 space-y-2 min-h-[120px]">
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--amber-fg)" }} />
+                    </div>
+                  ) : cards.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <div className="h-8 w-8 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center mb-2">
+                        <span className={cn("h-2 w-2 rounded-full opacity-30", col.dot)} />
+                      </div>
+                      <p className="text-[11px] text-gray-400">Glissez un lead ici</p>
+                    </div>
+                  ) : (
+                    cards.map((p) => (
+                      <ProspectCard
+                        key={p.id}
+                        p={p}
+                        isDragging={draggedId === p.id}
+                        onDragStart={() => setDraggedId(p.id)}
+                        onDragEnd={() => setDraggedId(null)}
+                        onClick={() => setSelectedProspect(p)}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Detail Panel ── */}
+      {selectedProspect && (
+        <DetailPanel
+          prospect={selectedProspect}
+          onClose={() => setSelectedProspect(null)}
+          onStatusChange={onDrop}
+        />
+      )}
+
+      <MarkConvertedDialog
+        open={!!pendingConversion}
+        prospectName={pendingConversion?.name ?? ""}
+        onClose={() => setPendingConversion(null)}
+        onConfirm={async (value) => {
+          if (!pendingConversion) return;
+          await performStatusChange(pendingConversion.prospectId, "CONVERTED", value ?? undefined);
+          setPendingConversion(null);
+        }}
+      />
+    </div>
+  );
+}
