@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { verifySmtpConnection, SMTP_PRESETS } from "@/lib/email/smtp-transport";
 import { encrypt, decryptIfNeeded } from "@/lib/encryption";
 import { personalizeEmail, hasAIPersonalization } from "@/lib/email/personalize-email";
+import { useCredits } from "@/lib/credits";
 import { getDefaultCampaignTemplates, type StepTemplate } from "@/lib/email/template-personalization";
 import { getOpenAI } from "@/lib/ai/langchain";
 import { personalizeCampaignCore, launchCampaignCore } from "@/lib/email/campaign-lifecycle";
@@ -528,6 +529,17 @@ export async function previewPersonalization(
 
     if (!prospect) {
       return { success: false, error: "Prospect non trouvé" };
+    }
+
+    // L'aperçu appelle le même moteur IA (recherche LinkedIn/actu + Claude)
+    // qu'une personnalisation réelle — même coût, donc même crédit débité,
+    // sinon l'aperçu permet un nombre illimité d'appels IA gratuits.
+    if (mode === "ai") {
+      // eslint-disable-next-line react-hooks/rules-of-hooks -- useCredits est une fonction utilitaire async, pas un hook React (faux positif sur le préfixe "use", même constat pré-existant sur d'autres appels de cette fonction dans le repo)
+      const creditResult = await useCredits(session.user!.id!, "campaign_ai_personalization");
+      if (!creditResult.success) {
+        return { success: false, error: "Crédits insuffisants pour la personnalisation IA" };
+      }
     }
 
     const smtpConfig = await prisma.smtpConfig.findFirst({
