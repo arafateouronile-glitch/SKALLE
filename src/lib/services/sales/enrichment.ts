@@ -32,7 +32,8 @@ export async function enrichLeadContact(
   firstName: string,
   lastName: string,
   companyName: string,
-  website?: string
+  website?: string,
+  linkedinUrl?: string | null
 ): Promise<EnrichmentResult> {
   const apiKey = process.env.DROPCONTACT_API_KEY;
 
@@ -56,6 +57,11 @@ export async function enrichLeadContact(
             last_name: lastName,
             company: companyName,
             website: website ?? null,
+            // `Prospect.linkedInUrl` sert parfois de simple URL de référence
+            // (Societe.com, page LinkedIn entreprise...) selon la source du
+            // lead — on ne l'envoie à Dropcontact que si c'est un vrai profil
+            // personnel, pour ne pas lui soumettre une donnée hors-sujet.
+            ...(linkedinUrl?.includes("linkedin.com/in/") && { linkedin: linkedinUrl }),
           },
         ],
         siren: false,
