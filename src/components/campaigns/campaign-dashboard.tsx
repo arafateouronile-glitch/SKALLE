@@ -276,6 +276,12 @@ export function CampaignDashboard({ workspaceId }: CampaignDashboardProps) {
                       {new Date(campaign.createdAt).toLocaleDateString("fr-FR")}
                     </span>
                   </div>
+                  {campaign.status === "PAUSED" && campaign.pausedReason && (
+                    <p className="mt-1.5 flex items-start gap-1 text-xs text-amber-600">
+                      <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                      {campaign.pausedReason}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">

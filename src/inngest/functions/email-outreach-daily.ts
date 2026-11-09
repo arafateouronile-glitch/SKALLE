@@ -16,6 +16,8 @@ import { createSmtpTransporter, sendEmailViaSMTP } from "@/lib/email/smtp-transp
 import { decryptIfNeeded } from "@/lib/encryption";
 import { generateUnsubscribeToken } from "@/lib/unsubscribe-token";
 import { trackEmailMetrics } from "@/lib/prospection/deliverability";
+import { checkWarmupAllowance, incrementWarmupCounter } from "./warmup-scheduler";
+import { checkSmtpWarmupAllowance, incrementSmtpWarmupCounter } from "@/actions/warmup";
 
 // ─── Template interpolation ───────────────────────────────────────────────────
 
@@ -109,9 +111,27 @@ export const emailOutreachDaily = inngest.createFunction(
           },
         });
 
-        const remaining = Math.max(0, smtp.dailyLimit - sentToday);
+        const dailyLimitRemaining = Math.max(0, smtp.dailyLimit - sentToday);
+
+        // Même garde-fou warm-up que les campagnes (campaign-sender.ts) — sans
+        // ça, activer le warm-up ne protège que les envois lancés depuis
+        // CampaignWizard, pas l'envoi autonome quotidien de l'Agent CSO.
+        const [workspaceWarmup, smtpWarmup] = await Promise.all([
+          checkWarmupAllowance(smtp.workspaceId),
+          checkSmtpWarmupAllowance(smtp.id),
+        ]);
+        const warmupActive = workspaceWarmup.warmupActive || smtpWarmup.warmupActive;
+        const warmupRemaining =
+          workspaceWarmup.remainingToday !== null && smtpWarmup.remainingToday !== null
+            ? Math.min(workspaceWarmup.remainingToday, smtpWarmup.remainingToday)
+            : workspaceWarmup.remainingToday ?? smtpWarmup.remainingToday;
+
+        const remaining = warmupRemaining !== null ? Math.min(dailyLimitRemaining, warmupRemaining) : dailyLimitRemaining;
+
         if (remaining === 0) {
-          logger.info(`Workspace ${smtp.workspaceId} — limite journalière atteinte (${smtp.dailyLimit})`);
+          logger.info(
+            `Workspace ${smtp.workspaceId} — limite journalière atteinte (dailyLimit=${smtp.dailyLimit}${warmupActive ? ", warm-up actif" : ""})`
+          );
           return { sent: 0, failed: 0, skipped: 0 };
         }
 
@@ -219,6 +239,10 @@ export const emailOutreachDaily = inngest.createFunction(
                 where: { id: prospect.id },
                 data: { status: "CONTACTED", lastInteractionAt: now },
               });
+            }
+            if (warmupActive) {
+              await incrementWarmupCounter(smtp.workspaceId);
+              await incrementSmtpWarmupCounter(smtp.id);
             }
             sent++;
           } else {

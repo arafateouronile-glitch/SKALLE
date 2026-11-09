@@ -17,13 +17,14 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, Upload, Loader2 } from "lucide-react";
+import { Search, Upload, Loader2, ListChecks } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { getUserWorkspace } from "@/actions/leads";
 import { SourcerRadarTabs } from "@/components/modules/goskalle/sourcer-radar-tabs";
 import { LinkedInImportDialog, type ImportedProspectSummary } from "@/components/prospection/linkedin-import-dialog";
 import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
+import { CampaignDashboard } from "@/components/campaigns/campaign-dashboard";
 import { useEnrichBeforeCampaign } from "@/hooks/use-enrich-before-campaign";
 import { toast } from "sonner";
 
@@ -66,7 +67,7 @@ export default function GoskalleCampaignsPage() {
       <div>
         <h1 className="text-[22px] font-display font-bold" style={{ color: "var(--fg)" }}>Campagnes</h1>
         <p className="text-[13px] mt-1" style={{ color: "var(--fg-mute)" }}>
-          Lance une campagne en sourçant par ICP ou en important une liste existante
+          Lance une campagne en sourçant par ICP ou en important une liste existante, et suis son avancement
         </p>
       </div>
 
@@ -77,6 +78,9 @@ export default function GoskalleCampaignsPage() {
           </TabsTrigger>
           <TabsTrigger value="import" className="gk-tabtrigger">
             <Upload className="h-4 w-4 mr-2" /> Import de liste
+          </TabsTrigger>
+          <TabsTrigger value="suivi" className="gk-tabtrigger">
+            <ListChecks className="h-4 w-4 mr-2" /> Suivi
           </TabsTrigger>
         </TabsList>
 
@@ -113,6 +117,10 @@ export default function GoskalleCampaignsPage() {
               {enriching ? "Enrichissement en cours…" : "Choisir un fichier CSV"}
             </Button>
           </div>
+        </TabsContent>
+
+        <TabsContent value="suivi">
+          <CampaignDashboard workspaceId={workspaceId} />
         </TabsContent>
       </Tabs>
 
