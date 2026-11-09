@@ -58,6 +58,7 @@ import { fuseProspectSignals } from "./functions/signal-fusion";
 import { enrichWarmLeadsNightly } from "./functions/warm-lead-enrichment";
 import { resolveRadarDecisionMakersNightly } from "./functions/resolve-radar-decision-makers";
 import { syncQualiopiRegistryWeekly, syncQualiopiRegistryManual } from "./functions/sync-qualiopi-registry";
+import { personalizeAndLaunchCampaign } from "./functions/personalize-and-launch-campaign";
 import { csoAgentWeeklyLearn } from "./functions/cso-learning";
 
 // Export all Inngest functions
@@ -152,6 +153,8 @@ export const functions = [
   // Qualiopi Radar — sync hebdomadaire du registre Organismes de Formation
   syncQualiopiRegistryWeekly,
   syncQualiopiRegistryManual,
+  // Campagnes goskalle — personnalisation IA + lancement automatique en tâche de fond
+  personalizeAndLaunchCampaign,
   // Goskalle — boucle d'apprentissage CSO hebdomadaire
   csoAgentWeeklyLearn,
 ];

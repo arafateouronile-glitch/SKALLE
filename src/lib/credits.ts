@@ -97,6 +97,7 @@ export const CREDIT_COSTS = {
   // Agent Intelligence (nouvelles fonctionnalités différenciatrices)
   auto_enrichment: 3,       // Enrichissement automatique d'un prospect (Serper/Dropcontact/Apollo)
   decision_maker_resolve: 3, // Résolution d'un décideur nommé (Serper) pour Signals/Local Radar avant enrichissement
+  campaign_ai_personalization: 2, // Personnalisation IA profonde d'un step de campagne (recherche LinkedIn/actu par prospect)
   warm_lead_company_enrich: 2, // Goskalle — extraction entreprise d'un warm lead depuis son headline LinkedIn
   ab_test_variant: 2,       // Génération d'une variante B pour A/B test social
   competitor_alert_scan: 0, // Scan concurrent pour alertes (interne, gratuit)

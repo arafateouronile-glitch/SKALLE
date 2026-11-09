@@ -39,6 +39,7 @@ import {
   Trash2,
   Star,
   StarOff,
+  Pencil,
 } from "lucide-react";
 import {
   saveSmtpConfig,
@@ -46,6 +47,7 @@ import {
   getSmtpConfigs,
   deleteSmtpConfig,
   setDefaultSmtpConfig,
+  updateSmtpDailyLimitAction,
 } from "@/actions/campaigns";
 import { toast } from "sonner";
 
@@ -173,6 +175,8 @@ const emptyForm = {
   imapHost: "",
   imapPort: 993,
   imapSecure: true,
+  // Vide = repli sur le preset fournisseur côté serveur (comportement inchangé).
+  dailyLimit: "" as number | "",
 };
 
 export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
@@ -185,6 +189,9 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
   const [provider, setProvider] = useState("gmail");
   const [showImap, setShowImap] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
+  const [editingLimitId, setEditingLimitId] = useState<string | null>(null);
+  const [editingLimitValue, setEditingLimitValue] = useState<number | "">("");
+  const [isSavingLimit, setIsSavingLimit] = useState(false);
 
   useEffect(() => {
     loadConfigs();
@@ -240,6 +247,7 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
         imapHost: showImap ? form.imapHost : undefined,
         imapPort: showImap ? form.imapPort : undefined,
         imapSecure: showImap ? form.imapSecure : undefined,
+        dailyLimit: form.dailyLimit === "" ? undefined : form.dailyLimit,
       });
       if (result.success) {
         toast.success("Compte email ajouté");
@@ -255,6 +263,28 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
       toast.error("Une erreur est survenue");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveLimit = async (configId: string) => {
+    if (editingLimitValue === "" || editingLimitValue < 1) {
+      toast.error("Indiquez une limite valide (≥ 1)");
+      return;
+    }
+    setIsSavingLimit(true);
+    try {
+      const result = await updateSmtpDailyLimitAction(configId, editingLimitValue);
+      if (result.success) {
+        toast.success("Limite d'envoi mise à jour");
+        setEditingLimitId(null);
+        await loadConfigs();
+      } else {
+        toast.error(result.error || "Erreur");
+      }
+    } catch {
+      toast.error("Une erreur est survenue");
+    } finally {
+      setIsSavingLimit(false);
     }
   };
 
@@ -392,7 +422,54 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                 <div className="text-xs text-gray-9000 space-y-1">
                   <div>Serveur: {cfg.host}:{cfg.port}</div>
                   <div>Fournisseur: {PRESETS[cfg.provider]?.label || cfg.provider}</div>
-                  <div>Limite: {cfg.dailyLimit}/jour, {cfg.perMinuteLimit}/min</div>
+                  {editingLimitId === cfg.id ? (
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10000}
+                        autoFocus
+                        value={editingLimitValue}
+                        onChange={(e) =>
+                          setEditingLimitValue(e.target.value === "" ? "" : parseInt(e.target.value) || "")
+                        }
+                        className="h-7 w-20 bg-gray-100 border-gray-300 text-xs"
+                      />
+                      <span>/jour</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs border-gray-300"
+                        onClick={() => handleSaveLimit(cfg.id)}
+                        disabled={isSavingLimit}
+                      >
+                        {isSavingLimit ? <Loader2 className="h-3 w-3 animate-spin" /> : "OK"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setEditingLimitId(null)}
+                        disabled={isSavingLimit}
+                      >
+                        Annuler
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span>Limite: {cfg.dailyLimit}/jour, {cfg.perMinuteLimit}/min</span>
+                      <button
+                        onClick={() => {
+                          setEditingLimitId(cfg.id);
+                          setEditingLimitValue(cfg.dailyLimit);
+                        }}
+                        className="text-gray-400 hover:text-gray-700 transition-colors"
+                        title="Modifier la limite quotidienne"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                   {cfg.imapHost && (
                     <div className="text-blue-400">
                       IMAP: {cfg.imapHost}:{cfg.imapPort} (détection réponses active)
@@ -555,6 +632,25 @@ export function SmtpConfigForm({ workspaceId }: SmtpConfigFormProps) {
                   className="bg-gray-100 border-gray-300"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Limite d&apos;envoi quotidienne (optionnel)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={10000}
+                value={form.dailyLimit}
+                onChange={(e) =>
+                  setForm({ ...form, dailyLimit: e.target.value === "" ? "" : parseInt(e.target.value) || "" })
+                }
+                placeholder="Ex: 5, 10, 50… (défaut : selon le fournisseur)"
+                className="bg-gray-100 border-gray-300"
+              />
+              <p className="text-xs text-gray-9000">
+                Laissez vide pour utiliser la limite par défaut du fournisseur. Modifiable
+                ensuite à tout moment sur la fiche du compte.
+              </p>
             </div>
 
             {/* IMAP Section */}

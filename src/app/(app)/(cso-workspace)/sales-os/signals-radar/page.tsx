@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { CREDIT_COSTS } from "@/lib/credits";
 import { cn } from "@/lib/utils";
 import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
+import { useEnrichBeforeCampaign } from "@/hooks/use-enrich-before-campaign";
 
 const COST = CREDIT_COSTS.job_board_signals;
 
@@ -55,6 +56,7 @@ export default function SignalsRadarPage({ crmHref = "/sales-os/crm" }: { crmHre
   const [bulkImporting, setBulkImporting] = useState(false);
   const [campaignProspects, setCampaignProspects] = useState<{ id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const { enriching, enrichThenOpen } = useEnrichBeforeCampaign(workspaceId);
 
   const signalId = (s: AnalyzedSignal) => s.companyName + s.jobTitle;
 
@@ -162,9 +164,11 @@ export default function SignalsRadarPage({ crmHref = "/sales-os/crm" }: { crmHre
       if (res.success && res.prospects && res.prospects.length > 0) {
         setSignals((prev) => prev.filter((s) => !selectedIds.has(signalId(s))));
         setSelectedIds(new Set());
-        setCampaignProspects(res.prospects);
-        setWizardOpen(true);
-        toast.success(`${res.imported} signal(aux) importé(s). Configurez votre campagne.`);
+        toast.success(`${res.imported} signal(aux) importé(s). Enrichissement en cours…`);
+        await enrichThenOpen(res.prospects, (prospects) => {
+          setCampaignProspects(prospects);
+          setWizardOpen(true);
+        });
       } else {
         toast.error(res.error ?? "Erreur lors de l'import.");
       }
@@ -173,7 +177,7 @@ export default function SignalsRadarPage({ crmHref = "/sales-os/crm" }: { crmHre
     } finally {
       setBulkImporting(false);
     }
-  }, [workspaceId, signals, selectedIds]);
+  }, [workspaceId, signals, selectedIds, enrichThenOpen]);
 
   if (!workspaceId) {
     return (
@@ -224,11 +228,11 @@ export default function SignalsRadarPage({ crmHref = "/sales-os/crm" }: { crmHre
                     {selectedIds.size > 0 && (
                       <Button
                         size="sm"
-                        disabled={bulkImporting}
+                        disabled={bulkImporting || enriching}
                         onClick={handleLaunchCampaign}
                         className="h-7 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500"
                       >
-                        {bulkImporting ? (
+                        {bulkImporting || enriching ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <><Rocket className="mr-1 h-3 w-3" />Campagne ({selectedIds.size})</>

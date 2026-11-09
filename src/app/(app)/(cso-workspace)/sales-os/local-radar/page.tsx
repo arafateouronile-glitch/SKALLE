@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { CREDIT_COSTS } from "@/lib/credits";
 import { cn } from "@/lib/utils";
 import { CampaignWizard } from "@/components/campaigns/campaign-wizard";
+import { useEnrichBeforeCampaign } from "@/hooks/use-enrich-before-campaign";
 
 const MIN_LEADS = 10;
 const MAX_LEADS = 100;
@@ -70,6 +71,7 @@ export default function LocalRadarPage() {
   const [importing, setImporting] = useState(false);
   const [campaignProspects, setCampaignProspects] = useState<{ id: string; name: string; email: string | null; company: string; jobTitle: string | null }[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const { enriching, enrichThenOpen } = useEnrichBeforeCampaign(workspaceId);
 
   useEffect(() => {
     getUserWorkspace().then((r) => {
@@ -163,9 +165,11 @@ export default function LocalRadarPage() {
       if (res.success && res.prospects && res.prospects.length > 0) {
         setLeads((prev) => prev.filter((l) => !selectedIds.has(leadId(l))));
         setSelectedIds(new Set());
-        setCampaignProspects(res.prospects);
-        setWizardOpen(true);
-        toast.success(`${res.imported} prospect(s) importé(s). Configurez votre campagne.`);
+        toast.success(`${res.imported} prospect(s) importé(s). Enrichissement en cours…`);
+        await enrichThenOpen(res.prospects, (prospects) => {
+          setCampaignProspects(prospects);
+          setWizardOpen(true);
+        });
       } else {
         toast.error(res.error ?? "Erreur lors de l'import.");
       }
@@ -174,7 +178,7 @@ export default function LocalRadarPage() {
     } finally {
       setImporting(false);
     }
-  }, [workspaceId, leads, selectedIds]);
+  }, [workspaceId, leads, selectedIds, enrichThenOpen]);
 
   if (!workspaceId) {
     return (
@@ -358,10 +362,10 @@ export default function LocalRadarPage() {
                 <Button
                   size="sm"
                   className="h-8 rounded-xl border-0 bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-semibold text-white hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50"
-                  disabled={selectedIds.size === 0 || importing}
+                  disabled={selectedIds.size === 0 || importing || enriching}
                   onClick={handleLaunchCampaign}
                 >
-                  {importing ? (
+                  {importing || enriching ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <>

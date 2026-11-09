@@ -141,6 +141,11 @@ export function CampaignWizard({
     const result = await getDefaultTemplates();
     if (result.success) {
       setHasAI(result.hasAI || false);
+      // Personnalisation IA profonde par défaut dès qu'elle est disponible —
+      // "un email qui donne l'impression d'avoir été rédigé à la main pour
+      // chacun", pas du mail-merge. L'utilisateur peut repasser en mode
+      // template s'il préfère.
+      if (result.hasAI) setPersonalizationMode("ai");
       setStepTemplates(result.templates3 || []);
     }
   };
@@ -238,6 +243,7 @@ export function CampaignWizard({
         prospectIds: [...selectedProspectIds],
         stepTemplates,
         personalizationMode,
+        autoLaunch: true, // enchaîne personnalisation + envoi en tâche de fond, sans quitter cette page
       });
 
       if (result.success && result.campaignId) {
@@ -256,10 +262,10 @@ export function CampaignWizard({
           if (uploadErrors > 0) {
             toast.warning(`Campagne créée, mais ${uploadErrors} pièce(s) jointe(s) n'ont pas pu être uploadée(s).`);
           } else {
-            toast.success("Campagne créée avec pièces jointes !");
+            toast.success("Campagne créée — personnalisation en cours, l'envoi démarrera automatiquement.");
           }
         } else {
-          toast.success("Campagne créée !");
+          toast.success("Campagne créée — personnalisation en cours, l'envoi démarrera automatiquement.");
         }
         onOpenChange(false);
         onCreated();

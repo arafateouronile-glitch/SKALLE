@@ -13,6 +13,7 @@ import { encrypt, decryptIfNeeded } from "@/lib/encryption";
 import { personalizeEmail, hasAIPersonalization } from "@/lib/email/personalize-email";
 import { getDefaultCampaignTemplates, type StepTemplate } from "@/lib/email/template-personalization";
 import { getOpenAI } from "@/lib/ai/langchain";
+import { personalizeCampaignCore, launchCampaignCore } from "@/lib/email/campaign-lifecycle";
 import { z } from "zod";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -54,6 +55,8 @@ const smtpConfigSchema = z.object({
   imapHost: z.string().optional(),
   imapPort: z.number().optional(),
   imapSecure: z.boolean().optional(),
+  // Réglable par l'utilisateur (ex: 5, 10/jour) — si absent, repli sur le preset fournisseur.
+  dailyLimit: z.number().min(1).max(10_000).optional(),
 });
 
 export async function saveSmtpConfig(
@@ -97,7 +100,7 @@ export async function saveSmtpConfig(
         imapHost: parsed.data.imapHost || null,
         imapPort: parsed.data.imapPort || null,
         imapSecure: parsed.data.imapSecure ?? true,
-        dailyLimit: preset.dailyLimit,
+        dailyLimit: parsed.data.dailyLimit ?? preset.dailyLimit,
         perMinuteLimit: preset.perMinuteLimit,
         isDefault: existingCount === 0,
       },
@@ -113,7 +116,7 @@ export async function saveSmtpConfig(
         imapHost: parsed.data.imapHost,
         imapPort: parsed.data.imapPort,
         imapSecure: parsed.data.imapSecure,
-        dailyLimit: preset.dailyLimit,
+        dailyLimit: parsed.data.dailyLimit ?? preset.dailyLimit,
         perMinuteLimit: preset.perMinuteLimit,
         isVerified: false,
       },
@@ -261,6 +264,39 @@ export async function setDefaultSmtpConfig(
   }
 }
 
+/**
+ * Règle le débit d'envoi quotidien d'un compte SMTP déjà configuré (ex: 5, 10/jour).
+ * Lu directement par `email-outreach-daily.ts` — aucun autre câblage requis.
+ */
+export async function updateSmtpDailyLimitAction(
+  configId: string,
+  dailyLimit: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await requireAuth();
+
+    if (!Number.isFinite(dailyLimit) || dailyLimit < 1 || dailyLimit > 10_000) {
+      return { success: false, error: "Limite invalide (1-10000)" };
+    }
+
+    const config = await prisma.smtpConfig.findFirst({
+      where: { id: configId, workspace: { userId: session.user!.id! } },
+    });
+    if (!config) {
+      return { success: false, error: "Configuration non trouvée" };
+    }
+
+    await prisma.smtpConfig.update({
+      where: { id: configId },
+      data: { dailyLimit: Math.round(dailyLimit) },
+    });
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 📋 CAMPAIGN CRUD
 // ═══════════════════════════════════════════════════════════════════════════
@@ -273,6 +309,13 @@ export async function createCampaign(
     stepTemplates: StepTemplate[];
     personalizationMode: "ai" | "template";
     smtpConfigId?: string;
+    /** Enchaîne automatiquement personnalisation + lancement en tâche de
+     * fond (événement `campaign/personalize-and-launch`) une fois la
+     * campagne créée — défaut `true`, c'est ce que `CampaignWizard` attend
+     * ("aller au bout du lancement sur la même page"). Passer `false` pour
+     * ne créer qu'un brouillon piloté manuellement ensuite (cf.
+     * `campaign-dashboard.tsx`). */
+    autoLaunch?: boolean;
   }
 ): Promise<{ success: boolean; campaignId?: string; error?: string }> {
   try {
@@ -334,6 +377,23 @@ export async function createCampaign(
             status: "PENDING",
           },
         });
+      }
+    }
+
+    // Enchaîne personnalisation + lancement en tâche de fond, sans navigation
+    // ni action manuelle sur une autre page (cf. campaign-lifecycle.ts).
+    if (data.autoLaunch !== false) {
+      try {
+        const { inngest } = await import("@/inngest/client");
+        await inngest.send({
+          name: "campaign/personalize-and-launch",
+          data: { campaignId: campaign.id },
+        });
+      } catch (inngestError) {
+        // Inngest indisponible : la campagne reste en DRAFT, pilotable
+        // manuellement depuis campaign-dashboard.tsx — pas d'échec de la
+        // création elle-même.
+        console.error("[createCampaign] Échec déclenchement auto-launch:", inngestError);
       }
     }
 
@@ -402,172 +462,28 @@ export async function getCampaignDetail(
 // 🚀 CAMPAIGN LIFECYCLE
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Point d'entrée UI (session requise) — délègue la logique à
+ * `personalizeCampaignCore` (sans dépendance de session), aussi appelée
+ * directement par `personalize-and-launch-campaign.ts` (Inngest, pas de
+ * session HTTP disponible).
+ */
 export async function personalizeCampaign(
   campaignId: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const session = await requireAuth();
-
-    const campaign = await prisma.emailCampaign.findUnique({
-      where: { id: campaignId },
-      include: {
-        sequences: {
-          include: {
-            prospect: true,
-            steps: { orderBy: { stepNumber: "asc" } },
-          },
-        },
-      },
-    });
-
-    if (!campaign) {
-      return { success: false, error: "Campagne non trouvée" };
-    }
-
-    // Récupérer la config SMTP : campagne-spécifique ou default du workspace
-    const smtpConfig = campaign.smtpConfigId
-      ? await prisma.smtpConfig.findUnique({ where: { id: campaign.smtpConfigId } })
-      : await prisma.smtpConfig.findFirst({
-          where: { workspaceId: campaign.workspaceId, isDefault: true },
-        });
-
-    const sender = {
-      name: smtpConfig?.fromName || "Équipe",
-      email: smtpConfig?.fromEmail || "",
-      company: "Skalle",
-    };
-
-    await prisma.emailCampaign.update({
-      where: { id: campaignId },
-      data: { status: "PERSONALIZING" },
-    });
-
-    const stepTemplates = campaign.stepTemplates as unknown as StepTemplate[];
-
-    // Personnaliser chaque step de chaque séquence
-    for (const sequence of campaign.sequences) {
-      for (const step of sequence.steps) {
-        const template = stepTemplates.find(
-          (t) => t.stepNumber === step.stepNumber
-        );
-        if (!template) continue;
-
-        const result = await personalizeEmail({
-          prospect: sequence.prospect,
-          stepTemplate: template,
-          mode: campaign.personalizationMode as "ai" | "template",
-          sender,
-        });
-
-        await prisma.sequenceStep.update({
-          where: { id: step.id },
-          data: {
-            subject: result.subject,
-            content: result.content,
-            metadata: {
-              personalizationScore: result.personalizationScore,
-              personalizationMode: result.mode,
-              personalizedAt: new Date().toISOString(),
-            },
-          },
-        });
-      }
-    }
-
-    await prisma.emailCampaign.update({
-      where: { id: campaignId },
-      data: { status: "READY" },
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error("Personalize campaign error:", error);
-    await prisma.emailCampaign.update({
-      where: { id: campaignId },
-      data: { status: "FAILED" },
-    }).catch(() => {});
-    return { success: false, error: String(error) };
-  }
+  await requireAuth();
+  return personalizeCampaignCore(campaignId);
 }
 
+/**
+ * Point d'entrée UI (session requise) — délègue à `launchCampaignCore`, voir
+ * `personalizeCampaign` ci-dessus pour le même raisonnement.
+ */
 export async function launchCampaign(
   campaignId: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const session = await requireAuth();
-
-    const campaign = await prisma.emailCampaign.findUnique({
-      where: { id: campaignId },
-    });
-
-    if (!campaign) {
-      return { success: false, error: "Campagne non trouvée" };
-    }
-
-    if (campaign.status !== "READY" && campaign.status !== "PAUSED") {
-      return { success: false, error: `Campagne en statut ${campaign.status}, ne peut pas être lancée` };
-    }
-
-    // Vérifier SMTP : campagne-spécifique ou default du workspace
-    const smtp = campaign.smtpConfigId
-      ? await prisma.smtpConfig.findUnique({ where: { id: campaign.smtpConfigId } })
-      : await prisma.smtpConfig.findFirst({
-          where: { workspaceId: campaign.workspaceId, isDefault: true },
-        });
-
-    const hasEmailFallback = !!(process.env.RESEND_API_KEY || process.env.SENDGRID_API_KEY);
-    if ((!smtp || !smtp.isVerified) && !hasEmailFallback) {
-      return { success: false, error: "Aucun provider email configuré. Configurez un SMTP ou ajoutez RESEND_API_KEY / SENDGRID_API_KEY." };
-    }
-
-    // Réinitialiser les steps 1 FAILED non envoyés (permet de relancer une campagne)
-    await prisma.sequenceStep.updateMany({
-      where: {
-        sequence: { campaignId },
-        stepNumber: 1,
-        status: "FAILED",
-        sentAt: null,
-      },
-      data: { status: "PENDING", error: null },
-    });
-
-    // Activer les séquences et passer en SENDING
-    await prisma.outreachSequence.updateMany({
-      where: { campaignId },
-      data: { isActive: true },
-    });
-
-    await prisma.emailCampaign.update({
-      where: { id: campaignId },
-      data: { status: "SENDING" },
-    });
-
-    // Déclencher l'envoi via Inngest
-    try {
-      const { inngest } = await import("@/inngest/client");
-      await inngest.send({
-        name: "campaign/launch",
-        data: { campaignId },
-      });
-    } catch (inngestError) {
-      // Inngest indisponible → remettre en PAUSED pour permettre un retry
-      await prisma.emailCampaign.update({
-        where: { id: campaignId },
-        data: { status: "PAUSED" },
-      });
-      await prisma.outreachSequence.updateMany({
-        where: { campaignId },
-        data: { isActive: false },
-      });
-      console.error("Inngest send error:", inngestError);
-      return { success: false, error: "Serveur Inngest non disponible. Lancez `npm run dev:all`." };
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error("Launch campaign error:", error);
-    return { success: false, error: String(error) };
-  }
+  await requireAuth();
+  return launchCampaignCore(campaignId);
 }
 
 export async function pauseCampaign(

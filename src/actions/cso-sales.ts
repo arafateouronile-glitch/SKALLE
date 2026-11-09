@@ -628,6 +628,8 @@ import {
   type QualiopiSearchCriteria,
   type QualiopiLead,
 } from "@/lib/services/sales/qualiopi-radar";
+import { resolveDecisionMaker } from "@/lib/services/prospects/decision-maker-resolver";
+import { autoEnrichProspect } from "@/lib/prospection/auto-enrichment";
 
 const calendarLinkSchema = z.object({
   calendarLink: z.string().url("L'URL doit être valide (ex: https://cal.com/votrenpm)").optional().or(z.literal("")),
@@ -838,6 +840,97 @@ export async function bulkImportQualiopiLeadsAction(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erreur lors de l'import",
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🚀 ENRICHISSEMENT À LA DEMANDE — avant ouverture du wizard de campagne
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ENRICH_BATCH_CONCURRENCY = 5;
+
+/**
+ * Enrichit immédiatement un petit lot de prospects déjà sélectionnés (pas tout
+ * le pool scanné) avant de lancer une campagne — réutilise tel quel
+ * `resolveDecisionMaker` (résout un décideur nommé pour les leads radar encore
+ * au niveau entreprise — no-op silencieux pour les autres) puis
+ * `autoEnrichProspect` (cascade Serper → Dropcontact → Apollo) si l'email est
+ * toujours manquant. Contrairement au cron nocturne `resolve-radar-decision-
+ * makers`, tourne au clic — quelques secondes sur un petit lot, pas la nuit
+ * entière sur tout le pipeline.
+ */
+export interface EnrichedProspectSummary {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string;
+  jobTitle: string | null;
+}
+
+export async function enrichSelectedProspectsAction(
+  workspaceId: string,
+  prospectIds: string[]
+): Promise<{
+  success: boolean;
+  enrichedCount: number;
+  total: number;
+  prospects?: EnrichedProspectSummary[];
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth();
+    const userId = session.user!.id!;
+    await requireWorkspace(workspaceId, userId);
+
+    let enrichedCount = 0;
+
+    for (let i = 0; i < prospectIds.length; i += ENRICH_BATCH_CONCURRENCY) {
+      const batch = prospectIds.slice(i, i + ENRICH_BATCH_CONCURRENCY);
+      await Promise.allSettled(
+        batch.map(async (prospectId) => {
+          try {
+            // 1. Lead radar encore au niveau entreprise ? Résout un décideur nommé
+            // (no-op silencieux si pas applicable — déjà vérifié en interne).
+            await resolveDecisionMaker(prospectId, userId);
+
+            // 2. Email toujours manquant (radar juste résolu, warm lead, import CSV
+            // sans email...) → cascade d'enrichissement générique.
+            const prospect = await prisma.prospect.findUnique({
+              where: { id: prospectId, workspaceId },
+              select: { id: true, name: true, company: true, jobTitle: true, email: true, workspaceId: true },
+            });
+            if (!prospect) return;
+
+            if (prospect.email) {
+              enrichedCount++; // avait déjà un email réel
+              return;
+            }
+
+            const result = await autoEnrichProspect(prospect);
+            if (result.enriched) enrichedCount++;
+          } catch (err) {
+            console.error(`[EnrichSelected] Erreur prospect ${prospectId}:`, err);
+          }
+        })
+      );
+    }
+
+    // Renvoie l'état à jour (noms/emails potentiellement résolus à l'instant)
+    // pour éviter un second aller-retour avant d'ouvrir le wizard de campagne.
+    const prospects = await prisma.prospect.findMany({
+      where: { id: { in: prospectIds }, workspaceId },
+      select: { id: true, name: true, email: true, company: true, jobTitle: true },
+    });
+
+    return { success: true, enrichedCount, total: prospectIds.length, prospects };
+  } catch (error) {
+    console.error("enrichSelectedProspectsAction:", error);
+    return {
+      success: false,
+      enrichedCount: 0,
+      total: prospectIds.length,
+      error: error instanceof Error ? error.message : "Erreur lors de l'enrichissement",
     };
   }
 }
