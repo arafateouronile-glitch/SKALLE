@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 
-export type LinkedInFormat = "basic" | "sales_nav" | "recruiter" | "unknown";
+export type LinkedInFormat = "basic" | "sales_nav" | "recruiter" | "mapped" | "unknown";
 
 export interface ParsedLinkedInLead {
   name: string;
@@ -17,11 +17,28 @@ export interface LinkedInParseResult {
   leads: ParsedLinkedInLead[];
   errors: string[];
   totalRows: number;
+  /** En-têtes réelles détectées — nécessaire pour l'écran de mapping manuel
+   * quand aucun format LinkedIn connu n'est reconnu. */
+  headers: string[];
+  /** Lignes brutes — réutilisées par `mapRowsToLeads` une fois le mapping choisi. */
+  rows: Record<string, string>[];
+}
+
+export interface ColumnMapping {
+  name: string;
+  /** Colonne optionnelle à concaténer après `name` — cas prénom/nom séparés en 2 colonnes. */
+  nameSecondary?: string;
+  email?: string;
+  company?: string;
+  jobTitle?: string;
+  location?: string;
+  linkedInUrl?: string;
+  industry?: string;
 }
 
 // LinkedIn Basic (Connections export)
-// Headers: First Name, Last Name, Email Address, Company, Position, Connected On
-// Note: LinkedIn CSV exports have 3 header lines to skip
+// Headers: First Name, Last Name, URL, Email Address, Company, Position, Connected On
+// Note: LinkedIn CSV exports have 2-3 header lines to skip (cf. parseLinkedInCSV)
 function parseBasicFormat(rows: Record<string, string>[]): ParsedLinkedInLead[] {
   return rows
     .map((row): ParsedLinkedInLead | null => {
@@ -34,8 +51,9 @@ function parseBasicFormat(rows: Record<string, string>[]): ParsedLinkedInLead[] 
       return {
         name,
         email: row["Email Address"]?.trim() || undefined,
-        company: row["Company"]?.trim() || "N/A",
+        company: row["Company"]?.trim() || "",
         jobTitle: row["Position"]?.trim() || undefined,
+        linkedInUrl: row["URL"]?.trim() || undefined,
       };
     })
     .filter((l): l is ParsedLinkedInLead => l !== null);
@@ -68,6 +86,7 @@ function parseSalesNavFormat(rows: Record<string, string>[]): ParsedLinkedInLead
         linkedInUrl:
           row["LinkedIn URL"]?.trim() ||
           row["Profile URL"]?.trim() ||
+          row["Lead URL"]?.trim() ||
           row["LinkedIn Member Profile URL"]?.trim() ||
           undefined,
         industry:
@@ -112,6 +131,37 @@ function parseRecruiterFormat(rows: Record<string, string>[]): ParsedLinkedInLea
     .filter((l): l is ParsedLinkedInLead => l !== null);
 }
 
+/**
+ * Applique un mapping de colonnes choisi manuellement par l'utilisateur —
+ * chemin utilisé quand le fichier n'est pas un export LinkedIn reconnu (CRM,
+ * Excel, Google Sheets...). `name` est la seule clé requise ; les autres
+ * champs restent vides si non mappés plutôt que de rejeter la ligne.
+ */
+export function mapRowsToLeads(
+  rows: Record<string, string>[],
+  mapping: ColumnMapping
+): ParsedLinkedInLead[] {
+  return rows
+    .map((row): ParsedLinkedInLead | null => {
+      const primary = mapping.name ? row[mapping.name]?.trim() || "" : "";
+      const secondary = mapping.nameSecondary ? row[mapping.nameSecondary]?.trim() || "" : "";
+      const name = `${primary} ${secondary}`.trim();
+
+      if (!name) return null;
+
+      return {
+        name,
+        email: mapping.email ? row[mapping.email]?.trim() || undefined : undefined,
+        company: mapping.company ? row[mapping.company]?.trim() || "" : "",
+        jobTitle: mapping.jobTitle ? row[mapping.jobTitle]?.trim() || undefined : undefined,
+        location: mapping.location ? row[mapping.location]?.trim() || undefined : undefined,
+        linkedInUrl: mapping.linkedInUrl ? row[mapping.linkedInUrl]?.trim() || undefined : undefined,
+        industry: mapping.industry ? row[mapping.industry]?.trim() || undefined : undefined,
+      };
+    })
+    .filter((l): l is ParsedLinkedInLead => l !== null);
+}
+
 // Auto-detecter le format LinkedIn par les headers
 function detectFormat(headers: string[]): LinkedInFormat {
   const h = new Set(headers.map((x) => x.toLowerCase().trim()));
@@ -143,24 +193,42 @@ function detectFormat(headers: string[]): LinkedInFormat {
   return "unknown";
 }
 
+// En-têtes connues des exports LinkedIn — déclenche la recherche de la vraie
+// ligne d'en-têtes uniquement après avoir vu un marqueur "Notes:" (préambule
+// LinkedIn Basic), jamais sur un CSV générique qui n'a pas ce marqueur.
+const KNOWN_HEADER_TOKENS = ["first name", "last name", "name", "full name", "current company", "company"];
+
+function looksLikeHeaderRow(line: string): boolean {
+  const cols = line.split(",").map((c) => c.trim().toLowerCase().replace(/^"|"$/g, ""));
+  return KNOWN_HEADER_TOKENS.some((tok) => cols.includes(tok));
+}
+
 /**
  * Parse un fichier CSV LinkedIn (Basic, Sales Navigator, ou Recruiter Lite)
- * Auto-detection du format.
+ * ou un CSV générique (via mapping manuel ensuite). Auto-detection du format
+ * LinkedIn ; sinon retourne les en-têtes/lignes brutes pour permettre un
+ * mapping manuel côté UI.
  */
 export function parseLinkedInCSV(content: string): LinkedInParseResult {
   const errors: string[] = [];
 
-  // LinkedIn Basic export commence par des lignes de metadata
-  // On essaie d'abord sans skip, puis avec skip si echec
-  let cleanContent = content;
+  // Strip BOM — gotcha fréquent si le fichier a été réouvert/resauvegardé
+  // dans Excel/Numbers avant l'import (casse sinon le nom de la 1ère colonne).
+  let cleanContent = content.replace(/^﻿/, "");
 
-  // Detecter si les premieres lignes sont du metadata LinkedIn (pas des headers CSV)
-  const firstLines = content.split("\n").slice(0, 5);
-  const firstNonEmpty = firstLines.findIndex(
-    (line) => line.includes(",") && !line.startsWith("Notes:")
-  );
-  if (firstNonEmpty > 0) {
-    cleanContent = content.split("\n").slice(firstNonEmpty).join("\n");
+  // LinkedIn Basic (Connections.csv) démarre par "Notes:" suivi d'une phrase
+  // d'avertissement qui contient elle-même des virgules — ne pas se baser sur
+  // "contient une virgule" pour deviner la fin du préambule (ça attrape la
+  // phrase d'avertissement, pas les vraies en-têtes). On ne déclenche cette
+  // recherche que si on voit le marqueur "Notes:" explicite, spécifique à
+  // LinkedIn — un CSV générique (CRM, Excel...) n'est jamais touché par ça.
+  const lines = cleanContent.split("\n");
+  const notesIdx = lines.findIndex((l) => l.trim().startsWith("Notes:"));
+  if (notesIdx !== -1) {
+    const headerIdx = lines.findIndex((l, i) => i > notesIdx && looksLikeHeaderRow(l));
+    if (headerIdx > notesIdx) {
+      cleanContent = lines.slice(headerIdx).join("\n");
+    }
   }
 
   const parsed = Papa.parse(cleanContent, {
@@ -192,25 +260,26 @@ export function parseLinkedInCSV(content: string): LinkedInParseResult {
       leads = parseRecruiterFormat(rows);
       break;
     case "unknown":
+    default:
       errors.push(
         "Format non reconnu. Headers detectes: " + headers.slice(0, 5).join(", ")
       );
-      // Tenter un parsing generique
+      // Tentative générique best-effort (intitulés anglais/français courants)
+      // — avant de proposer le mapping manuel côté UI si ça ne suffit pas.
       leads = rows
         .map((row): ParsedLinkedInLead | null => {
           const name =
             row["Name"] ||
             row["Nom"] ||
             `${row["First Name"] || ""} ${row["Last Name"] || ""}`.trim();
-          const company =
-            row["Company"] || row["Entreprise"] || row["Current Company"] || "";
 
-          if (!name || !company) return null;
+          if (!name) return null;
 
           return {
             name,
             email: row["Email"] || row["Email Address"] || undefined,
-            company,
+            company:
+              row["Company"] || row["Entreprise"] || row["Current Company"] || "",
             jobTitle:
               row["Title"] || row["Position"] || row["Current Title"] || undefined,
             location: row["Location"] || undefined,
@@ -227,5 +296,7 @@ export function parseLinkedInCSV(content: string): LinkedInParseResult {
     leads,
     errors,
     totalRows: rows.length,
+    headers,
+    rows,
   };
 }
