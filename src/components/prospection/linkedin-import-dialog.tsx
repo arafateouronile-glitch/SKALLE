@@ -52,6 +52,7 @@ const MAPPING_FIELDS: Array<{ key: keyof ColumnMapping; label: string; required?
   { key: "location", label: "Localisation" },
   { key: "linkedInUrl", label: "URL LinkedIn" },
   { key: "industry", label: "Industrie" },
+  { key: "siren", label: "SIREN" },
 ];
 
 export interface ImportedProspectSummary {
@@ -181,6 +182,7 @@ export function LinkedInImportDialog({
           location: l.location,
           linkedInUrl: l.linkedInUrl,
           industry: l.industry,
+          siren: l.siren,
         })),
         selectedListId || undefined
       );
@@ -339,6 +341,7 @@ export function LinkedInImportDialog({
                       <span className="text-gray-9000 truncate">{lead.jobTitle || "-"}</span>
                       {lead.email && <span className="text-green-400 text-[10px]">email</span>}
                       {lead.linkedInUrl && <span className="text-blue-400 text-[10px]">linkedin</span>}
+                      {lead.siren && <span className="text-purple-400 text-[10px]">siren</span>}
                     </div>
                   ))}
                   {parseResult.leads.length > 5 && (

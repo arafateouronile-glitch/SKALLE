@@ -10,6 +10,10 @@ export interface ParsedLinkedInLead {
   location?: string;
   linkedInUrl?: string;
   industry?: string;
+  /** SIREN (identifiant entreprise français, 9 chiffres) — stocké ensuite dans
+   * `Prospect.enrichmentData.siren`, utilisé par `decision-maker-resolver.ts`
+   * pour un lookup INSEE direct (gratuit, plus fiable que la recherche LinkedIn). */
+  siren?: string;
 }
 
 export interface LinkedInParseResult {
@@ -34,6 +38,7 @@ export interface ColumnMapping {
   location?: string;
   linkedInUrl?: string;
   industry?: string;
+  siren?: string;
 }
 
 // LinkedIn Basic (Connections export)
@@ -157,6 +162,9 @@ export function mapRowsToLeads(
         location: mapping.location ? row[mapping.location]?.trim() || undefined : undefined,
         linkedInUrl: mapping.linkedInUrl ? row[mapping.linkedInUrl]?.trim() || undefined : undefined,
         industry: mapping.industry ? row[mapping.industry]?.trim() || undefined : undefined,
+        // Les exports FR formattent souvent le SIREN avec des espaces ("552 100 554")
+        // — on les retire pour matcher le format stocké par Qualiopi Radar.
+        siren: mapping.siren ? row[mapping.siren]?.replace(/\s/g, "").trim() || undefined : undefined,
       };
     })
     .filter((l): l is ParsedLinkedInLead => l !== null);
@@ -285,6 +293,7 @@ export function parseLinkedInCSV(content: string): LinkedInParseResult {
             location: row["Location"] || undefined,
             linkedInUrl:
               row["LinkedIn URL"] || row["Profile URL"] || undefined,
+            siren: (row["SIREN"] || row["Siren"] || row["N° SIREN"])?.replace(/\s/g, "") || undefined,
           };
         })
         .filter((l): l is ParsedLinkedInLead => l !== null);

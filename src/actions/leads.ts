@@ -173,6 +173,7 @@ export async function importLeads(
     jobTitle?: string;
     location?: string;
     industry?: string;
+    siren?: string;
   }>,
   listId?: string
 ): Promise<{
@@ -228,6 +229,13 @@ export async function importLeads(
               location: lead.location || existing.location,
               industry: lead.industry || existing.industry,
               emailVerified: lead.email ? true : existing.emailVerified,
+              // Merge pour ne pas écraser des clés déjà posées par d'autres flux
+              // d'enrichissement (ex: `linkedIn`, `naf`) — cf. convention dans
+              // `decision-maker-resolver.ts` / `qualiopi-radar.ts`. Omis si pas de
+              // SIREN à ajouter (ne pas réécrire `null` sur un champ Json existant).
+              ...(lead.siren && {
+                enrichmentData: { ...((existing.enrichmentData as Record<string, unknown> | null) ?? {}), siren: lead.siren },
+              }),
             },
             select: { id: true, name: true, email: true, company: true, jobTitle: true },
           });
@@ -247,6 +255,7 @@ export async function importLeads(
               location: lead.location || null,
               industry: lead.industry || null,
               emailVerified: lead.email ? true : false,
+              enrichmentData: lead.siren ? { siren: lead.siren } : undefined,
               workspaceId,
             },
             select: { id: true, name: true, email: true, company: true, jobTitle: true },

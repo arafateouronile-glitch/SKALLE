@@ -97,4 +97,22 @@ describe("mapRowsToLeads", () => {
     expect(leads).toHaveLength(1);
     expect(leads[0].name).toBe("Paul");
   });
+
+  it("mappe le SIREN et retire les espaces internes (format FR courant)", () => {
+    const csv = ["Nom complet,Societe,N° SIREN", "Paul Petit,Gamma SARL,552 100 554"].join("\n");
+    const { rows } = parseLinkedInCSV(csv);
+
+    const leads = mapRowsToLeads(rows, { name: "Nom complet", company: "Societe", siren: "N° SIREN" });
+
+    expect(leads[0].siren).toBe("552100554");
+  });
+
+  it("n'inclut pas siren quand la colonne n'est pas mappée", () => {
+    const csv = ["Nom,Societe,SIREN", "Paul,Gamma,552100554"].join("\n");
+    const { rows } = parseLinkedInCSV(csv);
+
+    const leads = mapRowsToLeads(rows, { name: "Nom", company: "Societe" });
+
+    expect(leads[0].siren).toBeUndefined();
+  });
 });
