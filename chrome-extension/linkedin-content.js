@@ -998,7 +998,7 @@ async function handleProcessAndConnect(profile, workspaceId) {
       name: profile.name,
       firstName: profile.firstName,
       jobTitle: profile.headline,
-      company: full.company || "LinkedIn",
+      company: full.company || "",
       headline: profile.headline,
       about: full.about,
       experiences: full.experiences,

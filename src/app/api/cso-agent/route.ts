@@ -7,13 +7,17 @@
  *
  * PATCH /api/cso-agent
  *   { decisionId, workspaceId, action: "approve" | "reject" }
- *   → approve marks APPROVED (l'extension Chrome exécute + crée la séquence via /executed)
+ *   → approve marks APPROVED. Pour CSO_LAUNCH_LINKEDIN, l'extension Chrome
+ *     exécute + crée la séquence via /executed. Pour les autres types
+ *     (Email/Relance/Archivage), executeCsoDecision est appelée directement
+ *     ici — l'extension n'a aucune logique pour ces types.
  */
 
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inngest } from "@/inngest/client";
+import { executeCsoDecision } from "@/lib/services/sales/cso-agent";
 
 const CSO_ACTION_TYPES = [
   "CSO_LAUNCH_LINKEDIN",
@@ -138,12 +142,26 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, status: "REJECTED" });
   }
 
-  // Approve: mark APPROVED — l'extension Chrome exécute l'action LinkedIn
-  // et crée la séquence via /api/cso-agent/executed après confirmation
+  // Approve: mark APPROVED — pour LinkedIn, l'extension Chrome exécute l'action
+  // et crée la séquence via /api/cso-agent/executed après confirmation. Pour les
+  // autres types (Email/Relance/Archivage), l'extension n'a aucune logique dédiée
+  // (cf. executeCsoDecision) — on exécute donc directement ici, en synchrone.
   await prisma.agentDecision.update({
     where: { id: decisionId },
     data: { status: "APPROVED" },
   });
+
+  if (decision.actionType !== "CSO_LAUNCH_LINKEDIN") {
+    try {
+      const result = await executeCsoDecision(decisionId, workspaceId);
+      return NextResponse.json({ ok: result.ok, status: result.ok ? "EXECUTED" : "FAILED", message: result.message });
+    } catch (err) {
+      return NextResponse.json(
+        { error: "Erreur lors de l'exécution", message: err instanceof Error ? err.message : String(err) },
+        { status: 500 }
+      );
+    }
+  }
 
   return NextResponse.json({ ok: true, status: "APPROVED" });
 }

@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
         workspaceId,
         linkedInUrl: normalizedUrl,
         name,
-        company: company ?? "LinkedIn",
+        company: company ?? "",
         jobTitle: jobTitle ?? headline ?? null,
         email: `serper+li_${usernameMatch?.[1] ?? Date.now()}@discovery.skalle`,
         enrichmentData,

@@ -41,7 +41,7 @@ export const autoEnrichOnCreate = inngest.createFunction(
     const result = await step.run("enrich-prospect", async () => {
       const prospect = await prisma.prospect.findUnique({
         where: { id: prospectId },
-        select: { id: true, name: true, company: true, jobTitle: true, email: true, workspaceId: true },
+        select: { id: true, name: true, company: true, jobTitle: true, email: true, workspaceId: true, linkedInUrl: true },
       });
 
       if (!prospect) return { enriched: false, reason: "Prospect non trouvé" };

@@ -35,12 +35,15 @@ export async function GET(req: NextRequest) {
   const workspaceIds = workspaces.map((w) => w.id);
   if (!workspaceIds.length) return NextResponse.json({ decisions: [] });
 
-  // Retourne les décisions APPROVED de type LinkedIn non encore exécutées
+  // Retourne les décisions APPROVED de type LinkedIn non encore exécutées.
+  // Email/Relance/Archivage s'exécutent directement à l'approbation (cf.
+  // /api/cso-agent PATCH) — l'extension n'a aucune logique pour ces types et
+  // ne doit plus jamais les recevoir (cf. audit fonctionnel Goskalle).
   const decisions = await prisma.agentDecision.findMany({
     where: {
       workspaceId: { in: workspaceIds },
       status: "APPROVED",
-      actionType: { in: ["CSO_LAUNCH_LINKEDIN", "CSO_LAUNCH_EMAIL", "CSO_FOLLOWUP"] },
+      actionType: "CSO_LAUNCH_LINKEDIN",
     },
     orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
     take: 20,

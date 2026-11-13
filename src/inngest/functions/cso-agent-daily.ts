@@ -1,6 +1,7 @@
 /**
  * CSO Agent Daily — analyse le pipeline et génère des décisions PENDING pour validation.
- * L'exécution est déclenchée séparément (event cso/decision.execute) après approbation.
+ * L'exécution a lieu directement à l'approbation, dans /api/cso-agent PATCH (LinkedIn
+ * excepté, géré par l'extension Chrome via /api/cso-agent/queue + /executed).
  *
  * Flux quotidien :
  *   Phase 1 — Analyse ICP : comprend le business → génère les Personas automatiquement
@@ -14,7 +15,6 @@ import {
   observePipeline,
   generateCsoDecisions,
   storeCsoDecisions,
-  executeCsoDecision,
 } from "@/lib/services/sales/cso-agent";
 import {
   analyzeBusinessForICP,
@@ -138,7 +138,7 @@ export const csoAgentDaily = inngest.createFunction(
 
     logger.info(`CSO Agent — Phase 3 Pipeline: ${pipelineWorkspaces.length} workspaces`);
 
-    const summary: Array<{ workspaceId: string; generated: number }> = [];
+    const summary: Array<{ workspaceId: string; generated: number; skippedForBacklog: boolean }> = [];
 
     for (const ws of pipelineWorkspaces) {
       const result = await step.run(`analyze-${ws.id}`, async () => {
@@ -148,22 +148,27 @@ export const csoAgentDaily = inngest.createFunction(
 
         if (total === 0) {
           logger.info(`Workspace ${ws.id} — pipeline vide, skip`);
-          return { generated: 0 };
+          return { generated: 0, skippedForBacklog: false };
         }
 
         logger.info(`Workspace ${ws.id} — ${total} candidats détectés`);
         const drafts = await generateCsoDecisions(obs, ws.id);
         const stored = await storeCsoDecisions(ws.id, drafts);
-        logger.info(`Workspace ${ws.id} — ${stored} nouvelles décisions générées`);
-        return { generated: stored };
+        // generateCsoDecisions retourne [] silencieusement si le backlog PENDING est déjà
+        // au plafond (cf. MAX_PENDING_BACKLOG, cso-agent.ts) — candidats détectés mais 0
+        // décision stockée est le signal indirect de ce frein.
+        const skippedForBacklog = stored === 0;
+        logger.info(`Workspace ${ws.id} — ${stored} nouvelles décisions générées${skippedForBacklog ? " (backlog probable, cf. warn)" : ""}`);
+        return { generated: stored, skippedForBacklog };
       });
 
       summary.push({ workspaceId: ws.id, ...result });
     }
 
     const totalGenerated = summary.reduce((a, s) => a + s.generated, 0);
-    logger.info(`CSO Agent terminé — ${totalGenerated} décisions générées`);
-    return { workspacesAnalyzed: pipelineWorkspaces.length, summary };
+    const throttledWorkspaces = summary.filter((s) => s.skippedForBacklog).length;
+    logger.info(`CSO Agent terminé — ${totalGenerated} décisions générées, ${throttledWorkspaces} workspace(s) freiné(s) par le backlog`);
+    return { workspacesAnalyzed: pipelineWorkspaces.length, throttledWorkspaces, summary };
   }
 );
 
@@ -213,23 +218,6 @@ export const csoAgentManual = inngest.createFunction(
       const drafts = await generateCsoDecisions(obs, workspaceId);
       const stored = await storeCsoDecisions(workspaceId, drafts);
       return { generated: stored };
-    });
-  }
-);
-
-// ─── Execute approved decision ────────────────────────────────────────────────
-
-export const csoAgentExecute = inngest.createFunction(
-  { id: "cso-agent-execute", name: "CSO Agent — Exécution décision approuvée", retries: 1 },
-  { event: "cso/decision.execute" },
-  async ({ event, step }) => {
-    const { decisionId, workspaceId } = event.data as {
-      decisionId: string;
-      workspaceId: string;
-    };
-
-    return step.run("execute", async () => {
-      return executeCsoDecision(decisionId, workspaceId);
     });
   }
 );

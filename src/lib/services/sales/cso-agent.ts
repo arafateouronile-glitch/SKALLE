@@ -529,12 +529,27 @@ Génère les décisions. Les messages seront personnalisés séparément.
       // mathieu-dias-6482b0296). La valeur DB est la seule source de vérité.
       const dbLinkedInUrl = "linkedInUrl" in prospectData ? (prospectData.linkedInUrl ?? undefined) : undefined;
 
+      // La génération de décisions (Step B) est jaugée par budget — la
+      // génération de messages (Step C) ne l'était pas du tout jusqu'ici,
+      // malgré 1-2 appels Claude par décision. Même garde-fou $/jour,
+      // vérifié par décision pour permettre une complétion partielle du lot
+      // plutôt qu'un tout-ou-rien si le budget s'épuise en cours de route.
+      const msgBudgetCheck = await checkBudget(workspaceId, "cso_message_generation", "claude-sonnet-4-6", plan);
+      if (!msgBudgetCheck.allowed) {
+        console.warn(`[CSO] Budget dépassé pour génération de message (${d.prospectId}): ${msgBudgetCheck.reason}`);
+        return d;
+      }
+
       try {
         if (d.actionType === "CSO_LAUNCH_LINKEDIN") {
           const [msg, followup] = await Promise.all([
             generateCsoMessages(profile, research, brand, "LINKEDIN"),
             generateCsoMessages(profile, research, brand, "FOLLOWUP"),
           ]);
+          await Promise.all([
+            trackSpend(workspaceId, "cso_message_generation"),
+            trackSpend(workspaceId, "cso_message_generation"),
+          ]).catch(() => undefined);
           const sig = workspace?.signature ? `\n\n${workspace.signature}` : "";
           return {
             ...d,
@@ -550,6 +565,7 @@ Génère les décisions. Les messages seront personnalisés séparément.
         } else if (d.actionType === "CSO_LAUNCH_EMAIL") {
           const sig = workspace?.signature ? `\n\n${workspace.signature}` : "";
           const msg = await generateCsoMessages(profile, research, brand, "EMAIL");
+          await trackSpend(workspaceId, "cso_message_generation").catch(() => undefined);
           return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content + sig, _angle: msg.angle } };
 
         } else if (d.actionType === "CSO_FOLLOWUP") {
@@ -557,6 +573,7 @@ Génère les décisions. Les messages seront personnalisés séparément.
           const lastMsg = "lastMessage" in prospectData ? (prospectData.lastMessage ?? undefined) : undefined;
           const channel = "channel" in prospectData ? (prospectData.channel as "EMAIL" | "LINKEDIN" | "FOLLOWUP") : "EMAIL";
           const msg = await generateCsoMessages(profile, research, brand, channel === "LINKEDIN" ? "LINKEDIN" : "FOLLOWUP", lastMsg);
+          await trackSpend(workspaceId, "cso_message_generation").catch(() => undefined);
           return { ...d, actionData: { ...d.actionData, subject: msg.subject, content: msg.content + sig, _angle: msg.angle } };
         }
       } catch (err) {

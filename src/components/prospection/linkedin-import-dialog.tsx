@@ -19,9 +19,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Loader2, Upload, Linkedin, Plus, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Upload, Linkedin, Plus, CheckCircle2, AlertCircle, Columns3 } from "lucide-react";
 import { toast } from "sonner";
-import { parseLinkedInCSV, type LinkedInFormat } from "@/lib/prospection/linkedin-csv-parser";
+import {
+  parseLinkedInCSV,
+  mapRowsToLeads,
+  type LinkedInFormat,
+  type ColumnMapping,
+} from "@/lib/prospection/linkedin-csv-parser";
 import { importLeads } from "@/actions/leads";
 import {
   createProspectList,
@@ -32,8 +37,23 @@ const FORMAT_LABELS: Record<LinkedInFormat, string> = {
   basic: "LinkedIn Basic (Connections)",
   sales_nav: "Sales Navigator",
   recruiter: "Recruiter Lite",
+  mapped: "Colonnes mappées manuellement",
   unknown: "Format inconnu",
 };
+
+const NONE_VALUE = "__none__";
+
+const MAPPING_FIELDS: Array<{ key: keyof ColumnMapping; label: string; required?: boolean }> = [
+  { key: "name", label: "Nom", required: true },
+  { key: "nameSecondary", label: "Nom — 2e colonne (si prénom/nom séparés)" },
+  { key: "email", label: "Email" },
+  { key: "company", label: "Entreprise" },
+  { key: "jobTitle", label: "Poste" },
+  { key: "location", label: "Localisation" },
+  { key: "linkedInUrl", label: "URL LinkedIn" },
+  { key: "industry", label: "Industrie" },
+  { key: "siren", label: "SIREN" },
+];
 
 export interface ImportedProspectSummary {
   id: string;
@@ -59,8 +79,9 @@ export function LinkedInImportDialog({
   workspaceId,
   onImported,
 }: LinkedInImportDialogProps) {
-  const [step, setStep] = useState<"upload" | "preview" | "importing">("upload");
+  const [step, setStep] = useState<"upload" | "mapping" | "preview" | "importing">("upload");
   const [parseResult, setParseResult] = useState<ReturnType<typeof parseLinkedInCSV> | null>(null);
+  const [mapping, setMapping] = useState<Partial<ColumnMapping>>({});
   const [fileName, setFileName] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [lists, setLists] = useState<Array<{ id: string; name: string; _count: { prospects: number } }>>([]);
@@ -73,6 +94,7 @@ export function LinkedInImportDialog({
       loadLists();
       setStep("upload");
       setParseResult(null);
+      setMapping({});
       setFileName("");
     }
   }, [open]);
@@ -90,13 +112,28 @@ export function LinkedInImportDialog({
 
     const result = parseLinkedInCSV(text);
     setParseResult(result);
+    setMapping({});
 
     if (result.leads.length > 0) {
       setStep("preview");
+    } else if (result.headers.length > 0) {
+      toast.message("Format non reconnu automatiquement — mappe les colonnes manuellement");
+      setStep("mapping");
     } else {
-      toast.error("Aucun prospect detecte dans ce fichier");
+      toast.error("Fichier vide ou illisible");
     }
   }, []);
+
+  const handleConfirmMapping = () => {
+    if (!parseResult || !mapping.name) return;
+    const leads = mapRowsToLeads(parseResult.rows, mapping as ColumnMapping);
+    if (leads.length === 0) {
+      toast.error("Aucun contact avec ce mapping — vérifie la colonne Nom choisie");
+      return;
+    }
+    setParseResult({ ...parseResult, format: "mapped", leads });
+    setStep("preview");
+  };
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -145,6 +182,7 @@ export function LinkedInImportDialog({
           location: l.location,
           linkedInUrl: l.linkedInUrl,
           industry: l.industry,
+          siren: l.siren,
         })),
         selectedListId || undefined
       );
@@ -175,10 +213,11 @@ export function LinkedInImportDialog({
         <DialogHeader>
           <DialogTitle className="text-gray-900 flex items-center gap-2">
             <Linkedin className="h-5 w-5 text-blue-400" />
-            Importer depuis LinkedIn
+            Importer une liste
           </DialogTitle>
           <DialogDescription className="text-gray-500">
-            {step === "upload" && "Importez un export CSV de LinkedIn Basic, Sales Navigator ou Recruiter Lite"}
+            {step === "upload" && "Export LinkedIn (Basic, Sales Navigator, Recruiter Lite) ou CSV générique — si le format n'est pas reconnu automatiquement, tu pourras mapper les colonnes toi-même"}
+            {step === "mapping" && "Indique quelle colonne de ton fichier correspond à chaque champ"}
             {step === "preview" && parseResult && `${FORMAT_LABELS[parseResult.format]} - ${parseResult.leads.length} prospects`}
             {step === "importing" && "Import en cours..."}
           </DialogDescription>
@@ -204,10 +243,10 @@ export function LinkedInImportDialog({
               >
                 <Linkedin className="h-10 w-10 text-blue-500/50 mx-auto mb-3" />
                 <p className="text-gray-700 mb-1">
-                  Deposez votre export LinkedIn CSV
+                  Deposez votre fichier CSV
                 </p>
                 <p className="text-sm text-gray-9000">
-                  Formats supportes : Basic, Sales Navigator, Recruiter Lite
+                  Export LinkedIn (Basic, Sales Navigator, Recruiter Lite) ou CSV générique (CRM, Excel, Sheets...)
                 </p>
               </div>
 
@@ -216,6 +255,43 @@ export function LinkedInImportDialog({
                 <p>1. LinkedIn Basic : Parametres &gt; Obtenir une copie de vos donnees &gt; Connections</p>
                 <p>2. Sales Navigator : Lead Lists &gt; Export</p>
                 <p>3. Recruiter : Projects &gt; Export to CSV</p>
+                <p>Un autre type de fichier (CRM, Excel...) fonctionne aussi — tu choisiras les colonnes manuellement si le format n&apos;est pas reconnu.</p>
+              </div>
+            </>
+          )}
+
+          {step === "mapping" && parseResult && (
+            <>
+              <p className="text-xs text-gray-9000">
+                {parseResult.errors[0]}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {MAPPING_FIELDS.map((f) => (
+                  <div key={f.key} className="space-y-1">
+                    <Label className="text-gray-700 text-xs">
+                      {f.label}
+                      {f.required && " *"}
+                    </Label>
+                    <Select
+                      value={mapping[f.key] || ""}
+                      onValueChange={(v) =>
+                        setMapping((m) => ({ ...m, [f.key]: v === NONE_VALUE ? undefined : v }))
+                      }
+                    >
+                      <SelectTrigger className="bg-gray-100 border-gray-300">
+                        <SelectValue placeholder="Choisir une colonne..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white border-gray-200">
+                        {!f.required && <SelectItem value={NONE_VALUE}>Aucune</SelectItem>}
+                        {parseResult.headers.map((h) => (
+                          <SelectItem key={h} value={h}>
+                            {h}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
               </div>
             </>
           )}
@@ -234,9 +310,19 @@ export function LinkedInImportDialog({
                   </span>
                 </div>
 
-                <p className="text-sm text-gray-500 mb-3">
-                  {parseResult.leads.length} prospects detectes sur {parseResult.totalRows} lignes
-                </p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm text-gray-500">
+                    {parseResult.leads.length} prospects detectes sur {parseResult.totalRows} lignes
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setStep("mapping")}
+                    className="text-xs text-blue-500 hover:underline flex items-center gap-1 shrink-0"
+                  >
+                    <Columns3 className="h-3 w-3" />
+                    Mapper manuellement
+                  </button>
+                </div>
 
                 {parseResult.errors.length > 0 && (
                   <div className="text-xs text-yellow-400 mb-2">
@@ -255,6 +341,7 @@ export function LinkedInImportDialog({
                       <span className="text-gray-9000 truncate">{lead.jobTitle || "-"}</span>
                       {lead.email && <span className="text-green-400 text-[10px]">email</span>}
                       {lead.linkedInUrl && <span className="text-blue-400 text-[10px]">linkedin</span>}
+                      {lead.siren && <span className="text-purple-400 text-[10px]">siren</span>}
                     </div>
                   ))}
                   {parseResult.leads.length > 5 && (
@@ -317,17 +404,27 @@ export function LinkedInImportDialog({
           <Button
             variant="outline"
             onClick={() => {
-              if (step === "preview") {
+              if (step === "preview" || step === "mapping") {
                 setStep("upload");
                 setParseResult(null);
+                setMapping({});
               } else {
                 onOpenChange(false);
               }
             }}
             className="border-gray-300 text-gray-700"
           >
-            {step === "preview" ? "Retour" : "Annuler"}
+            {step === "preview" || step === "mapping" ? "Retour" : "Annuler"}
           </Button>
+          {step === "mapping" && (
+            <Button
+              onClick={handleConfirmMapping}
+              disabled={!mapping.name}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Continuer
+            </Button>
+          )}
           {step === "preview" && parseResult && (
             <Button
               onClick={handleImport}

@@ -19,6 +19,7 @@
 import { getClaude } from "@/lib/ai/langchain";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { researchProspect as gatherRealSignals, type ProspectInput } from "./prospect-researcher";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔗 UNSUBSCRIBE LINK HELPER
@@ -60,16 +61,18 @@ interface ProspectData {
 }
 
 interface PersonalizationHook {
-  source: "linkedin" | "company_news" | "industry_news" | "none";
+  source: "company_trigger" | "linkedin" | "company_news" | "industry_news" | "none";
+  trigger?: string;         // Levée de fonds / recrutement actif détecté
   headline?: string;       // Titre LinkedIn (poste actuel)
   recentActivity?: string; // Activité récente LinkedIn
   companyNews?: string;    // Dernière actu de l'entreprise
   industryNews?: string;   // Dernière actu du secteur
 }
 
-interface ResearchResult {
+export interface ResearchResult {
   recentActivity: string[];
   companyNews: string[];
+  hiringSignals: string[];
   jobTitleContext: string;
   painPoints: string[];
   interests: string[];
@@ -84,6 +87,24 @@ interface EmailPersonalizationInput {
   ourOffer: string;
   ourCompany: string;
   previousEmails?: Array<{ subject: string; sentAt: Date; opened: boolean; replied: boolean }>;
+  /** Mémoïsation de la recherche par prospect, partagée entre les steps d'un
+   * même cycle de personnalisation (cf. `personalizeCampaignCore`) — sans ça,
+   * une séquence à 3 steps refait la recherche (LinkedIn + Serper) 3x pour le
+   * même prospect. Portée à l'appelant : pas de cache module-level, donc pas
+   * de staleness entre deux lancements de campagne différents. */
+  researchCache?: Map<string, Promise<ResearchResult>>;
+}
+
+function getCachedResearch(
+  prospect: ProspectData,
+  cache?: Map<string, Promise<ResearchResult>>
+): Promise<ResearchResult> {
+  if (!cache) return researchProspect(prospect);
+  const existing = cache.get(prospect.id);
+  if (existing) return existing;
+  const promise = researchProspect(prospect);
+  cache.set(prospect.id, promise);
+  return promise;
 }
 
 interface PersonalizedEmail {
@@ -99,86 +120,6 @@ interface PersonalizedEmail {
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔍 RESEARCH PROSPECT - Recherche approfondie du prospect
 // ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔗 LINKEDIN SCRAPE (sans dépendance LangGraph)
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function scrapeLinkedInContext(
-  prospect: ProspectData
-): Promise<{ headline: string; recentActivity?: string } | null> {
-  if (!prospect.linkedInUrl) return null;
-
-  // Stratégie 1 : scraping direct du profil public
-  try {
-    const res = await fetch(prospect.linkedInUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
-    if (res.ok) {
-      const html = await res.text();
-      const descMatch = html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/);
-      const titleMatch = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/);
-      const description = descMatch?.[1] ?? "";
-      const title = titleMatch?.[1] ?? "";
-      const headline = description.split(" | ")[0] || title.replace(" | LinkedIn", "").trim();
-      if (headline && headline !== "LinkedIn") {
-        return { headline: headline.slice(0, 200) };
-      }
-    }
-  } catch {
-    // LinkedIn bloque — stratégie 2
-  }
-
-  // Stratégie 2 : recherche Google via Serper
-  if (!process.env.SERPER_API_KEY) return null;
-
-  try {
-    const usernameMatch = prospect.linkedInUrl.match(/linkedin\.com\/in\/([^/]+)/);
-    const username = usernameMatch?.[1];
-    const query =
-      prospect.name && prospect.company
-        ? `"${prospect.name}" "${prospect.company}" site:linkedin.com/in`
-        : username
-          ? `site:linkedin.com/in/${username}`
-          : null;
-
-    if (!query) return null;
-
-    const serperRes = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": process.env.SERPER_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ q: query, num: 3 }),
-    });
-    const data = await serperRes.json();
-    const top = data.organic?.[0];
-    if (!top) return null;
-
-    const titleParts = (top.title as string ?? "").replace(" | LinkedIn", "").split(" | ");
-    const headline = titleParts[1]?.trim() || top.snippet?.split(".")[0] || "";
-    const recentActivity = data.organic
-      ?.slice(0, 3)
-      .filter((r: { link: string }) => r.link?.includes("linkedin.com"))
-      .map((r: { snippet: string }) => r.snippet?.slice(0, 150))
-      .filter(Boolean)
-      .join(" | ");
-
-    if (headline) {
-      return { headline: headline.slice(0, 200), recentActivity: recentActivity || undefined };
-    }
-  } catch {
-    // best-effort
-  }
-
-  return null;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🏭 ACTUALITÉS SECTEUR (fallback 3)
@@ -209,6 +150,7 @@ export async function researchProspect(prospect: ProspectData): Promise<Research
   const research: ResearchResult = {
     recentActivity: [],
     companyNews: [],
+    hiringSignals: [],
     jobTitleContext: "",
     painPoints: [],
     interests: [],
@@ -217,44 +159,35 @@ export async function researchProspect(prospect: ProspectData): Promise<Research
   };
 
   try {
-    // ── 1. LinkedIn (source privilégiée) ──────────────────────────────────
-    const linkedInCtx = await scrapeLinkedInContext(prospect);
-    if (linkedInCtx) {
+    // ── 1-2. Signaux réels (LinkedIn + levée de fonds/recrutement/actu
+    // entreprise) — réutilise le moteur de recherche de l'Agent CSO
+    // (prospect-researcher.ts), déjà exporté et utilisé tel quel ailleurs,
+    // pour ne pas dupliquer une 3e fois la logique de scrape/recherche.
+    const signals = await gatherRealSignals({
+      id: prospect.id,
+      name: prospect.name,
+      company: prospect.company,
+      jobTitle: prospect.jobTitle,
+      linkedInUrl: prospect.linkedInUrl,
+      email: prospect.email,
+      location: prospect.location,
+      notes: prospect.notes,
+      enrichmentData: prospect.enrichmentData,
+    } as ProspectInput);
+
+    research.companyNews = signals.recentNews;
+    research.hiringSignals = signals.hiringSignals;
+
+    if (signals.companyTrigger) {
+      research.personalizationHook = { source: "company_trigger", trigger: signals.companyTrigger };
+    } else if (signals.linkedInHeadline) {
       research.personalizationHook = {
         source: "linkedin",
-        headline: linkedInCtx.headline,
-        recentActivity: linkedInCtx.recentActivity,
+        headline: signals.linkedInHeadline,
+        recentActivity: signals.recentLinkedInActivity ?? undefined,
       };
-    }
-
-    // ── 2. Actualités récentes de l'entreprise via Serper ─────────────────
-    if (prospect.company && process.env.SERPER_API_KEY) {
-      try {
-        const serperRes = await fetch("https://google.serper.dev/news", {
-          method: "POST",
-          headers: {
-            "X-API-KEY": process.env.SERPER_API_KEY,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ q: prospect.company, num: 3, gl: "fr" }),
-        });
-        if (serperRes.ok) {
-          const serperData = await serperRes.json();
-          research.companyNews = (serperData.news || [])
-            .slice(0, 3)
-            .map((item: { title: string }) => item.title);
-
-          // Fallback 2 : actu entreprise si LinkedIn vide
-          if (research.personalizationHook.source === "none" && research.companyNews[0]) {
-            research.personalizationHook = {
-              source: "company_news",
-              companyNews: research.companyNews[0],
-            };
-          }
-        }
-      } catch {
-        // Best-effort — ne bloque pas la personnalisation
-      }
+    } else if (research.companyNews[0]) {
+      research.personalizationHook = { source: "company_news", companyNews: research.companyNews[0] };
     }
 
     // ── 3. Actualités secteur (fallback final) ────────────────────────────
@@ -300,6 +233,13 @@ export async function researchProspect(prospect: ProspectData): Promise<Research
         research.painPoints = ["Product-market fit", "Priorisation du roadmap", "Réduction du time to market"];
         research.interests = ["Product analytics", "User research", "Agile", "Feature prioritization"];
       }
+    }
+
+    // Pain point contextualisé (stade entreprise/recrutement) en tête — plus
+    // riche que la table statique par intitulé de poste ci-dessus, gardée en
+    // complément pour la variété et pour `interests`.
+    if (signals.topPainPoint) {
+      research.painPoints = [signals.topPainPoint, ...research.painPoints];
     }
 
     // Social proof : prospects convertis du même workspace avec industrie similaire
@@ -378,10 +318,10 @@ export async function researchProspect(prospect: ProspectData): Promise<Research
 export async function generatePersonalizedEmail(
   input: EmailPersonalizationInput
 ): Promise<PersonalizedEmail> {
-  const { prospect, sequenceStep, ourOffer, ourCompany, previousEmails = [] } = input;
+  const { prospect, sequenceStep, ourOffer, ourCompany, previousEmails = [], researchCache } = input;
 
-  // 1. Recherche approfondie du prospect
-  const research = await researchProspect(prospect);
+  // 1. Recherche approfondie du prospect (mémoïsée par prospect si un cache est fourni)
+  const research = await getCachedResearch(prospect, researchCache);
 
   // 2. Calcul du score de personnalisation
   let personalizationScore = 0;
@@ -395,12 +335,15 @@ export async function generatePersonalizedEmail(
     personalizationScore += 20;
     personalizationPoints.push(`Company: ${prospect.company}`);
   }
-  if (research.personalizationHook.source === "linkedin") {
+  if (research.personalizationHook.source === "company_trigger") {
+    personalizationScore += 35;
+    personalizationPoints.push(`Signal fort: ${research.personalizationHook.trigger}`);
+  } else if (research.personalizationHook.source === "linkedin") {
     personalizationScore += 30;
     personalizationPoints.push(`LinkedIn: ${research.personalizationHook.headline ?? "profil trouvé"}`);
-  } else if (research.companyNews.length > 0) {
+  } else if (research.personalizationHook.source === "company_news") {
     personalizationScore += 20;
-    personalizationPoints.push(`Company news: ${research.companyNews[0]}`);
+    personalizationPoints.push(`Company news: ${research.personalizationHook.companyNews}`);
   } else if (research.personalizationHook.source === "industry_news") {
     personalizationScore += 10;
     personalizationPoints.push(`Industry news: ${research.personalizationHook.industryNews}`);
@@ -422,7 +365,14 @@ export async function generatePersonalizedEmail(
   const hook = research.personalizationHook;
   let hookSection = "";
   if (sequenceStep === 1 && hook.source !== "none") {
-    if (hook.source === "linkedin") {
+    if (hook.source === "company_trigger") {
+      hookSection = `
+**ACCROCHE PERSONNALISÉE (OBLIGATOIRE - utilise cette info pour ouvrir l'email):**
+Source: Signal fort détecté (levée de fonds ou recrutement actif)
+- "${hook.trigger}"
+→ Ouvre l'email en référençant explicitement cet évènement (ex: féliciter pour la levée, ou noter la croissance liée au recrutement) de façon naturelle, jamais générique.
+`;
+    } else if (hook.source === "linkedin") {
       hookSection = `
 **ACCROCHE PERSONNALISÉE (OBLIGATOIRE - utilise cette info pour ouvrir l'email):**
 Source: Profil LinkedIn
@@ -460,6 +410,7 @@ ${prospect.location ? `- Localisation: ${prospect.location}` : ""}
 
 **RECHERCHE:**
 ${research.companyNews.length > 0 ? `- Actualités récentes: ${research.companyNews.join(", ")}` : ""}
+${research.hiringSignals.length > 0 ? `- Recrutements actifs détectés: ${research.hiringSignals.join(", ")}` : ""}
 ${research.painPoints.length > 0 ? `- Pain points identifiés: ${research.painPoints.join(", ")}` : ""}
 ${research.interests.length > 0 ? `- Intérêts: ${research.interests.join(", ")}` : ""}
 

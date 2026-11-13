@@ -28,6 +28,7 @@ export interface ProspectBasicInfo {
   jobTitle?: string | null;
   email?: string | null;
   workspaceId: string;
+  linkedInUrl?: string | null;
 }
 
 export interface EnrichmentResult {
@@ -125,7 +126,7 @@ async function enrichWithDropcontact(
   if (!firstName || !lastName)
     return { enriched: false, reason: "Prénom et nom complets requis pour Dropcontact" };
 
-  const result = await enrichLeadContact(firstName, lastName, prospect.company);
+  const result = await enrichLeadContact(firstName, lastName, prospect.company, undefined, prospect.linkedInUrl);
   if (!result.email || result.emailStatus === "NOT_FOUND")
     return { enriched: false, reason: "Dropcontact: email non disponible" };
 
@@ -341,7 +342,7 @@ export async function findUnenrichedProspects(
       enrichmentData: { equals: Prisma.JsonNull },
     },
     take: limit,
-    select: { id: true, name: true, company: true, jobTitle: true, email: true, workspaceId: true },
+    select: { id: true, name: true, company: true, jobTitle: true, email: true, workspaceId: true, linkedInUrl: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -352,5 +353,6 @@ export async function findUnenrichedProspects(
     jobTitle: p.jobTitle,
     email: p.email,
     workspaceId,
+    linkedInUrl: p.linkedInUrl,
   }));
 }
