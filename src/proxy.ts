@@ -99,6 +99,7 @@ export default auth(async (req) => {
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/marketing-os") ||
     pathname.startsWith("/sales-os") ||
+    pathname.startsWith("/goskalle") ||
     pathname.startsWith("/onboarding");
 
   if (isProtectedAppRoute && !isLoggedIn) {

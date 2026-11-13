@@ -53,7 +53,7 @@ interface EmailReply {
   isOOO: boolean;
 }
 
-interface Conversation {
+export interface Conversation {
   id: string;
   name: string;
   jobTitle: string | null;

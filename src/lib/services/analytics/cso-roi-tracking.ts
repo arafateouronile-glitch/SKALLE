@@ -35,6 +35,17 @@ export interface WeeklyPipelinePoint {
   value: number;
 }
 
+export interface MonthlyPipelinePoint {
+  month: string; // "YYYY-MM"
+  label: string; // libellé court FR, ex. "Janv."
+  convertedValue: number;
+}
+
+export interface DailyActivityPoint {
+  date: string; // "YYYY-MM-DD"
+  count: number;
+}
+
 export interface CsoROIReport {
   /** Pipeline total (prospects CONVERTED avec value) */
   totalPipelineValue: number;
@@ -161,8 +172,88 @@ export async function getCsoROIDashboard(workspaceId: string): Promise<CsoROIRep
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 📈 PIPELINE CONVERTI — 6 DERNIERS MOIS (page d'accueil Goskalle)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Indépendante de getCsoROIDashboard (fenêtre 90j/12 semaines, consommée par
+ * la page Analytics) — fenêtre et granularité différentes pour la page
+ * d'accueil, pas de modification du comportement existant.
+ */
+export async function getMonthlyPipelineTrend(workspaceId: string): Promise<MonthlyPipelinePoint[]> {
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+  sixMonthsAgo.setDate(1);
+  sixMonthsAgo.setHours(0, 0, 0, 0);
+
+  const converted = await prisma.prospect.findMany({
+    where: { workspaceId, status: "CONVERTED", createdAt: { gte: sixMonthsAgo } },
+    select: { value: true, createdAt: true },
+  });
+
+  // Pré-remplit les 6 mois de la fenêtre à 0 avant d'ajouter les vraies valeurs —
+  // un workspace neuf doit produire un tableau de taille fixe, pas un tableau vide.
+  const monthlyMap: Record<string, MonthlyPipelinePoint> = {};
+  const cursor = new Date(sixMonthsAgo);
+  for (let i = 0; i < 6; i++) {
+    const key = getMonthKey(cursor);
+    monthlyMap[key] = { month: key, label: MONTH_LABELS_FR[cursor.getMonth()], convertedValue: 0 };
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  for (const p of converted) {
+    const key = getMonthKey(p.createdAt);
+    if (monthlyMap[key]) monthlyMap[key].convertedValue += p.value ?? 0;
+  }
+
+  return Object.values(monthlyMap).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔥 ACTIVITÉ QUOTIDIENNE — 84 DERNIERS JOURS (heatmap page d'accueil Goskalle)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function getDailyActivityHeatmap(workspaceId: string): Promise<DailyActivityPoint[]> {
+  const eightyFourDaysAgo = new Date();
+  eightyFourDaysAgo.setDate(eightyFourDaysAgo.getDate() - 83);
+  eightyFourDaysAgo.setHours(0, 0, 0, 0);
+
+  const decisions = await prisma.agentDecision.findMany({
+    where: { workspaceId, createdAt: { gte: eightyFourDaysAgo } },
+    select: { createdAt: true },
+  });
+
+  const dailyMap: Record<string, DailyActivityPoint> = {};
+  const cursor = new Date(eightyFourDaysAgo);
+  for (let i = 0; i < 84; i++) {
+    const key = getDayKey(cursor);
+    dailyMap[key] = { date: key, count: 0 };
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  for (const d of decisions) {
+    const key = getDayKey(d.createdAt);
+    if (dailyMap[key]) dailyMap[key].count++;
+  }
+
+  return Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 🛠️ UTILS
 // ═══════════════════════════════════════════════════════════════════════════
+
+const MONTH_LABELS_FR = ["Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", "Août", "Sept.", "Oct.", "Nov.", "Déc."];
+
+function getMonthKey(date: Date): string {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getDayKey(date: Date): string {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function getWeekKey(date: Date): string {
   const d = new Date(date);

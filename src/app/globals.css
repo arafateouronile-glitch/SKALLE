@@ -319,6 +319,71 @@
 .animate-stagger > *:nth-child(7) { animation-delay: 0.35s; }
 .animate-stagger > *:nth-child(8) { animation-delay: 0.4s; }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-stagger > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Goskalle — utilitaires pour la variante premium de CsoAgentQueue (accent ambre unique) */
+.gk-link {
+  color: var(--amber-fg);
+  transition: opacity 0.15s ease;
+}
+.gk-link:hover {
+  opacity: 0.7;
+}
+.gk-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--amber-line);
+}
+.gk-card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+}
+.gk-tab-active {
+  background: var(--bg-card);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+.gk-tab-inactive {
+  color: var(--fg-mute);
+}
+.gk-tab-inactive:hover {
+  color: var(--fg);
+}
+.gk-card-hover {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.gk-card-hover:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--line-strong) !important;
+  transform: translateY(-1px);
+}
+.gk-signal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.gk-signal-card:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--line-strong);
+}
+.gk-tabslist {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--line);
+}
+.gk-tabtrigger {
+  color: var(--fg-mute);
+}
+.gk-tabtrigger[data-state="active"] {
+  background: var(--bg-card) !important;
+  color: var(--fg) !important;
+  box-shadow: var(--shadow-sm);
+}
+
 /* Radar à Signaux — effet pulse + scan line */
 @keyframes radar-pulse {
   0% {

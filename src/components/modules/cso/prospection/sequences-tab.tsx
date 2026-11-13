@@ -13,7 +13,13 @@ import {
 import { startSequence, pauseSequence } from "@/actions/sequences";
 import { toast } from "sonner";
 
-export function SequencesTab({ workspaceId }: { workspaceId: string }) {
+export function SequencesTab({
+  workspaceId,
+  outreachHref = "/sales-os/outreach",
+}: {
+  workspaceId: string;
+  outreachHref?: string;
+}) {
   const [sequences, setSequences] = useState<any[]>([]);
   const [selectedSequence, setSelectedSequence] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -97,7 +103,7 @@ export function SequencesTab({ workspaceId }: { workspaceId: string }) {
             </DialogHeader>
             <div className="flex flex-col items-center gap-3 py-8">
               <p className="text-sm text-gray-500">Ce module est accessible depuis la page Outreach.</p>
-              <a href="/sales-os/outreach" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors">
+              <a href={outreachHref} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors">
                 Aller à Outreach →
               </a>
             </div>
