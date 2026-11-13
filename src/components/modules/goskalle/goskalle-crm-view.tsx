@@ -35,6 +35,7 @@ import {
   Calendar,
   StickyNote,
   Rocket,
+  ListFilter,
 } from "lucide-react";
 import {
   getProspectsForCrm,
@@ -45,6 +46,7 @@ import {
   type ProspectStatusPipeline,
 } from "@/actions/crm";
 import { getUserWorkspace } from "@/actions/leads";
+import { getProspectLists } from "@/actions/prospect-lists";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { MarkConvertedDialog } from "@/components/modules/cso/mark-converted-dialog";
@@ -481,17 +483,19 @@ export function GoskalleCrmView() {
   const [prospects, setProspects] = useState<ProspectForCrm[]>([]);
   const [relanceLeads, setRelanceLeads] = useState<ProspectForCrm[]>([]);
   const [sourceTab, setSourceTab] = useState<CRMSourceFilter>("all");
+  const [lists, setLists] = useState<Array<{ id: string; name: string; _count: { prospects: number } }>>([]);
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<ProspectStatusPipeline | null>(null);
   const [selectedProspect, setSelectedProspect] = useState<ProspectForCrm | null>(null);
   const [pendingConversion, setPendingConversion] = useState<{ prospectId: string; name: string } | null>(null);
 
-  const loadAll = useCallback(async (wsId: string, tab: CRMSourceFilter) => {
+  const loadAll = useCallback(async (wsId: string, tab: CRMSourceFilter, listId: string | null) => {
     setLoading(true);
     try {
       const [crmRes, relanceRes] = await Promise.all([
-        getProspectsForCrm(wsId, tab),
+        getProspectsForCrm(wsId, tab, listId || undefined),
         getRelanceLeads(wsId),
       ]);
       if (crmRes.success && crmRes.data) setProspects(crmRes.data);
@@ -504,19 +508,25 @@ export function GoskalleCrmView() {
     }
   }, []);
 
+  const loadLists = useCallback(async (wsId: string) => {
+    const res = await getProspectLists(wsId);
+    if (res.success && res.data) setLists(res.data);
+  }, []);
+
   useEffect(() => {
     (async () => {
       const res = await getUserWorkspace();
       if (res.success && res.workspaceId) {
         setWorkspaceId(res.workspaceId);
-        loadAll(res.workspaceId, "all");
+        loadAll(res.workspaceId, "all", null);
+        loadLists(res.workspaceId);
       }
     })();
-  }, [loadAll]);
+  }, [loadAll, loadLists]);
 
   useEffect(() => {
-    if (workspaceId) loadAll(workspaceId, sourceTab);
-  }, [workspaceId, sourceTab, loadAll]);
+    if (workspaceId) loadAll(workspaceId, sourceTab, selectedListId);
+  }, [workspaceId, sourceTab, selectedListId, loadAll]);
 
   const performStatusChange = useCallback(
     async (prospectId: string, newStatus: ProspectStatusPipeline, value?: number) => {
@@ -536,10 +546,10 @@ export function GoskalleCrmView() {
       const ok = await updateProspectStatusAction(prospectId, newStatus, workspaceId, value);
       if (!ok.success) {
         toast.error(ok.error || "Erreur");
-        loadAll(workspaceId, sourceTab);
+        loadAll(workspaceId, sourceTab, selectedListId);
       }
     },
-    [workspaceId, sourceTab, loadAll, selectedProspect]
+    [workspaceId, sourceTab, selectedListId, loadAll, selectedProspect]
   );
 
   // Passer par CONVERTED demande toujours un montant de deal (ou un refus explicite) —
@@ -619,7 +629,7 @@ export function GoskalleCrmView() {
                 </span>
               )}
               <button
-                onClick={() => workspaceId && loadAll(workspaceId, sourceTab)}
+                onClick={() => workspaceId && loadAll(workspaceId, sourceTab, selectedListId)}
                 className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition-colors"
                 style={{ border: "1px solid var(--line)", background: "var(--bg-sidebar)", color: "var(--fg-mute)" }}
               >
@@ -673,6 +683,48 @@ export function GoskalleCrmView() {
               );
             })}
           </div>
+
+          {/* Filtres par liste — n'apparaît que si l'utilisateur a importé au moins une liste nommée */}
+          {lists.length > 0 && (
+            <div className="flex items-center gap-1 pb-3 overflow-x-auto no-scrollbar">
+              <ListFilter className="h-3.5 w-3.5 mr-1 shrink-0" style={{ color: "var(--fg-mute)" }} />
+              <button
+                onClick={() => setSelectedListId(null)}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150"
+                style={
+                  selectedListId === null
+                    ? { background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }
+                    : { border: "1px solid transparent", color: "var(--fg-mute)" }
+                }
+              >
+                Toutes les listes
+              </button>
+              {lists.map((list) => (
+                <button
+                  key={list.id}
+                  onClick={() => setSelectedListId(list.id)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150"
+                  style={
+                    selectedListId === list.id
+                      ? { background: "var(--amber-soft)", border: "1px solid var(--amber-line)", color: "var(--amber-fg)" }
+                      : { border: "1px solid transparent", color: "var(--fg-mute)" }
+                  }
+                >
+                  {list.name}
+                  <span
+                    className="ml-0.5 rounded-full px-1.5 py-0.5 text-[9px] tabular-nums font-bold"
+                    style={
+                      selectedListId === list.id
+                        ? { background: "var(--amber-line)", color: "var(--amber-fg)" }
+                        : { background: "var(--line-strong)", color: "var(--fg-mute)" }
+                    }
+                  >
+                    {list._count.prospects}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

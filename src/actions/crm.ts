@@ -40,9 +40,13 @@ async function requireWorkspace(workspaceId: string, userId: string) {
 
 function sourceFilterToWhere(
   workspaceId: string,
-  sourceFilter: CRMSourceFilter
+  sourceFilter: CRMSourceFilter,
+  listId?: string
 ): Prisma.ProspectWhereInput {
-  const base = { workspaceId };
+  const base: Prisma.ProspectWhereInput = {
+    workspaceId,
+    ...(listId ? { lists: { some: { prospectListId: listId } } } : {}),
+  };
   if (sourceFilter === "all") return base;
   if (sourceFilter === "LINKEDIN")
     return { ...base, OR: [{ source: "LINKEDIN" }, { platform: "LINKEDIN" }] };
@@ -99,13 +103,14 @@ const PROSPECT_SELECT = {
 
 export async function getProspectsForCrm(
   workspaceId: string,
-  sourceFilter: CRMSourceFilter = "all"
+  sourceFilter: CRMSourceFilter = "all",
+  listId?: string
 ): Promise<{ success: boolean; data?: ProspectForCrm[]; error?: string }> {
   try {
     const session = await requireAuth();
     await requireWorkspace(workspaceId, session.user!.id!);
 
-    const where = sourceFilterToWhere(workspaceId, sourceFilter);
+    const where = sourceFilterToWhere(workspaceId, sourceFilter, listId);
     const prospects = await prisma.prospect.findMany({
       where,
       orderBy: [{ score: "desc" }, { lastInteractionAt: "desc" }, { updatedAt: "desc" }],
