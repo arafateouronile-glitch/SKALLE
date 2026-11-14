@@ -10,6 +10,7 @@
  * - Import en masse
  */
 
+import type { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inngest } from "@/inngest/client";
@@ -162,19 +163,70 @@ export async function searchQualifiedLeads(
 // 💾 IMPORT LEADS - Importer des leads en masse
 // ═══════════════════════════════════════════════════════════════════════════
 
+type ImportLead = {
+  name: string;
+  email?: string;
+  phone?: string;
+  linkedInUrl?: string;
+  company: string;
+  jobTitle?: string;
+  location?: string;
+  industry?: string;
+  siren?: string;
+};
+
+// Fusionne deux occurrences du même contact *au sein du fichier importé*
+// (ex. export avec une ligne dupliquée) — même formule que le merge contre
+// l'existant en base : le champ le plus récent gagne s'il est renseigné.
+function mergeTwoLeads(earlier: ImportLead, later: ImportLead): ImportLead {
+  return {
+    name: later.name || earlier.name,
+    email: later.email || earlier.email,
+    phone: later.phone || earlier.phone,
+    linkedInUrl: later.linkedInUrl || earlier.linkedInUrl,
+    company: later.company || earlier.company,
+    jobTitle: later.jobTitle || earlier.jobTitle,
+    location: later.location || earlier.location,
+    industry: later.industry || earlier.industry,
+    siren: later.siren || earlier.siren,
+  };
+}
+
+// Dédoublonne par email OU linkedInUrl *avant* de toucher la DB — réplique en
+// mémoire le comportement de la boucle séquentielle d'origine (où la 2e
+// occurrence d'un même contact dans le fichier retrouvait la 1re via le
+// `findFirst` et fusionnait dedans), sans le coût d'un aller-retour DB par ligne.
+function dedupeLeadsWithinFile(leads: ImportLead[]): { deduped: ImportLead[]; internalDuplicates: number } {
+  const deduped: ImportLead[] = [];
+  const byEmail = new Map<string, number>();
+  const byUrl = new Map<string, number>();
+  let internalDuplicates = 0;
+
+  for (const lead of leads) {
+    const emailKey = lead.email || undefined;
+    const urlKey = lead.linkedInUrl || undefined;
+    const existingIdx = (emailKey !== undefined ? byEmail.get(emailKey) : undefined)
+      ?? (urlKey !== undefined ? byUrl.get(urlKey) : undefined);
+
+    if (existingIdx !== undefined) {
+      deduped[existingIdx] = mergeTwoLeads(deduped[existingIdx], lead);
+      internalDuplicates++;
+      if (emailKey !== undefined) byEmail.set(emailKey, existingIdx);
+      if (urlKey !== undefined) byUrl.set(urlKey, existingIdx);
+    } else {
+      const newIdx = deduped.length;
+      deduped.push(lead);
+      if (emailKey !== undefined) byEmail.set(emailKey, newIdx);
+      if (urlKey !== undefined) byUrl.set(urlKey, newIdx);
+    }
+  }
+
+  return { deduped, internalDuplicates };
+}
+
 export async function importLeads(
   workspaceId: string,
-  leads: Array<{
-    name: string;
-    email?: string;
-    phone?: string;
-    linkedInUrl?: string;
-    company: string;
-    jobTitle?: string;
-    location?: string;
-    industry?: string;
-    siren?: string;
-  }>,
+  leads: ImportLead[],
   listId?: string
 ): Promise<{
   success: boolean;
@@ -195,99 +247,147 @@ export async function importLeads(
       return { success: false, error: "Workspace non trouvé" };
     }
 
-    let imported = 0;
-    let duplicates = 0;
+    const { deduped, internalDuplicates } = dedupeLeadsWithinFile(leads);
+    let duplicates = internalDuplicates;
     let errors = 0;
-    const importedProspectIds: string[] = [];
-    const importedProspects: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[] = [];
 
-    // Importer chaque lead
-    for (const lead of leads) {
+    // Une seule requête de dédoublonnage DB (au lieu d'un `findFirst` par ligne)
+    // — un import de 500 lignes faisait jusqu'à 1000+ allers-retours séquentiels
+    // vers Supabase, plusieurs minutes de blocage (`connection_limit=1` dans
+    // `prisma.ts` sérialise tout de toute façon, paralléliser n'aurait rien
+    // changé : le vrai levier est de réduire le nombre d'allers-retours).
+    const emails = [...new Set(deduped.map((l) => l.email).filter((e): e is string => !!e))];
+    const urls = [...new Set(deduped.map((l) => l.linkedInUrl).filter((u): u is string => !!u))];
+
+    const existingRows = emails.length > 0 || urls.length > 0
+      ? await prisma.prospect.findMany({
+          where: {
+            workspaceId,
+            OR: [
+              ...(emails.length > 0 ? [{ email: { in: emails } }] : []),
+              ...(urls.length > 0 ? [{ linkedInUrl: { in: urls } }] : []),
+            ],
+          },
+          select: {
+            id: true, name: true, email: true, phone: true, linkedInUrl: true,
+            company: true, jobTitle: true, location: true, industry: true,
+            emailVerified: true, enrichmentData: true,
+          },
+        })
+      : [];
+
+    const existingByEmail = new Map(existingRows.filter((r) => r.email).map((r) => [r.email as string, r]));
+    const existingByUrl = new Map(existingRows.filter((r) => r.linkedInUrl).map((r) => [r.linkedInUrl, r]));
+
+    const toCreate: Prisma.ProspectCreateManyInput[] = [];
+    const toUpdate: Array<{ id: string; data: Prisma.ProspectUpdateInput }> = [];
+
+    for (const lead of deduped) {
+      const existing = (lead.email ? existingByEmail.get(lead.email) : undefined)
+        ?? (lead.linkedInUrl ? existingByUrl.get(lead.linkedInUrl) : undefined);
+
+      if (existing) {
+        toUpdate.push({
+          id: existing.id,
+          data: {
+            name: lead.name || existing.name,
+            email: lead.email || existing.email,
+            phone: lead.phone || existing.phone,
+            linkedInUrl: lead.linkedInUrl || existing.linkedInUrl,
+            company: lead.company || existing.company,
+            jobTitle: lead.jobTitle || existing.jobTitle,
+            location: lead.location || existing.location,
+            industry: lead.industry || existing.industry,
+            emailVerified: lead.email ? true : existing.emailVerified,
+            // Merge pour ne pas écraser des clés déjà posées par d'autres flux
+            // d'enrichissement (ex: `linkedIn`, `naf`) — cf. convention dans
+            // `decision-maker-resolver.ts` / `qualiopi-radar.ts`. Omis si pas de
+            // SIREN à ajouter (ne pas réécrire `null` sur un champ Json existant).
+            ...(lead.siren && {
+              enrichmentData: { ...((existing.enrichmentData as Record<string, unknown> | null) ?? {}), siren: lead.siren },
+            }),
+          },
+        });
+      } else {
+        toCreate.push({
+          name: lead.name,
+          email: lead.email || null,
+          phone: lead.phone || null,
+          linkedInUrl: lead.linkedInUrl || "",
+          company: lead.company,
+          jobTitle: lead.jobTitle || null,
+          location: lead.location || null,
+          industry: lead.industry || null,
+          emailVerified: !!lead.email,
+          enrichmentData: lead.siren ? { siren: lead.siren } : undefined,
+          workspaceId,
+        });
+      }
+    }
+
+    // Créer en lot (1 requête au lieu de N). `skipDuplicates` absorbe une
+    // éventuelle course (import concurrent) sans lever de P2002 — un skip est
+    // compté comme duplicate, comme le faisait le catch P2002 d'origine.
+    let created: { id: string; name: string; email: string | null; company: string; jobTitle: string | null }[] = [];
+    if (toCreate.length > 0) {
       try {
-        // Vérifier si le lead existe deja (par email ou LinkedIn)
-        const orConditions = [
-          ...(lead.email ? [{ email: lead.email }] : []),
-          ...(lead.linkedInUrl && lead.linkedInUrl.length > 0 ? [{ linkedInUrl: lead.linkedInUrl }] : []),
-        ];
-        const existing = orConditions.length > 0
-          ? await prisma.prospect.findFirst({
-              where: { workspaceId, OR: orConditions },
-            })
-          : null;
+        created = await prisma.prospect.createManyAndReturn({
+          data: toCreate,
+          skipDuplicates: true,
+          select: { id: true, name: true, email: true, company: true, jobTitle: true },
+        });
+        duplicates += toCreate.length - created.length;
+      } catch (error) {
+        console.error("Bulk create leads error:", error);
+        errors += toCreate.length;
+      }
+    }
+    const imported = created.length;
 
-        if (existing) {
-          // Mettre a jour le lead existant (merge)
-          const updated = await prisma.prospect.update({
-            where: { id: existing.id },
-            data: {
-              name: lead.name || existing.name,
-              email: lead.email || existing.email,
-              phone: lead.phone || existing.phone,
-              linkedInUrl: lead.linkedInUrl || existing.linkedInUrl,
-              company: lead.company || existing.company,
-              jobTitle: lead.jobTitle || existing.jobTitle,
-              location: lead.location || existing.location,
-              industry: lead.industry || existing.industry,
-              emailVerified: lead.email ? true : existing.emailVerified,
-              // Merge pour ne pas écraser des clés déjà posées par d'autres flux
-              // d'enrichissement (ex: `linkedIn`, `naf`) — cf. convention dans
-              // `decision-maker-resolver.ts` / `qualiopi-radar.ts`. Omis si pas de
-              // SIREN à ajouter (ne pas réécrire `null` sur un champ Json existant).
-              ...(lead.siren && {
-                enrichmentData: { ...((existing.enrichmentData as Record<string, unknown> | null) ?? {}), siren: lead.siren },
-              }),
-            },
-            select: { id: true, name: true, email: true, company: true, jobTitle: true },
-          });
-          importedProspectIds.push(updated.id);
-          importedProspects.push(updated);
-          duplicates++;
-        } else {
-          // Creer un nouveau lead
-          const created = await prisma.prospect.create({
-            data: {
-              name: lead.name,
-              email: lead.email || null,
-              phone: lead.phone || null,
-              linkedInUrl: lead.linkedInUrl || "",
-              company: lead.company,
-              jobTitle: lead.jobTitle || null,
-              location: lead.location || null,
-              industry: lead.industry || null,
-              emailVerified: lead.email ? true : false,
-              enrichmentData: lead.siren ? { siren: lead.siren } : undefined,
-              workspaceId,
-            },
-            select: { id: true, name: true, email: true, company: true, jobTitle: true },
-          });
-          importedProspectIds.push(created.id);
-          importedProspects.push(created);
-          imported++;
-          // Sans email, rend ce lead éligible à l'enrichissement Dropcontact
-          // (cf. autoEnrichOnCreate) — les autres flux de création (Local/Signals
-          // Radar, import Apollo) émettent déjà cet événement, celui-ci ne le
-          // faisait pas et ne passait donc que par le batch nocturne autopilot-only.
-          await inngest.send({
-            name: "prospect/created",
-            data: { prospectId: created.id, workspaceId, userId: session.user!.id! },
-          }).catch(() => {/* fire-and-forget */});
-        }
+    // Mettre à jour les doublons DB réels — sous-ensemble bien plus petit que
+    // le fichier entier pour un import de nouvelle liste (cas dominant), donc
+    // pas batché en une seule requête (fusion par champ trop spécifique par
+    // ligne pour un `updateMany` Prisma standard).
+    const updated: typeof created = [];
+    for (const u of toUpdate) {
+      try {
+        const row = await prisma.prospect.update({
+          where: { id: u.id },
+          data: u.data,
+          select: { id: true, name: true, email: true, company: true, jobTitle: true },
+        });
+        updated.push(row);
+        duplicates++;
       } catch (error: any) {
-        // Gerer les violations de contrainte unique (P2002)
         if (error?.code === "P2002") {
           duplicates++;
         } else {
-          console.error(`Error importing lead ${lead.name}:`, error);
+          console.error(`Error updating lead ${u.id}:`, error);
           errors++;
         }
       }
     }
 
+    const importedProspects = [...created, ...updated];
+
+    // Événements Inngest en un seul envoi (au lieu d'un `await` par lead créé)
+    // — sans email, chaque nouveau prospect devient éligible à l'enrichissement
+    // Dropcontact (cf. `autoEnrichOnCreate`) ; les autres flux de création
+    // (Local/Signals Radar, import Apollo) émettent déjà cet événement.
+    if (created.length > 0) {
+      await inngest.send(
+        created.map((c) => ({
+          name: "prospect/created" as const,
+          data: { prospectId: c.id, workspaceId, userId: session.user!.id! },
+        }))
+      ).catch(() => {/* fire-and-forget */});
+    }
+
     // Ajouter à la liste si listId fourni
-    if (listId && importedProspectIds.length > 0) {
+    if (listId && importedProspects.length > 0) {
       await prisma.prospectListEntry.createMany({
-        data: importedProspectIds.map((prospectId) => ({
-          prospectId,
+        data: importedProspects.map((p) => ({
+          prospectId: p.id,
           prospectListId: listId,
         })),
         skipDuplicates: true,
