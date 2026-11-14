@@ -279,27 +279,55 @@ async function saveEnrichmentResult(
   result: EnrichmentResult
 ): Promise<void> {
   try {
-    await prisma.prospect.update({
-      where: { id: prospect.id },
-      data: {
-        ...(result.email && { email: result.email }),
-        ...(result.emailVerified !== undefined && { emailVerified: result.emailVerified }),
-        ...(result.phone && { phone: result.phone }),
-        ...(result.jobTitle && !prospect.jobTitle && { jobTitle: result.jobTitle }),
-        ...(result.industry && { industry: result.industry }),
-        ...(result.companySize && { companySize: result.companySize }),
-        ...(result.linkedInUrl && { linkedInUrl: result.linkedInUrl }),
-        ...(result.linkedInConnections && { linkedInConnections: result.linkedInConnections }),
-        ...(result.location && { location: result.location }),
-        enrichmentData: JSON.parse(
-          JSON.stringify({
-            provider: result.provider,
-            emailVerified: result.emailVerified,
-            enrichedAt: new Date().toISOString(),
-          })
-        ),
-      },
-    });
+    const commonData = {
+      ...(result.emailVerified !== undefined && { emailVerified: result.emailVerified }),
+      ...(result.phone && { phone: result.phone }),
+      ...(result.jobTitle && !prospect.jobTitle && { jobTitle: result.jobTitle }),
+      ...(result.industry && { industry: result.industry }),
+      ...(result.companySize && { companySize: result.companySize }),
+      ...(result.linkedInUrl && { linkedInUrl: result.linkedInUrl }),
+      ...(result.linkedInConnections && { linkedInConnections: result.linkedInConnections }),
+      ...(result.location && { location: result.location }),
+    };
+
+    let emailApplied = !!result.email;
+    try {
+      await prisma.prospect.update({
+        where: { id: prospect.id },
+        data: {
+          ...commonData,
+          ...(result.email && { email: result.email }),
+          enrichmentData: JSON.parse(
+            JSON.stringify({
+              provider: result.provider,
+              emailVerified: result.emailVerified,
+              enrichedAt: new Date().toISOString(),
+            })
+          ),
+        },
+      });
+    } catch (err) {
+      // Email trouvé par le provider déjà porté par un autre prospect du même
+      // workspace (contact générique partagé, doublon...) — la contrainte unique
+      // (email, workspaceId) rejette l'update. Sauver quand même le reste
+      // (téléphone, LinkedIn, poste...) plutôt que de tout perdre.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+      emailApplied = false;
+      await prisma.prospect.update({
+        where: { id: prospect.id },
+        data: {
+          ...commonData,
+          enrichmentData: JSON.parse(
+            JSON.stringify({
+              provider: result.provider,
+              emailVerified: result.emailVerified,
+              enrichedAt: new Date().toISOString(),
+              emailSkippedReason: "email déjà utilisé par un autre prospect du workspace",
+            })
+          ),
+        },
+      });
+    }
 
     await prisma.leadEnrichment.create({
       data: {
@@ -312,7 +340,7 @@ async function saveEnrichmentResult(
               ? "DROPCONTACT"
               : "APIFY",
         status: "COMPLETED",
-        emailFound: !!result.email,
+        emailFound: emailApplied,
         phoneFound: !!result.phone,
         emailScore: result.emailVerified
           ? 95
