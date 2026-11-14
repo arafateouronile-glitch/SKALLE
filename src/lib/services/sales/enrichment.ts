@@ -90,34 +90,41 @@ export async function enrichLeadContact(
     for (let attempt = 0; attempt < 6; attempt++) {
       await sleep(5000);
 
-      const pollRes = await fetch(
-        `https://api.dropcontact.io/batch/${requestId}`,
-        { headers: { "X-Access-Token": apiKey } }
-      );
+      try {
+        const pollRes = await fetch(
+          `https://api.dropcontact.io/batch/${requestId}`,
+          { headers: { "X-Access-Token": apiKey } }
+        );
 
-      if (!pollRes.ok) continue;
+        if (!pollRes.ok) continue;
 
-      const pollData = (await pollRes.json()) as {
-        success?: boolean;
-        data?: Array<{
-          email?: Array<{ email: string; qualification: string }>;
-          linkedin?: string;
-          phone?: string;
-        }>;
-      };
+        const pollData = (await pollRes.json()) as {
+          success?: boolean;
+          data?: Array<{
+            email?: Array<{ email: string; qualification: string }>;
+            linkedin?: string;
+            phone?: string;
+          }>;
+        };
 
-      if (!pollData.success || !pollData.data?.[0]) continue;
+        if (!pollData.success || !pollData.data?.[0]) continue;
 
-      const contact = pollData.data[0];
-      const emails = contact.email ?? [];
-      const best = emails[0];
+        const contact = pollData.data[0];
+        const emails = contact.email ?? [];
+        const best = emails[0];
 
-      return {
-        email: best?.email ?? null,
-        emailStatus: best ? mapDropcontactQual(best.qualification) : "NOT_FOUND",
-        linkedInUrl: contact.linkedin ?? null,
-        phone: contact.phone ?? null,
-      };
+        return {
+          email: best?.email ?? null,
+          emailStatus: best ? mapDropcontactQual(best.qualification) : "NOT_FOUND",
+          linkedInUrl: contact.linkedin ?? null,
+          phone: contact.phone ?? null,
+        };
+      } catch (pollErr) {
+        // Blip réseau transitoire (ECONNRESET...) sur une tentative isolée — ne pas
+        // abandonner tout l'enrichissement tant qu'il reste des tentatives dans la
+        // fenêtre de 30s, la requête soumise à Dropcontact reste valide côté serveur.
+        console.warn(`[Enrichment] Dropcontact poll attempt ${attempt + 1}/6 failed:`, pollErr);
+      }
     }
 
     // Timeout atteint
