@@ -15,13 +15,18 @@
  * valides). Le surplus au-delà du plafond est laissé à l'enrichissement
  * automatique en arrière-plan (`autoEnrichOnCreate`, déjà déclenché à la
  * création de chaque prospect via l'événement Inngest `prospect/created`).
+ *
+ * Plafond aligné sur `ENRICH_BATCH_CONCURRENCY` (5, cf. `cso-sales.ts`) pour
+ * ne former qu'UN seul lot — un plafond plus haut (ex. 20 → 4 lots séquentiels)
+ * fait grimper le pire cas à ~4×30s (polling Dropcontact par lot), observé en
+ * pratique à 2-3 minutes, ce qui défait l'objectif d'ouverture rapide.
  */
 
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { enrichSelectedProspectsAction, type EnrichedProspectSummary } from "@/actions/cso-sales";
 
-const SYNC_ENRICH_CAP = 20;
+const SYNC_ENRICH_CAP = 5;
 
 export function useEnrichBeforeCampaign(workspaceId: string | null) {
   const [enriching, setEnriching] = useState(false);
